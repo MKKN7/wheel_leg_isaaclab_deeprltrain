@@ -1,0 +1,23 @@
+{
+  "repository": "https://github.com/scutrobotlab/wheelbipe_ros2_sim2sim",
+  "commit": "dd367bf78c7e393d811595edeb4affe253156c95",
+  "reviewed_on": "2026-09-29",
+  "status": "reference_reviewed_not_ported_or_runtime_validated",
+  "deployment_root": "sim2real_RL",
+  "sim2sim_directory": "sim2real_RL/sim2sim",
+  "upstream_observation_dim": 35,
+  "rmuc_current_observation_dim": 25,
+  "action_dim": 6,
+  "upstream_public_policy_mode": "normal-only",
+  "upstream_fsm": ["INIT", "IDLE", "PREPARE", "RL"],
+  "reviewed_paths": [
+    "README.md",
+    "DEPLOY.md",
+    "src/controllers/template_ros2_controller/src/fsm/states/state_rl.cpp",
+    "src/controllers/template_ros2_controller/src/robot_state/robot_state.cpp",
+    "src/middlewares/template_middleware/config/wheelbipe_V14.yaml"
+  ],
+  "source_url_template": "https://github.com/scutrobotlab/wheelbipe_ros2_sim2sim/blob/dd367bf78c7e393d811595edeb4affe253156c95/{path}",
+  "training_resumed": false,
+  "hardware_execution_performed": false
+}

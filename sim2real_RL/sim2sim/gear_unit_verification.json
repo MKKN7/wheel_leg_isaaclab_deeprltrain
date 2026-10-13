@@ -1,0 +1,30 @@
+{
+  "passed": true,
+  "rows": [
+    {
+      "file": "wheeled_infantry.xml",
+      "motor": "left_wheel_motor",
+      "gear": 15.7647058824,
+      "max_output_torque_error_nm": 0.0
+    },
+    {
+      "file": "wheeled_infantry.xml",
+      "motor": "right_wheel_motor",
+      "gear": 15.7647058824,
+      "max_output_torque_error_nm": 0.0
+    },
+    {
+      "file": "rmuc_usd_limits.xml",
+      "motor": "left_wheel_motor",
+      "gear": 1.0,
+      "max_output_torque_error_nm": 0.0
+    },
+    {
+      "file": "rmuc_usd_limits.xml",
+      "motor": "right_wheel_motor",
+      "gear": 1.0,
+      "max_output_torque_error_nm": 0.0
+    }
+  ],
+  "scope": "Ideal output torque equivalence within +/-3 Nm, not identification of real reduction ratio or losses"
+}

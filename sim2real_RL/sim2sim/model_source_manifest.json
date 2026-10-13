@@ -1,0 +1,116 @@
+{
+  "source": "/home/kellen/wheel_leg_sim2sim/assets/wheeled_infantry.xml",
+  "files": [
+    {
+      "path": "wheeled_infantry.xml",
+      "sha256": "663e121ef9aed4bfab09ff0d3d98321b7ce77d80b63584235e4da691bd3aebf3",
+      "bytes": 37154
+    },
+    {
+      "path": "meshes_mj/l_active_aluminum.stl",
+      "sha256": "f885f79812a1d5d9df8c37ba9707ed32da168cb0a951683d131da1239cd6b10f",
+      "bytes": 94084
+    },
+    {
+      "path": "meshes_mj/l_long_aluminum.stl",
+      "sha256": "b075785ee467a3ae7d92a93f08c6c0f62162a874240d8d09439e1b56d73dcd4a",
+      "bytes": 56084
+    },
+    {
+      "path": "meshes_mj/l_lower_aluminum.stl",
+      "sha256": "ee9ba1e1d468d5df3c859eaaf6ab41f7236ee1a765b762095d12ed128c3bb61f",
+      "bytes": 221084
+    },
+    {
+      "path": "meshes_mj/l_node_aluminum.stl",
+      "sha256": "8b368287678fabd7f7615181e5a21e38a341c8c967675bd6bc84cb5bf1ad1127",
+      "bytes": 66284
+    },
+    {
+      "path": "meshes_mj/l_parallel_aluminum.stl",
+      "sha256": "c57db16d16869e528ceca02bbace7a6c00f6dc9f1bc90ee6276a0921a26fa8bf",
+      "bytes": 54484
+    },
+    {
+      "path": "meshes_mj/l_upper_aluminum.stl",
+      "sha256": "6bdb2074127a0afbd5b75dc50734dd2ab6be9fa2c89344c986a2004008fa1f0b",
+      "bytes": 898184
+    },
+    {
+      "path": "meshes_mj/left_wheel_complete.stl",
+      "sha256": "0729e67b7051cf3da0fc471b76bd05aad69eea80dbf63770c7f322a57064fed2",
+      "bytes": 552884
+    },
+    {
+      "path": "meshes_mj/r_active_aluminum.stl",
+      "sha256": "52c6edf785ef63625d0b2bc844014992bf4ee6a9e9161c77890e9da21276a4e6",
+      "bytes": 94084
+    },
+    {
+      "path": "meshes_mj/r_long_aluminum.stl",
+      "sha256": "dbee4bec44dc1463348c8d3cf1cd14fb58da1299663bd5d6723b4e8aabd94f0a",
+      "bytes": 56084
+    },
+    {
+      "path": "meshes_mj/r_lower_aluminum.stl",
+      "sha256": "f5a0075f07ad45ffb252b25156baaaa66387b72847c4aa46c6e3a50766d8fa84",
+      "bytes": 220884
+    },
+    {
+      "path": "meshes_mj/r_node_aluminum.stl",
+      "sha256": "d77064f6843214dcba0719cbbc4253373d905f024f5b6b9de47bd5eb1d722a8e",
+      "bytes": 65684
+    },
+    {
+      "path": "meshes_mj/r_parallel_aluminum.stl",
+      "sha256": "cee5d21ba3c7f031c59e0bb378aa2f9966388ab99ea4c9145384da4c9c49c60a",
+      "bytes": 54484
+    },
+    {
+      "path": "meshes_mj/r_upper_aluminum.stl",
+      "sha256": "2322f9c013e7f3d249fa9b8898194a70195b6809396158754127d3d46825b6ec",
+      "bytes": 895684
+    },
+    {
+      "path": "meshes_mj/right_wheel_complete.stl",
+      "sha256": "4eb62dbbb0487e26b753b7613d7c4c863ab6b072e6d9bc1d67258da4bf0ab475",
+      "bytes": 552884
+    },
+    {
+      "path": "meshes_mj/base_visual_aluminum_part1.stl",
+      "sha256": "b2d16a343548d314669ac61c49b8af341e8477e951b1ec5b22eb066079231363",
+      "bytes": 10000084
+    },
+    {
+      "path": "meshes_mj/base_visual_aluminum_part2.stl",
+      "sha256": "02c957c3a33f5e8aebc75a5dc4d2ac5244e3ecf3e4e6210181c14184435686eb",
+      "bytes": 10000084
+    },
+    {
+      "path": "meshes_mj/base_visual_aluminum_part3.stl",
+      "sha256": "cdcafad7f5b035955febf6b1d9a2572a5357baf4de4a26b80658d1d3872805ba",
+      "bytes": 10000084
+    },
+    {
+      "path": "meshes_mj/base_visual_aluminum_part4.stl",
+      "sha256": "f352a6e837eab676fb4818e98f8f1e19347b80c24c249d19455866809eeaa16d",
+      "bytes": 10000084
+    },
+    {
+      "path": "meshes_mj/base_visual_aluminum_part5.stl",
+      "sha256": "6a5cc27658d31b792e4cf7e8d307fa2cf15bdf79c8ea514cbc12ad8bb016ea8f",
+      "bytes": 6059034
+    },
+    {
+      "path": "meshes_mj/base_visual_carbon.stl",
+      "sha256": "d740c0aa09c9290dfbcf1a57932c5ac02e36b959647c2973a2fcb62810e41cff",
+      "bytes": 576884
+    },
+    {
+      "path": "meshes_mj/base_visual_plastic.stl",
+      "sha256": "a0991c374f1ac4823e667584e8a15b8da18a6bedbe4e89fcb9bec1d0b56110d2",
+      "bytes": 400684
+    }
+  ],
+  "alignment_status": "authored mass/COM/inertia/joint-axis audit available; runtime contact and actuator parity incomplete"
+}

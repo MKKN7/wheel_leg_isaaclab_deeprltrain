@@ -1,0 +1,360 @@
+<mujoco model="wheeled_infantry">
+  <compiler angle="radian" meshdir="meshes_mj" inertiafromgeom="auto" balanceinertia="true" />
+  <statistic center="0 0 0.25" extent="1.5" />
+  <option timestep="0.001" gravity="0 0 -9.81" integrator="implicitfast" iterations="100" ls_iterations="50" />
+  <visual>
+    <headlight ambient="0.18 0.18 0.18" diffuse="0.40 0.40 0.40" specular="0.05 0.05 0.05" />
+    <rgba haze="0.15 0.15 0.15 1" />
+  </visual>
+  <default>
+    <joint damping="0.6" armature="0.01" />
+    <geom margin="0.002" solimp="0.90 0.99 0.002" solref="0.008 1" />
+  </default>
+  <asset>
+    <!-- Matte black ground material. -->
+    <texture name="grid" type="2d" builtin="checker" width="512" height="512" rgb1=".1 .2 .3" rgb2=".2 .3 .4"/>
+    <material name="ground_black_mat"  texture="grid" texrepeat="8 8" reflectance="0" />
+    <mesh name="l_active_aluminum" file="l_active_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="l_long_aluminum" file="l_long_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="l_lower_aluminum" file="l_lower_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="l_node_aluminum" file="l_node_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="l_parallel_aluminum" file="l_parallel_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="l_upper_aluminum" file="l_upper_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="left_wheel_complete" file="left_wheel_complete.stl" scale="0.001 0.001 0.001" />
+    <mesh name="r_active_aluminum" file="r_active_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="r_long_aluminum" file="r_long_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="r_lower_aluminum" file="r_lower_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="r_node_aluminum" file="r_node_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="r_parallel_aluminum" file="r_parallel_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="r_upper_aluminum" file="r_upper_aluminum.stl" scale="0.001 0.001 0.001" />
+    <mesh name="right_wheel_complete" file="right_wheel_complete.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_aluminum_part1" file="base_visual_aluminum_part1.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_aluminum_part2" file="base_visual_aluminum_part2.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_aluminum_part3" file="base_visual_aluminum_part3.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_aluminum_part4" file="base_visual_aluminum_part4.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_aluminum_part5" file="base_visual_aluminum_part5.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_carbon" file="base_visual_carbon.stl" scale="0.001 0.001 0.001" />
+    <mesh name="base_visual_plastic" file="base_visual_plastic.stl" scale="0.001 0.001 0.001" />
+  </asset>
+  <!--鎷撴墤缁撴瀯缁撴垚閾撅紝鍙涓や釜鍏宠妭鍋歝onnect-->
+  <equality>
+    <connect name="left_loop1" site1="left_node_site" site2="left_upper_site" solref="0.008 1" solimp="0.95 0.99 0.002 0.5 2" />
+    <connect name="left_loop2" site1="left_parallel_site" site2="left_lower_site" solref="0.008 1" solimp="0.95 0.99 0.002 0.5 2" />
+    <connect name="right_loop1" site1="right_node_site" site2="right_upper_site" solref="0.008 1" solimp="0.95 0.99 0.002 0.5 2" />
+    <connect name="right_loop2" site1="right_parallel_site" site2="right_lower_site" solref="0.008 1" solimp="0.95 0.99 0.002 0.5 2" />
+  </equality>
+  <tendon>
+    <!-- Passive spatial tendons measure hip-pivot to wheel-center leg length only. -->
+    <spatial name="left_leg_length_tendon">
+      <site site="left_leg_length_hip_site" />
+      <site site="left_leg_length_wheel_site" />
+    </spatial>
+    <spatial name="right_leg_length_tendon">
+      <site site="right_leg_length_hip_site" />
+      <site site="right_leg_length_wheel_site" />
+    </spatial>
+  </tendon>
+  <contact>
+    <!-- Explicit self-contact pairs: wheel/leg travel is limited by the chassis. -->
+    <pair name="left_wheel_to_base" geom1="base_collision" geom2="left_wheel_contact" />
+    <pair name="right_wheel_to_base" geom1="base_collision" geom2="right_wheel_contact" />
+    <pair name="left_leg_to_base" geom1="base_collision" geom2="left_lower_leg_collision" />
+    <pair name="right_leg_to_base" geom1="base_collision" geom2="right_lower_leg_collision" />
+    <pair name="left_long_to_base" geom1="base_collision" geom2="left_long_link_collision" />
+    <pair name="right_long_to_base" geom1="base_collision" geom2="right_long_link_collision" />
+    <pair name="left_active_to_lower" geom1="left_active_link_collision" geom2="left_lower_leg_collision" />
+    <pair name="right_active_to_lower" geom1="right_active_link_collision" geom2="right_lower_leg_collision" />
+    <pair name="left_long_to_lower" geom1="left_long_link_collision" geom2="left_lower_leg_collision" />
+    <pair name="right_long_to_lower" geom1="right_long_link_collision" geom2="right_lower_leg_collision" />
+    <pair name="left_long_to_upper" geom1="left_long_link_collision" geom2="left_upper_leg_collision" />
+    <pair name="right_long_to_upper" geom1="right_long_link_collision" geom2="right_upper_leg_collision" />
+    <pair name="left_parallel_to_upper" geom1="left_parallel_link_collision" geom2="left_upper_leg_collision" />
+    <pair name="right_parallel_to_upper" geom1="right_parallel_link_collision" geom2="right_upper_leg_collision" />
+  </contact>
+  <worldbody>
+    <light name="sun" pos="0 0 6" dir="0 0 -1" directional="true" diffuse="0.55 0.55 0.55" specular="0.05 0.05 0.05" />
+    <!-- Static ground: collision group 2 accepts contacts from dynamic group 1. -->
+    <geom name="ground" type="plane" pos="0 0 0" size="100 100 0.1" material="ground_black_mat" friction="1.10 0.05 0.01" contype="2" conaffinity="1" />
+    <body name="robot" pos="0 0 0.400" quat="0.70710678 0.70710678 0 0">
+      <freejoint name="robot_free" />
+      <!--6DOF瀹炵幇鐩稿鑵块儴杞姩-->
+      <inertial pos="-0.0052237 0.1277931 -0.0055563" mass="16.2270647" fullinertia="0.3691035 0.5973735 0.3420952 -0.0174008 0.0042838 -0.0518328" />
+      <!-- IMU reference frame, rigidly fixed at the robot body origin. -->
+      <site name="imu_site" pos="0 0 0" size="0.006" rgba="0.10 0.65 1 0.45" />
+      <!-- Hip-pivot endpoints for direct left/right leg-length measurement. -->
+      <site name="left_leg_length_hip_site" pos="0.177500 0.000024 -0.000014" size="0.004" rgba="0.20 1 0.80 0.45" />
+      <site name="right_leg_length_hip_site" pos="-0.177500 0.000024 -0.000014" size="0.004" rgba="1 0.55 0.20 0.45" />
+      <!-- Dynamic collision group 1 only collides with the ground group 2. -->
+      <geom name="base_contact" type="sphere" pos="0 0 0" size="0.045" mass="0" friction="0.80 0.005 0.0001" contype="4" conaffinity="0" rgba="0 0 0 0" />
+      <!-- Chassis collision proxy used by explicit wheel/leg self-contact pairs. -->
+      <!-- Accept ground contype=2 so base-ground contact is physical and measurable. -->
+      <geom name="base_collision" type="box" pos="0 0 0" size="0.160 0.070 0.070" mass="0" contype="4" conaffinity="2" rgba="0 0 0 0" />
+      <geom type="mesh" mesh="base_visual_aluminum_part1" mass="0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+      <geom type="mesh" mesh="base_visual_aluminum_part2" mass="0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+      <geom type="mesh" mesh="base_visual_aluminum_part3" mass="0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+      <geom type="mesh" mesh="base_visual_aluminum_part4" mass="0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+      <geom type="mesh" mesh="base_visual_aluminum_part5" mass="0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+      <geom type="mesh" mesh="base_visual_carbon" mass="0" rgba="0.08 0.08 0.09 1" contype="0" conaffinity="0" group="0" />
+      <geom type="mesh" mesh="base_visual_plastic" mass="0" rgba="0.16 0.16 0.18 1" contype="0" conaffinity="0" group="0" />
+      <body name="left_active_link" pos="0.181750 0.000024 -0.000014">
+        <joint name="left_active_link_pitch" type="hinge" axis="1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+        <geom name="left_active_link_collision" type="capsule" fromto="0 0 0 0.011750 -0.064318 -0.069234" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+        <geom type="mesh" mesh="l_active_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+        <body name="left_long_link" pos="0.011750 -0.064318 -0.069234">
+          <joint name="left_long_link_pitch" type="hinge" axis="1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+          <geom name="left_long_link_collision" type="capsule" fromto="0 0 0 -0.012250 -0.088682 0.069231" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+          <geom type="mesh" mesh="l_long_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+          <body name="left_node_link" pos="-0.012250 -0.088682 0.069231">
+            <joint name="left_node_link_pitch" type="hinge" axis="1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+            <geom name="left_node_link_collision" type="capsule" fromto="0 0 0 0.005625 0.148520 0.094605" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+            <geom type="mesh" mesh="l_node_aluminum" pos="0.005625 0.148520 0.094605" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+            <site name="left_node_site" pos="0.005250 0.088675 0.069231" size="0.006" rgba="0.10 1 0.10 1" />
+            <body name="left_parallel_link" pos="0.005625 0.148520 0.094605">
+              <joint name="left_parallel_link_pitch" type="hinge" axis="1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+              <geom name="left_parallel_link_collision" type="capsule" fromto="0 0 0 0.006625 -0.078620 0.084618" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+              <geom type="mesh" mesh="l_parallel_aluminum" pos="0.006625 -0.078620 0.084618" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+              <site name="left_parallel_site" pos="0.006625 -0.078620 0.084618" size="0.006" rgba="1 0.90 0 1" />
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="left_upper_leg" pos="0.177500 0.000024 -0.000014">
+        <joint name="left_hip_pitch" type="hinge" axis="-1 0 0" range="-3.10 3.10" damping="0.08" stiffness="0" springref="0" />
+        <geom name="left_upper_leg_collision" type="capsule" fromto="0 0 0 0.017500 -0.142940 0.153840" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+        <geom type="mesh" mesh="l_upper_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+        <site name="left_upper_site" pos="0.009000 -0.064325 0.069228" size="0.009" rgba="1 0 1 0.55" />
+        <body name="left_lower_leg" pos="0.017500 -0.142940 0.153840">
+          <joint name="left_knee_pitch" type="hinge" axis="1 0 0" range="-2.50 2.50" damping="0.10" stiffness="0" springref="0" />
+          <!-- Lower-leg sweep proxy for the explicit chassis contact pair. -->
+          <geom name="left_lower_leg_collision" type="capsule" fromto="0 0 0 0.025489 -0.197014 -0.153817" size="0.022" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+          <geom type="mesh" mesh="l_lower_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+          <site name="left_lower_site" pos="-0.001500 0.059840 0.025380" size="0.009" rgba="1 0.25 0.10 0.55" />
+          <body name="left_wheel" pos="0.025489 -0.197014 -0.153817">
+            <joint name="left_wheel_spin" type="hinge" axis="1 0 0" damping="0.01" />
+            <site name="left_leg_length_wheel_site" pos="0 0 0" size="0.004" rgba="0.20 1 0.80 0.45" />
+            <geom type="mesh" mesh="left_wheel_complete" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+            <geom name="left_wheel_contact" type="cylinder" size="0.060 0.0165" quat="0.70710678 0 0.70710678 0" mass="0" friction="1.10 0.005 0.0001" condim="3" contype="1" conaffinity="2" rgba="0 0 0 0" />
+          </body>
+        </body>
+      </body>
+      <body name="right_active_link" pos="-0.181750 0.000024 -0.000014">
+        <joint name="right_active_link_pitch" type="hinge" axis="1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+        <geom name="right_active_link_collision" type="capsule" fromto="0 0 0 -0.011750 -0.064318 -0.069234" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+        <geom type="mesh" mesh="r_active_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+        <body name="right_long_link" pos="-0.011750 -0.064318 -0.069234">
+          <joint name="right_long_link_pitch" type="hinge" axis="-1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+          <geom name="right_long_link_collision" type="capsule" fromto="0 0 0 0.012250 -0.088682 0.069231" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+          <geom type="mesh" mesh="r_long_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+          <body name="right_node_link" pos="0.012250 -0.088682 0.069231">
+            <joint name="right_node_link_pitch" type="hinge" axis="-1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+            <geom name="right_node_link_collision" type="capsule" fromto="0 0 0 -0.005625 0.148520 0.094605" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+            <geom type="mesh" mesh="r_node_aluminum" pos="-0.005625 0.148520 0.094605" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+            <site name="right_node_site" pos="-0.005250 0.088675 0.069231" size="0.006" rgba="1 0.90 0 1" />
+            <body name="right_parallel_link" pos="-0.005625 0.148520 0.094605">
+              <joint name="right_parallel_link_pitch" type="hinge" axis="-1 0 0" range="-2.60 2.60" damping="0.08" stiffness="0" springref="0" />
+              <geom name="right_parallel_link_collision" type="capsule" fromto="0 0 0 -0.006625 -0.078620 0.084618" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+              <geom type="mesh" mesh="r_parallel_aluminum" pos="-0.006625 -0.078620 0.084618" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+              <site name="right_parallel_site" pos="-0.006625 -0.078620 0.084618" size="0.006" rgba="0.10 1 0 1" />
+            </body>
+          </body>
+        </body>
+      </body>
+      <body name="right_upper_leg" pos="-0.177500 0.000024 -0.000014">
+        <joint name="right_hip_pitch" type="hinge" axis="1 0 0" range="-3.10 3.10" damping="0.08" stiffness="0" springref="0" />
+        <geom name="right_upper_leg_collision" type="capsule" fromto="0 0 0 -0.017500 -0.142940 0.153840" size="0.014" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+        <geom type="mesh" mesh="r_upper_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+        <site name="right_upper_site" pos="-0.009000 -0.064325 0.069228" size="0.009" rgba="1 0 1 0.55" />
+        <body name="right_lower_leg" pos="-0.017500 -0.142940 0.153840">
+          <joint name="right_knee_pitch" type="hinge" axis="-1 0 0" range="-2.50 2.50" damping="0.10" stiffness="0" springref="0" />
+          <!-- Lower-leg sweep proxy for the explicit chassis contact pair. -->
+          <geom name="right_lower_leg_collision" type="capsule" fromto="0 0 0 -0.025511 -0.197077 -0.153795" size="0.022" mass="0" contype="4" conaffinity="0" rgba="0 0 0 0" />
+          <geom type="mesh" mesh="r_lower_aluminum" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+          <site name="right_lower_site" pos="0.001500 0.059840 0.025380" size="0.009" rgba="1 0.25 0.10 0.55" />
+          <body name="right_wheel" pos="-0.025511 -0.197077 -0.153795">
+            <joint name="right_wheel_spin" type="hinge" axis="1 0 0" damping="0.01" />
+            <site name="right_leg_length_wheel_site" pos="0 0 0" size="0.004" rgba="1 0.55 0.20 0.45" />
+            <geom type="mesh" mesh="right_wheel_complete" density="594.0" rgba="0.74 0.76 0.79 1" contype="0" conaffinity="0" group="0" />
+            <geom name="right_wheel_contact" type="cylinder" size="0.060 0.0165" quat="0.70710678 0 0.70710678 0" mass="0" friction="1.10 0.005 0.0001" condim="3" contype="1" conaffinity="2" rgba="0 0 0 0" />
+          </body>
+        </body>
+      </body>
+      <!-- GUIDE_WHEEL_TRAINING_BEGIN -->
+      <!-- Passive lower 30x9 mm guide rollers; no actuator or public sensor. -->
+      <body name="guide_wheel_lower_right_01" pos="-0.0950001 -0.1399738 -0.1346828">
+        <joint name="guide_wheel_lower_right_01_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_01_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_01_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_02" pos="-0.0800001 -0.1357210 -0.1670853">
+        <joint name="guide_wheel_lower_right_02_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_02_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_02_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_03" pos="-0.0950001 -0.1357210 -0.1669864">
+        <joint name="guide_wheel_lower_right_03_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_03_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_03_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_04" pos="-0.0800001 -0.1400231 -0.1347281">
+        <joint name="guide_wheel_lower_right_04_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_04_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_04_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_01" pos="0.0949999 -0.1357210 -0.1669864">
+        <joint name="guide_wheel_lower_left_01_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_01_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_01_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_02" pos="0.0799999 -0.1357210 -0.1670853">
+        <joint name="guide_wheel_lower_left_02_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_02_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_02_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_03" pos="0.0949999 -0.1399738 -0.1346828">
+        <joint name="guide_wheel_lower_left_03_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_03_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_03_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_04" pos="0.0799999 -0.1400231 -0.1347281">
+        <joint name="guide_wheel_lower_left_04_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_04_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_04_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_05" pos="0.0949999 -0.1399738 0.1346520">
+        <joint name="guide_wheel_lower_left_05_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_05_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_05_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_06" pos="0.0949999 -0.1357210 0.1669556">
+        <joint name="guide_wheel_lower_left_06_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_06_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_06_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_07" pos="0.0799999 -0.1357210 0.1670545">
+        <joint name="guide_wheel_lower_left_07_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_07_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_07_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_08" pos="0.0799999 -0.1400231 0.1346973">
+        <joint name="guide_wheel_lower_left_08_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_08_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_08_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_05" pos="-0.0800001 -0.1357210 0.1670545">
+        <joint name="guide_wheel_lower_right_05_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_05_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_05_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_06" pos="-0.0950001 -0.1357210 0.1669556">
+        <joint name="guide_wheel_lower_right_06_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_06_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_06_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_07" pos="-0.0800001 -0.1400231 0.1346973">
+        <joint name="guide_wheel_lower_right_07_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_07_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_07_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_08" pos="-0.0950001 -0.1399738 0.1346520">
+        <joint name="guide_wheel_lower_right_08_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_08_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_08_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_09" pos="0.0779999 -0.1534738 -0.0300649">
+        <joint name="guide_wheel_lower_left_09_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_09_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_09_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_10" pos="0.0929999 -0.1534738 -0.0299659">
+        <joint name="guide_wheel_lower_left_10_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_10_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_10_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_11" pos="0.0929999 -0.1534738 0.0300341">
+        <joint name="guide_wheel_lower_left_11_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_11_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_11_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_left_12" pos="0.0779999 -0.1534738 0.0299351">
+        <joint name="guide_wheel_lower_left_12_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_left_12_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_left_12_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_09" pos="-0.0930001 -0.1534738 0.0300341">
+        <joint name="guide_wheel_lower_right_09_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_09_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_09_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_10" pos="-0.0780001 -0.1534738 0.0299351">
+        <joint name="guide_wheel_lower_right_10_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_10_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_10_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_11" pos="-0.0930001 -0.1534738 -0.0299659">
+        <joint name="guide_wheel_lower_right_11_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_11_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_11_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <body name="guide_wheel_lower_right_12" pos="-0.0780001 -0.1534738 -0.0300649">
+        <joint name="guide_wheel_lower_right_12_spin" type="hinge" axis="1.0000000 0.0000000 0.0000000" damping="0.0001500" armature="0.0000000" />
+        <site name="guide_wheel_lower_right_12_site" pos="0 0 0" size="0.004" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+        <geom name="guide_wheel_lower_right_12_contact" type="cylinder" size="0.0150000 0.0045000" quat="0.7071068 0.0000000 0.7071068 0.0000000" density="2588.0000000" friction="1.1000000 0.0050000 0.0001000" condim="3" contype="1" conaffinity="2" rgba="0.0700000 0.0700000 0.0800000 1.0000000" />
+      </body>
+      <!-- GUIDE_WHEEL_TRAINING_END -->
+    </body>
+  </worldbody>
+  <sensor>
+    <!-- World-frame horizontal displacement: use X/Y components. -->
+    <framepos name="world_horizontal_position_xy" objtype="body" objname="robot" />
+    <!-- World-frame horizontal velocity: use X/Y components. -->
+    <framelinvel name="world_horizontal_velocity_xy" objtype="body" objname="robot" />
+
+    <!-- Left/right wheel rotation about each wheel's local normal axis and derivative. -->
+    <jointpos name="left_wheel_angle" joint="left_wheel_spin" />
+    <jointvel name="left_wheel_angular_velocity" joint="left_wheel_spin" />
+    <jointpos name="right_wheel_angle" joint="right_wheel_spin" />
+    <jointvel name="right_wheel_angular_velocity" joint="right_wheel_spin" />
+
+    <!-- Left/right leg tilt about each hip's local normal axis and derivative. -->
+    <jointpos name="left_leg_tilt_angle" joint="left_hip_pitch" />
+    <jointvel name="left_leg_tilt_angular_velocity" joint="left_hip_pitch" />
+    <jointpos name="right_leg_tilt_angle" joint="right_hip_pitch" />
+    <jointvel name="right_leg_tilt_angular_velocity" joint="right_hip_pitch" />
+
+    <!-- Direct hip-pivot to wheel-center leg length and its derivative. -->
+    <tendonpos name="left_leg_length" tendon="left_leg_length_tendon" />
+    <tendonvel name="left_leg_length_velocity" tendon="left_leg_length_tendon" />
+    <tendonpos name="right_leg_length" tendon="right_leg_length_tendon" />
+    <tendonvel name="right_leg_length_velocity" tendon="right_leg_length_tendon" />
+
+    <!-- Body attitude in the world frame; derive yaw and pitch from this quaternion. -->
+    <framequat name="world_body_orientation_quat" objtype="body" objname="robot" />
+    <!-- Body angular velocity; combine with the quaternion to obtain world yaw/pitch rates. -->
+    <frameangvel name="body_angular_velocity" objtype="body" objname="robot" />
+
+    <!-- Body-mounted IMU outputs in the IMU's local coordinate frame. -->
+    <gyro name="imu_gyroscope" site="imu_site" />
+    <accelerometer name="imu_linear_accelerometer" site="imu_site" />
+    <velocimeter name="imu_linear_velocity" site="imu_site" />
+
+    <!-- Left-leg dual hip-motor output torque sensors. -->
+    <actuatorfrc name="left_hip_motor_torque" actuator="left_hip_motor" />
+    <actuatorfrc name="left_active_hip_motor_torque" actuator="left_active_hip_motor" />
+    <actuatorfrc name="left_wheel_motor_torque" actuator="left_wheel_motor" />
+
+    <!-- Right-leg dual hip-motor output torque sensors. -->
+    <actuatorfrc name="right_hip_motor_torque" actuator="right_hip_motor" />
+    <actuatorfrc name="right_active_hip_motor_torque" actuator="right_active_hip_motor" />
+    <actuatorfrc name="right_wheel_motor_torque" actuator="right_wheel_motor" />
+  </sensor>
+  <actuator>
+    <!-- Each leg has two DM-J8009P-2EC hip motors; knee links are passive. -->
+    <motor name="left_hip_motor" joint="left_hip_pitch" gear="1" ctrllimited="true" ctrlrange="-40 40" forcelimited="true" forcerange="-40 40" />
+    <motor name="left_active_hip_motor" joint="left_active_link_pitch" gear="1" ctrllimited="true" ctrlrange="-40 40" forcelimited="true" forcerange="-40 40" />
+    <!-- RM3508: motor-shaft command in Nm; output torque is multiplied by 268/17. -->
+    <motor name="left_wheel_motor" joint="left_wheel_spin" gear="15.7647058824" ctrllimited="true" ctrlrange="-3 3" forcelimited="true" forcerange="-3 3" />
+    <motor name="right_hip_motor" joint="right_hip_pitch" gear="1" ctrllimited="true" ctrlrange="-40 40" forcelimited="true" forcerange="-40 40" />
+    <motor name="right_active_hip_motor" joint="right_active_link_pitch" gear="1" ctrllimited="true" ctrlrange="-40 40" forcelimited="true" forcerange="-40 40" />
+    <motor name="right_wheel_motor" joint="right_wheel_spin" gear="15.7647058824" ctrllimited="true" ctrlrange="-3 3" forcelimited="true" forcerange="-3 3" />
+  </actuator>
+</mujoco>

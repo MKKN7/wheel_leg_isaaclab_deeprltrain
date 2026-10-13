@@ -1,0 +1,141 @@
+# Explicit migration target, NOT automatically loaded by the current trainer.
+# User-confirmed component separation on 2026-10-03; priors are not measured calibration.
+schema_version: 3
+source: user_supplied_engineering_parameters
+measured_calibration: false
+leg:
+  motor: DM-J8009P-2EC
+  gear_ratio: 9.0
+  model_and_ratio_source: user_confirmed_2026_09_26
+  actuator_profile: configs/rmuc_leg_actuator_target.yaml
+  parameter_calibration_source: V14_reference_and_provisional_DR_not_measured
+wheel:
+  motor: RM3508
+  esc: C620
+  motor_esc_pair_source: user_confirmed_2026_10_01
+  torque_reference: gearbox_output_shaft
+  max_continuous_output_torque_nm: 3.0
+  max_peak_output_torque_nm: 5.5
+  torque_contract_source: user_clarified_peak_vs_continuous_2026_10_01
+  target_action_torque_scale_nm: 5.5
+  target_actuator_effort_limit_nm: 5.5
+  thermal_screen:
+    continuous_reference_nm: 3.0
+    exceedance_fraction_reference: 0.05
+    longest_exceedance_reference_s: 0.300
+    thresholds_are_thermal_certification: false
+    require_rms_torque_and_speed_trace: true
+    calibrated_thermal_model_available: false
+  torque_speed_envelope:
+    model: constant_peak_simplification
+    calibrated: false
+    require_joint_torque_speed_coverage_audit: true
+  speed:
+    control_mode: direct_output_shaft_torque_not_velocity_servo
+    actuator_velocity_parameter_rad_s: 63.3734
+    parameter_source: inherited_training_config_not_measured_motor_envelope
+    velocity_limit_sim_explicitly_configured: false
+    no_load_speed_or_hard_speed_cap_verified: false
+    current_actuator_model: IdealPDActuator_Kp0
+    speed_dependent_peak_derating_implemented: false
+  multiply_by_gear_ratio: false
+  torque_contract: separated_passive_v1
+  mechanical_viscous:
+    units: N_m_s_per_rad
+    nominal: 0.002
+    range: [0.001, 0.005]
+    provenance: user_supplied_engineering_prior_2026_10_03
+    measured: false
+    application: passive_dynamics_after_electromagnetic_clip
+  coulomb_friction:
+    units: N_m
+    nominal: 0.001
+    provenance: user_supplied_engineering_prior_2026_10_03
+    measured: false
+    smoothing_omega_eps_rad_s: null
+    smoothing_note: numerical_regularization_must_be_declared_by_each_experiment
+    application: passive_dynamics_after_electromagnetic_clip
+  feedback_damping:
+    units: N_m_s_per_rad
+    value: null
+    identified: false
+    note: may_be_implicit_in_asymmetric_firmware_torque_no_absolute_identification
+    application_if_present: after_electromagnetic_clip_per_current_simulation_contract
+    firmware_application_order_verified: false
+  installation_signs:
+    hardware_verified: false
+    value: null
+    note: simulation_signs_are_not_hardware_installation_evidence
+  combined_torque_outer_clip: false
+  legacy_damping_history:
+    range: [0.002, 0.04]
+    proposed_center: 0.021
+    interpretation: superseded_ambiguous_effective_damping_not_mechanical_target
+    executable: false
+  speed_evidence:
+    user_reported_max_speed_mps: 4.0
+    sustained_level_ground_verified: false
+    reference_wheel_radius_m: 0.06
+    conditional_viscous_damping_upper_bound: 0.045
+    proposed_upper_endpoint: 0.04
+    basis: steady_no_slip_wheel_only_3Nm_budget_with_other_losses_nonnegative
+    caveat: top_speed_alone_does_not_identify_damping_or_available_torque_at_speed
+    status: historical_conditional_screen_not_identification_of_any_component
+  # Existing real_hardware software ratio0.8 derates the chosen peak contract.
+  # Preserve/report separately until the final control contract is selected.
+  existing_software_limit_ratio: 0.8
+gas_spring:
+  model: equivalent_assist_joint_torque
+  equivalent_torque_nm_per_leg: 10.775
+  provenance: user_corrected_equivalent_torque_2026_10_01
+  torque_stroke_curve_measured: false
+  radial_force_model_available: false
+  radial_force_per_leg_n: null
+  apply_at_hip_and_wheel_axis_points: false
+  equal_opposite_forces: false
+  use_legacy_constant_active_joint_torque: true
+  joint_order: [left_active_link_pitch, right_active_link_pitch]
+  joint_torque_sign: [-1.0, -1.0]
+  equal_opposite_chassis_reaction: true
+  # Initial bounded uncertainty proposal, not a user-measured tolerance.
+  proposed_full_dr_fraction: 0.20
+  dr_fraction_provenance: engineering_assumption_for_migration_experiments
+motor_response:
+  model: first_order_applied_effort_at_physics_rate
+  implementation_available: true
+  enabled_in_current_training: false
+  native_interface_verified: true
+  robust_policy_validated: false
+  time_constant_range_s: [0.002, 0.030]
+  range_provenance: initial_engineering_exploration_not_measured_RM3508_specification
+  note: native128step_interface_probe_passed_but_full_behavior_and_hardware_validation_pending
+migration:
+  current_training_torque_scale_nm: 5.5
+  historical_training_actuator_damping: 0.1
+  current_training_radial_force_per_leg_n: 0.0
+  apply_abruptly_to_existing_policy: false
+  require_joint_maximum_DR_acceptance: true
+  allow_DR_for_model_uncertainty: true
+  hardware_certified: false
+timing:
+  wheel_execution_period_s: 0.001
+  leg_pd_period_s: 0.002
+  policy_period_s: 0.008
+  source: user_confirmed_2026_10_03
+  leg_pd_requires_sample_and_hold_at_1ms_physics: true
+deployment_contract:
+  platform: RMUC_wheeled_legged_infantry
+  operation_mode: human_operator_commanded
+  posture_objective: policy_selected_for_stable_tracking
+  analytic_bank_angle_required: false
+  required_turn_evidence: [command_tracking, contact_loads, sideslip, stability_margin, transient_recovery]
+  source: user_confirmed_2026_09_26
+  wheel_control: direct_output_shaft_torque
+  final_policy_mode: end_to_end_rl
+  final_post_actor_speed_pitch_yaw_feedback_allowed: false
+  current_outer_feedback_role: transitional_teacher_only
+  lqr_role: reference_or_backup_takeover
+  lqr_is_rl_inner_loop: false
+  velocity_loop_migration: deferred_by_user
+  exported_actor_alone_is_complete_controller: false
+  outer_feedback_and_torque_mapping_require_deployment_validation: true

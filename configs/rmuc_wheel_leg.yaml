@@ -1,0 +1,961 @@
+# RMUC wheel-leg asset/task configuration.
+# The USD files in this repository are immutable source assets. This file only
+# configures Isaac Lab's spawn/command interface; it does not rewrite USD
+# meshes, masses, inertias, joint axes, limits, or authored drives.
+run_mode: sim_training
+
+robot:
+  usd_path: source/agent_world/agent_world/assets/usd_files/rmuc_wheel_leg/rmuc_robot_closed_loop.usd
+  open_chain_usd_path: source/agent_world/agent_world/assets/usd_files/rmuc_wheel_leg/rmuc_robot_only.usd
+  # The prepared standalone robot uses /rm_train_ground/robot.  The validator
+  # also reports the authored path so a differently composed USD is caught.
+  articulation_root_prim: /rm_train_ground/robot
+  root_link_name: robot
+  body_names:
+    base: robot
+    wheels: [left_wheel, right_wheel]
+    leg_reference: [left_active_link, right_active_link]
+  dof_names:
+    - left_active_link_pitch
+    - left_long_link_pitch
+    - left_node_link_pitch
+    - left_parallel_link_pitch
+    - left_hip_pitch
+    - left_knee_pitch
+    - left_wheel_spin
+    - right_active_link_pitch
+    - right_long_link_pitch
+    - right_node_link_pitch
+    - right_parallel_link_pitch
+    - right_hip_pitch
+    - right_knee_pitch
+    - right_wheel_spin
+  controlled_dof_names:
+    - right_active_link_pitch
+    - right_hip_pitch
+    - right_wheel_spin
+    - left_active_link_pitch
+    - left_hip_pitch
+    - left_wheel_spin
+  passive_dof_names:
+    - left_long_link_pitch
+    - left_node_link_pitch
+    - left_parallel_link_pitch
+    - left_knee_pitch
+    - right_long_link_pitch
+    - right_node_link_pitch
+    - right_parallel_link_pitch
+    - right_knee_pitch
+  # This V14-aligned standing pose is applied at reset. It is a command-layer
+  # initial state and does not alter authored USD geometry or hardware values.
+  # XML zero-joint high-standing pose: wheel centers are about 0.06 m,
+  # The authored chassis/root origin is z=0.40 m while wheel centers are
+  # z~=0.06 m and the wheel collision reaches the ground.
+  initial_pos_z_m: 0.40
+  # The stage is Z-up, but every authored rigid-body frame (including root)
+  # carries +90 deg about X. Preserve that root-link orientation on reset.
+  asset_frame_rpy_deg: [90.0, 0.0, 0.0]
+  initial_joint_pos: {".*": 0.0}
+  standing_joint_pos_profile: {".*": 0.0}
+
+  # Explicit actuator/solver settings override authored USD drive parameters.
+  # USD geometry stays unchanged; reference values are not hardware calibration.
+  actuators:
+    leg:
+      joint_names: [right_active_link_pitch, right_hip_pitch, left_active_link_pitch, left_hip_pitch]
+      stiffness: 60.0
+      damping: 2.0
+      effort_limit_nm: 40.0
+      # DM-J8009P-2EC, 9:1 (user confirmed). 17 is a provisional
+      # joint-side V14 reference, not a measured torque-speed envelope.
+      velocity_limit_rad_s: 17.0
+      velocity_limit_sim_rad_s: 17.0
+      # Explicitly preserve the previously inherited USD armature.
+      armature_kg_m2: 0.010
+    wheel:
+      joint_names: [right_wheel_spin, left_wheel_spin]
+      stiffness: 0.0
+      # Preserve the effective damping used by every existing stand/command
+      # checkpoint. The USD's authored 0.25 drive damping is cleared by the
+      # explicit actuator, so there is no duplicate damping. The XML's 0.01
+      # mechanical damping is a future sim-to-real retraining target, not a
+      # compatible drop-in change for the current policy lineage.
+      damping: 0.1
+      effort_limit_nm: 5.5
+      velocity_limit_rad_s: 63.3734
+    passive:
+      # V14 legs_inact equivalent for the eight closed-loop linkage joints.
+      joint_names:
+        - left_long_link_pitch
+        - left_node_link_pitch
+        - left_parallel_link_pitch
+        - left_knee_pitch
+        - right_long_link_pitch
+        - right_node_link_pitch
+        - right_parallel_link_pitch
+        - right_knee_pitch
+      stiffness: 0.0
+      damping: 0.01
+      effort_limit_nm: 50.0
+      velocity_limit_rad_s: 300.0
+    guide_wheels:
+      # Passive rolling bodies: no policy torque and no artificial damping.
+      joint_names:
+        - guide_wheel_lower_right_01_spin
+        - guide_wheel_lower_right_02_spin
+        - guide_wheel_lower_right_03_spin
+        - guide_wheel_lower_right_04_spin
+        - guide_wheel_lower_right_05_spin
+        - guide_wheel_lower_right_06_spin
+        - guide_wheel_lower_right_07_spin
+        - guide_wheel_lower_right_08_spin
+        - guide_wheel_lower_right_09_spin
+        - guide_wheel_lower_right_10_spin
+        - guide_wheel_lower_right_11_spin
+        - guide_wheel_lower_right_12_spin
+        - guide_wheel_lower_left_01_spin
+        - guide_wheel_lower_left_02_spin
+        - guide_wheel_lower_left_03_spin
+        - guide_wheel_lower_left_04_spin
+        - guide_wheel_lower_left_05_spin
+        - guide_wheel_lower_left_06_spin
+        - guide_wheel_lower_left_07_spin
+        - guide_wheel_lower_left_08_spin
+        - guide_wheel_lower_left_09_spin
+        - guide_wheel_lower_left_10_spin
+        - guide_wheel_lower_left_11_spin
+        - guide_wheel_lower_left_12_spin
+      stiffness: 0.0
+      damping: 0.0
+      effort_limit_nm: 0.0
+      velocity_limit_rad_s: 300.0
+
+  articulation:
+    fix_root_link: false
+    enabled_self_collisions: false
+    solver_position_iteration_count: 12
+    solver_velocity_iteration_count: 6
+
+environment:
+  seed: 42
+  num_envs: 128
+  env_spacing_m: 3.0
+  # 128 envs span roughly 33 m. A 3 m/s policy can travel 24 m in one
+  # eight-second episode, so 128 m leaves margin around every start origin.
+  flat_terrain_size_m: 128.0
+  # v178/v179: large triangles caused repeatable position-sensitive falls.
+  # Refine only collider triangulation; preserve flat surface and material.
+  # Set 0 to reproduce the legacy collider for diagnostics.
+  flat_mesh_subdivisions: 5
+  # Give the inverted-pendulum controller enough time to leave the reset
+  # acceleration transient and produce a measurable steady-speed window.
+  episode_length_s: 12.0
+  sim_dt: 0.002
+  decimation: 4
+
+# Flat-terrain domain randomization follows command proficiency instead of
+# wall-clock iterations. Level 29 begins at roughly one tenth of these maxima;
+# each successfully gated command level expands the range. Hardware uses
+# 5.5 Nm instantaneous peak; 3 Nm is the separate continuous thermal reference.
+domain_randomization:
+  enabled: true
+  apply_in_play: false
+  start_command_level: 29
+  full_command_level: 46
+  # New command skills restart mild DR; final extension reaches full strength.
+  # Legacy levels 0–46 retain their exact original schedule.
+  extended_start_command_level: 47
+  extended_full_command_level: 81
+  max_base_mass_fraction: 0.05
+  # Extra scalar inertia uncertainty, independent of the mass draw. Opt-in;
+  # does not model COM shifts, changing principal-axis ratios, or gimbal reaction.
+  max_base_inertia_fraction: 0.0
+  max_friction_fraction: 0.15
+  max_wheel_damping_fraction: 0.10
+  # separated_passive_v1 samples these actual post-clip terms instead of the
+  # zero-damping IdealPD wheel actuator. Feedback D stays unbounded by evidence.
+  separated_wheel_mechanical_viscous_range: [0.001, 0.005]
+  separated_wheel_coulomb_range: [0.001, 0.001]
+  separated_wheel_feedback_damping_range: [0.0, 0.0]
+  max_wheel_torque_gain_fraction: 0.05
+  max_observation_noise_std: 0.01
+  max_observation_delay_steps: 1
+  max_observation_delay_probability: 0.35
+  # Provisional joint-side uncertainty; active with progressive DR strength.
+  leg_actuator_enabled: true
+  leg_velocity_limit_range_rad_s: [12.0, 17.0]
+  leg_armature_range_kg_m2: [0.008, 0.024]
+  # Initial engineering bounds, not measured hardware calibration.
+  sensor_model:
+    enabled: true
+    # Independently sampled sensor age and command transport delay, per reset.
+    # At sim_dt * decimation = 8 ms, each is 8/16/24 ms at full DR.
+    # action_delay_enabled delays all six action channels before actuation.
+    # This is NOT an independently calibrated motor response/time-constant model.
+    delay_min_steps: 1
+    delay_max_steps: 3
+    action_delay_enabled: true
+    gyro_bias_max_rad_s: 0.02
+    gyro_bias_walk_rad_s_sqrt_s: 0.0005
+    gyro_noise_std_rad_s: 0.005
+    accel_bias_max_mps2: 0.10
+    accel_noise_std_mps2: 0.05
+    encoder_angle_std_rad: 0.001
+    encoder_velocity_std_rad_s: 0.02
+    forward_velocity_std_mps: 0.01
+
+
+# V14-style command layer.  The four actuated channels remain independent so
+# the policy can reproduce the left/right sign convention of the physical
+# linkage. Passive linkage and guide-wheel drives are explicitly zeroed below.
+control:
+  firmware_spring_enabled: false
+  firmware_spring_target_kp: 60.0
+  firmware_spring_scale: 0.10
+  # Historical experiments used post-clip D. Deployment-aligned candidates
+  # override this to active_motor_v1 and must be retrained under that contract.
+  wheel_feedback_damping_mode: postclip_loss_v1
+  leg_mode: position
+  leg_pair_mapping: independent
+  leg_position_scale_rad: 0.35
+  stand_leg_position_scale_rad: 0.18
+  # Smooth stand -> command transition; the policy never jumps from 0.18 to
+  # the full locomotion scale on the first command-stage rollout.
+  command_leg_position_scale_mid_rad: 0.22
+  command_leg_position_scale_final_rad: 0.28
+  wheel_torque_scale_nm: 5.5
+  # Authored USD angular drive cap measured by validate_rmuc_usd.py. This is
+  # diagnostic metadata only; the immutable USD remains the source of truth
+  # and the task actuator contract is not silently rewritten.
+  wheel_authored_effort_limit_nm: 3.0
+  # Contact-cylinder radius in the reference MuJoCo model.
+  wheel_radius_m: 0.060
+  # Probe result: positive USD wheel torque moves the canonical body frame in
+  # negative forward direction, so both policy wheel channels need inversion.
+  wheel_action_sign: [-1.0, -1.0]
+  # Low-level yaw-rate feedback supplies only a bounded differential residual.
+  # Unlike target-only feedforward, it vanishes at the requested yaw rate.
+  wheel_yaw_feedback_action_per_rad_s: 3.60
+  # Fixed-policy Level-28 A/B at 2.4 m/s, |yaw|=0.30: clips 0.30/0.20/0.15/0.12
+  # caused 20.8/14.3/9.11/7.81% tilt terminations. Clip 0.10 reached 5.21%
+  # but missed the yaw gate at 0.0545 rad/s. Use 0.10 and let the directional
+  # policy head learn the remaining 0.0045 rad/s yaw correction without consuming the
+  # common-mode wheel authority needed to catch pitch.
+  wheel_yaw_feedback_action_clip: 0.10
+  wheel_yaw_feedback_straight_action_clip: 0.15
+  # Current speed-routed expert A/B at Level 8 found -0.020 reduced the worst
+  # direction error to 0.180 m/s versus 0.188 at -0.010, with zero tilt or
+  # reverse motion. Level 3/4 retests also passed at 1.0 m/s and yaw 0.30/0.45.
+  wheel_speed_feedback_action_per_mps: -0.020
+  # A 1800-step, 128-env Level-23 A/B with 0.004 action noise found -0.36,
+  # pitch-rate gain 0.04 and yaw clip 0.15 jointly passed: 0.149 m/s temporal
+  # speed error and 9.11% tilt terminations. The unchanged 0.08 speed clip
+  # preserves the maximum common-mode residual.
+  wheel_speed_feedback_high_speed_threshold_mps: 1.65
+  wheel_speed_feedback_high_speed_action_per_mps: -0.36
+  wheel_speed_feedback_action_clip: 0.08
+  # The negative high-speed gain is an inverted-pendulum stabilizer while
+  # underspeed. Once the robot overshoots, its sign reverses and used to add
+  # forward action, creating the Level-17 runaway/fall cycle. At >2.5 m/s,
+  # retain the stabilizing branch but do not let this residual propel overspeed.
+  wheel_highspeed_feedback_overspeed_action_clip: 0.00
+  # The Level-16 actor already balances at 2.5 m/s. Above that speed, provide
+  # only the incremental common-mode torque needed to offset the configured
+  # wheel damping. At 3.0 m/s this reaches +0.10 action (=0.55 Nm target torque).
+  # It is disabled for rehearsal commands and fades out beyond mild overspeed.
+  wheel_highspeed_propulsion_start_mps: 2.50
+  wheel_highspeed_propulsion_action_per_mps: 0.20
+  wheel_highspeed_propulsion_action_clip: 0.10
+  wheel_highspeed_propulsion_overspeed_fade_mps: 0.20
+  # Keep most of the calibrated inverted-pendulum speed residual while the
+  # actuator bridge changes damping. Removing it at the start of the bridge
+  # makes an un-certified high-speed actor fall into the low-speed basin before
+  # PPO can adapt; the residual still fades only after the student is stable.
+  wheel_speed_feedback_damping_anneal_target_scale: 0.85
+  # Do not add a direction-specific multiplier: both signs are independently
+  # gated, and the weaker +yaw branch receives extra on-policy episode coverage.
+  wheel_speed_feedback_negative_turn_scale: 1.00
+  # Small sagittal residual for Level-14+ active commands. It keeps the wheels
+  # under a forward-leaning chassis without changing low/medium turn replay.
+  # The 0.04 action cap is 0.22 Nm at the configured 5.5 Nm wheel scale.
+  wheel_pitch_feedback_start_level: 14
+  wheel_pitch_feedback_action_per_rad: 0.20
+  # Fixed-policy Level-17 A/B: +0.05 pitch-rate feedback passed the 1800-step
+  # speed/stability evaluation; +0.10 amplified action noise and increased
+  # long-horizon tilt failures. This is chassis-pitch control damping, not
+  # wheel-axis damping.
+  wheel_pitch_rate_feedback_action_per_rad_s: 0.04
+  # Extra derivative action only during a rapid pitch excursion. This leaves
+  # normal 0.1-0.2 rad/s balancing untouched and overrides the angle term
+  # before a 5+ rad/s terminal pitch divergence.
+  wheel_pitch_rate_emergency_threshold_rad_s: 1.00
+  wheel_pitch_rate_emergency_action_per_rad_s: 0.00
+  wheel_pitch_feedback_action_clip: 0.08
+  # Keep recovery active until the safety stop. The previous 0.85 cosine gate
+  # switched pitch feedback off beyond 31.8 deg, exactly when a high-speed
+  # excursion still needed the wheels to move back under the chassis.
+  wheel_pitch_feedback_min_upright_cos: 0.00
+  # Keep the checkpoint-compatible actuator dynamics by default. Compensation
+  # is diagnostic-only until a policy is explicitly retrained under it; applying
+  # it to a v49 actor changes the wheel effort contract and collapses speed.
+  wheel_damping_compensation_start_level: 14
+  wheel_damping_compensation_ratio: 0.00
+  # Smooth support through the target instead of switching torque at zero error.
+  # It fades to zero only after material overspeed.
+  wheel_damping_compensation_margin_mps: 0.20
+  wheel_damping_compensation_scale_mps: 0.40
+  # Disabled by default for checkpoint compatibility. High-speed bridge runs
+  # enable a target through CLI and cosine-anneal the effective damping while
+  # leaving the USD and constructed Isaac actuator unchanged.
+  wheel_damping_anneal_target: -1.0
+  wheel_damping_anneal_steps: 6000000
+  # Let a fresh critic fit the changed reward landscape before actuator
+  # dynamics begin moving. At 128 envs this is about 61 PPO iterations with a
+  # 128-step rollout and safely exceeds the 50-iteration actor freeze.
+  wheel_damping_anneal_warmup_steps: 1000000
+  # Start the actuator bridge at the first not-yet-certified large-yaw stage.
+  # Direct entry above this level means a checkpoint already completed the
+  # bridge, while direct entry at Level 28 correctly starts at damping 0.1.
+  wheel_damping_anneal_start_level: 28
+  # Advance the bridge only while the current actor is tracking safely. This
+  # prevents actuator dynamics from changing faster than PPO can adapt.
+  wheel_damping_anneal_adaptive: true
+  # The bridge must be allowed to cross the non-monotonic, damping-induced
+  # low-speed basin. This is only a reverse-runaway guard; the stage gate below
+  # stays at 0.15 m/s and remains authoritative for skill certification.
+  wheel_damping_anneal_max_linear_error_mps: 0.30
+  wheel_damping_anneal_min_stable_fraction: 0.45
+  # Bridge safety threshold only. The curriculum stage still requires 0.95
+  # survival before advancement; using that same final threshold here created
+  # a deadlock because high damping itself caused the remaining failures.
+  wheel_damping_anneal_min_survival_fraction: 0.92
+  action_clip: 1.0
+  leg_joint_limit_margin_rad: 0.02
+
+command:
+  linear_x_mps: 1.00
+  yaw_rate_rad_s: 0.30
+  # model_1225 is the last full-episode 1.0 m/s checkpoint. Recalibrate its
+  # command slot as tracking error at level 0 before introducing yaw.
+  start_level: 0
+  # Normal curriculum launches interpolate from the previous stage. A
+  # checkpoint already trained at the requested level can opt out through the
+  # --start_command_at_target CLI flag.
+  start_at_target: false
+  # Preserve the 25-D policy contract while closing the velocity loop. Legacy
+  # checkpoints use slot 7 for lateral error, so their first-layer column 7 must
+  # be zeroed once when migrating to the absolute target-speed meaning below.
+  # Fixed-policy sweep at 1.5 m/s + 0.10 rad/s: 0.6 produced 1.07 m/s,
+  # while 2.1 produced 1.40 m/s with 0.097 m/s temporal error, no torque
+  # saturation, low slip, and no terminations. Higher values had little gain.
+  observation_scale: [2.10, 0.50, 1.00]
+  # Keep the 25-D contract while making mixed-speed control Markov enough for
+  # one actor: [vx_error, target_vx, yaw_error]. Error-only observations made
+  # 1.0->0.5 and 1.75->1.25 indistinguishable despite requiring different
+  # inverted-pendulum feed-forward posture and wheel action.
+  observation_mode: tracking_error_with_target
+  observation_error_clip: 2.0
+  bootstrap_linear_x_mps: 1.00
+  bootstrap_yaw_rate_rad_s: 0.0
+  bootstrap_leg_scale_rad: 0.22
+  # Each level is held and gated independently. Turn signs alternate across
+  # environments so a persistent one-sided steering bias cannot pass the gate.
+  stages:
+    - {name: baseline_1p0_straight, linear_x_mps: 1.00, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.22}
+    - {name: baseline_1p0_turn_0p10, linear_x_mps: 1.00, yaw_rate_rad_s: 0.10, leg_scale_rad: 0.22}
+    - {name: baseline_1p0_turn_0p20, linear_x_mps: 1.00, yaw_rate_rad_s: 0.20, leg_scale_rad: 0.22}
+    - {name: baseline_1p0_turn_0p30, linear_x_mps: 1.00, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.22}
+    - {name: baseline_1p0_large_turn_0p45, linear_x_mps: 1.00, yaw_rate_rad_s: 0.45, leg_scale_rad: 0.22}
+    - {name: transition_1p5_straight, linear_x_mps: 1.50, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.24}
+    - {name: transition_1p5_turn_0p10, linear_x_mps: 1.50, yaw_rate_rad_s: 0.10, leg_scale_rad: 0.24}
+    - {name: transition_1p5_turn_0p20, linear_x_mps: 1.50, yaw_rate_rad_s: 0.20, leg_scale_rad: 0.24}
+    - {name: recovery_1p5_turn_0p30_strict, linear_x_mps: 1.50, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.24}
+    # Earlier loose gates advanced to the nominal 1.5 m/s stages while the
+    # deterministic actor only sustained about 1.1 m/s. Recover from measured
+    # capability, then ratchet the target in 0.10-0.15 m/s increments.
+    - {name: recovery_1p2_straight, linear_x_mps: 1.20, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.24}
+    - {name: transition_1p35_straight, linear_x_mps: 1.35, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.24}
+    - {name: transition_1p5_straight_strict, linear_x_mps: 1.50, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.24}
+    - {name: transition_1p6_straight, linear_x_mps: 1.60, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.242}
+    - {name: transition_1p75_straight, linear_x_mps: 1.75, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.245}
+    # Give the actor and rebuilt reward critic enough updates to learn the
+    # non-minimum-phase pitch/drive sequence instead of forcing 1.75->2.0 in 31
+    # iterations at 128x128 rollout throughput.
+    - {name: transition_2p0_straight, linear_x_mps: 2.00, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.25, transition_steps: 2000000}
+    # At 2.0 m/s, 0.25 rad/s gives 0.50 m/s^2 lateral acceleration and an
+    # 8 m turn radius: slightly harder than the 1.5 m/s, 0.30 rad/s turn.
+    # Level 15 is certified only inside 1.9-2.1 m/s. Earlier high-speed
+    # straight stages keep the shared 0.20 m/s acquisition gate.
+    - {name: transition_2p0_large_turn_0p25, linear_x_mps: 2.00, yaw_rate_rad_s: 0.25, leg_scale_rad: 0.25, transition_steps: 1000000, advance_linear_error_mps: 0.10}
+    # Keep actuator dynamics fixed while learning the next speed. A long ramp
+    # avoids combining a 0.5 m/s command jump with the removal of Level-15 yaw.
+    - {name: transition_2p5_straight, linear_x_mps: 2.50, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.265, transition_steps: 2000000}
+    # Give the actor roughly 122 updates at 128 envs x 128 rollout steps to
+    # adapt from 2.5 to 3.0 m/s. The default 500k transition gives only about
+    # 31 updates and changes the target faster than the high-speed actor adapts.
+    - {name: high_3p0_straight, linear_x_mps: 3.00, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.28, transition_steps: 2000000, survival_gate_steps: 800}
+    # Re-enter the certified 2.0 m/s turning basin before extending the speed
+    # envelope. This stage raises yaw from the retained 0.25 rad/s skill to the
+    # requested 0.30 rad/s and must pass both turn signs independently.
+    - {name: reinforce_2p0_bank_turn_0p30, linear_x_mps: 2.00, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.25, transition_steps: 1000000, advance_linear_error_mps: 0.10}
+    # Certify every 0.1 m/s bucket rather than treating 2.5 -> 3.2 m/s as one
+    # skill. Each stage gets its own transition, final-command hold, complete
+    # episode survival gate, and retained-skill gate.
+    - {name: recert_2p5_straight, linear_x_mps: 2.50, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: high_2p6_straight, linear_x_mps: 2.60, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.268, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    - {name: high_2p7_straight, linear_x_mps: 2.70, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.270, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    - {name: high_2p8_straight, linear_x_mps: 2.80, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.273, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    - {name: high_2p9_straight, linear_x_mps: 2.90, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.276, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    # Densely cover sub-3 m/s cornering. Adjacent speed anchors are at most
+    # 0.2 m/s apart (0.1 m/s from the nearest anchor), and both yaw magnitudes
+    # must pass independently in both turn directions.
+    - {name: bank_2p0_turn_0p15, linear_x_mps: 2.00, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p2_turn_0p15, linear_x_mps: 2.20, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.255, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p2_turn_0p30, linear_x_mps: 2.20, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.255, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p4_turn_0p15, linear_x_mps: 2.40, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.262, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p4_turn_0p30, linear_x_mps: 2.40, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.262, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p5_turn_0p15, linear_x_mps: 2.50, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p5_turn_0p30, linear_x_mps: 2.50, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p6_turn_0p15, linear_x_mps: 2.60, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.268, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p6_turn_0p30, linear_x_mps: 2.60, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.268, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p7_turn_0p15, linear_x_mps: 2.70, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.270, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p7_turn_0p30, linear_x_mps: 2.70, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.270, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p8_turn_0p15, linear_x_mps: 2.80, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.273, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p8_turn_0p30, linear_x_mps: 2.80, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.273, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p9_turn_0p15, linear_x_mps: 2.90, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.276, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: bank_2p9_turn_0p30, linear_x_mps: 2.90, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.276, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: high_3p0_straight_recert, linear_x_mps: 3.00, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.280, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    - {name: high_3p1_straight, linear_x_mps: 3.10, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.283, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    - {name: high_3p2_straight, linear_x_mps: 3.20, yaw_rate_rad_s: 0.0, leg_scale_rad: 0.286, transition_steps: 500000, advance_linear_error_mps: 0.15}
+    - {name: high_3p0_bank_turn_0p15, linear_x_mps: 3.00, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: high_3p0_bank_turn_0p30, linear_x_mps: 3.00, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: high_3p2_bank_turn_0p15, linear_x_mps: 3.20, yaw_rate_rad_s: 0.15, leg_scale_rad: 0.286, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: high_3p2_bank_turn_0p30, linear_x_mps: 3.20, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.286, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    # Entering this duplicate terminal stage proves that the preceding hardest
+    # stage passed every live gate. It also gives the trainer a concrete level
+    # at which --stop_at_command_level can save and stop deterministically.
+    - {name: terminal_3p2_turn_certified, linear_x_mps: 3.20, yaw_rate_rad_s: 0.30, leg_scale_rad: 0.286, transition_steps: 1, advance_linear_error_mps: 0.15}
+    # Extended turning phase requested for the final policy. These stages are
+    # appended after the legacy 0.30-rad/s curriculum so old level IDs and
+    # retention evidence remain stable. Both signs are evaluated separately.
+    - {name: ext_1p0_turn_0p6, linear_x_mps: 1.00, yaw_rate_rad_s: 0.60, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_0p8, linear_x_mps: 1.00, yaw_rate_rad_s: 0.80, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_1p0, linear_x_mps: 1.00, yaw_rate_rad_s: 1.00, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_1p2, linear_x_mps: 1.00, yaw_rate_rad_s: 1.20, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_1p4, linear_x_mps: 1.00, yaw_rate_rad_s: 1.40, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_1p6, linear_x_mps: 1.00, yaw_rate_rad_s: 1.60, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_1p8, linear_x_mps: 1.00, yaw_rate_rad_s: 1.80, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_2p0, linear_x_mps: 1.00, yaw_rate_rad_s: 2.00, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_2p25, linear_x_mps: 1.00, yaw_rate_rad_s: 2.25, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p0_turn_2p5, linear_x_mps: 1.00, yaw_rate_rad_s: 2.50, leg_scale_rad: 0.220, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_0p45, linear_x_mps: 1.50, yaw_rate_rad_s: 0.45, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_0p6, linear_x_mps: 1.50, yaw_rate_rad_s: 0.60, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_0p8, linear_x_mps: 1.50, yaw_rate_rad_s: 0.80, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_1p0, linear_x_mps: 1.50, yaw_rate_rad_s: 1.00, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_1p2, linear_x_mps: 1.50, yaw_rate_rad_s: 1.20, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_1p3, linear_x_mps: 1.50, yaw_rate_rad_s: 1.30, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_1p5, linear_x_mps: 1.50, yaw_rate_rad_s: 1.50, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_1p65, linear_x_mps: 1.50, yaw_rate_rad_s: 1.65, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_1p5_turn_1p8, linear_x_mps: 1.50, yaw_rate_rad_s: 1.80, leg_scale_rad: 0.240, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p0_turn_0p45, linear_x_mps: 2.00, yaw_rate_rad_s: 0.45, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p0_turn_0p6, linear_x_mps: 2.00, yaw_rate_rad_s: 0.60, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p0_turn_0p8, linear_x_mps: 2.00, yaw_rate_rad_s: 0.80, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p0_turn_1p0, linear_x_mps: 2.00, yaw_rate_rad_s: 1.00, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p0_turn_1p15, linear_x_mps: 2.00, yaw_rate_rad_s: 1.15, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p0_turn_1p3, linear_x_mps: 2.00, yaw_rate_rad_s: 1.30, leg_scale_rad: 0.250, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p5_turn_0p4, linear_x_mps: 2.50, yaw_rate_rad_s: 0.40, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p5_turn_0p55, linear_x_mps: 2.50, yaw_rate_rad_s: 0.55, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p5_turn_0p7, linear_x_mps: 2.50, yaw_rate_rad_s: 0.70, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p5_turn_0p85, linear_x_mps: 2.50, yaw_rate_rad_s: 0.85, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_2p5_turn_1p0, linear_x_mps: 2.50, yaw_rate_rad_s: 1.00, leg_scale_rad: 0.265, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_3p0_turn_0p4, linear_x_mps: 3.00, yaw_rate_rad_s: 0.40, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_3p0_turn_0p55, linear_x_mps: 3.00, yaw_rate_rad_s: 0.55, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_3p0_turn_0p7, linear_x_mps: 3.00, yaw_rate_rad_s: 0.70, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_3p0_turn_0p85, linear_x_mps: 3.00, yaw_rate_rad_s: 0.85, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+    - {name: ext_3p0_turn_1p0, linear_x_mps: 3.00, yaw_rate_rad_s: 1.00, leg_scale_rad: 0.280, transition_steps: 1000000, advance_linear_error_mps: 0.15}
+  gate_steps: 300
+  # The gate starts counting final-command hold time only after the current
+  # stage's transition_steps completes. Level 14/15 override the default below.
+  stage_hold_steps: 500000
+  # Final policy command-domain specification. Values are positive magnitudes;
+  # every anchor requires independent + and - yaw acceptance.
+  # Only opened extension anchors expand continuous sampling. Legacy levels
+  # retain their previous distribution; this is exploration, not certification.
+  extended_sampling_start_level: 47
+  final_turn_envelope:
+    - {speed_mps: 1.0, yaw_min_rad_s: 1.0, yaw_max_rad_s: 2.5, radius_min_m: 0.4, radius_max_m: 1.0}
+    - {speed_mps: 1.5, yaw_min_rad_s: 0.8, yaw_max_rad_s: 1.8, radius_min_m: 0.83, radius_max_m: 1.9}
+    - {speed_mps: 2.0, yaw_min_rad_s: 0.6, yaw_max_rad_s: 1.3, radius_min_m: 1.5, radius_max_m: 3.3}
+    - {speed_mps: 2.5, yaw_min_rad_s: 0.4, yaw_max_rad_s: 1.0, radius_min_m: 2.5, radius_max_m: 6.3}
+    - {speed_mps: 3.0, yaw_min_rad_s: 0.4, yaw_max_rad_s: 1.0, radius_min_m: 3.0, radius_max_m: 7.5}
+  # Default duration for stages without an explicit transition_steps override.
+  transition_steps: 500000
+  # Require most of the 1499-step episode, not only the initial gate window.
+  survival_gate_steps: 1200
+  # On-policy rehearsal: retain the previous command plus fixed low/medium
+  # turning anchors in 30% of envs from the first 1.5 m/s turn. This protects
+  # the speed/yaw basin while the active Level-8 turn is still being learned;
+  # PPO replay buffers are intentionally not reused.
+  rehearsal_enabled: true
+  rehearsal_fraction: 0.40
+  # Straight high-speed acquisition needs most on-policy samples at the active
+  # target. Fixed teacher replay continues protecting older turns while the
+  # live rehearsal share is reduced; restore the full share at the first
+  # high-speed yaw stage.
+  rehearsal_speed_focus_start_level: 13
+  rehearsal_speed_focus_end_level: 15
+  rehearsal_speed_focus_fraction: 0.15
+  # Begin rehearsal at Level 8. The previous 1.5 m/s + 0.20 rad/s turn is
+  # included automatically, while the fixed anchors protect earlier turns.
+  # Stage ids are zero-based: 1/3/4 are 1.0 m/s turns, 8 is the 1.5 m/s
+  # turn, 13 is the certified 1.75 m/s straight anchor, 15 is the certified
+  # 2.0 m/s large turn, and 16 protects the certified 2.5 m/s straight skill.
+  # The immediately previous stage is always added automatically as well.
+  rehearsal_start_level: 8
+  rehearsal_anchor_stage_ids: [1, 3, 4, 5, 8, 13, 15, 16, 18, 19, 21, 22, 23]
+  # Reserve most of the rehearsal cohort for the required low/medium/high turn
+  # anchors plus the certified 1.75 m/s straight skill. The remainder retains
+  # other earlier command stages.
+  rehearsal_priority_stage_ids: [4, 8, 15, 18, 23, 26, 28, 30, 32, 34, 36, 38, 43, 45]
+  # Levels 15/16 preserve the most relevant high-speed turn/straight skills;
+  # Levels 4/8/13 retain low/medium turns and the 1.75 m/s bridge.
+  rehearsal_priority_stage_weights: [0.02, 0.12, 0.12, 0.12, 0.20, 0.12, 0.07, 0.08, 0.08, 0.09, 0.09, 0.10, 0.06, 0.07]
+  rehearsal_priority_fraction: 0.85
+  # Advancement beyond these stages requires both left/right rehearsal cohorts
+  # to retain their speed, yaw and posture tracking. Gate only skills backed by
+  # passing deterministic evidence. Level 4 remains a sampled rehearsal anchor,
+  # but its available source has a 75% tilt-termination rate and must be trained
+  # and certified separately instead of making Level 16 impossible to leave.
+  rehearsal_gate_stage_ids: [8, 15, 18, 23, 26, 28, 30, 32, 34, 36, 38, 43, 45]
+  rehearsal_gate_min_samples: 300
+  # Tracking windows alone are survivor-biased: an episode that falls before
+  # gate_steps contributes no window sample. Require completed episodes for
+  # every retained stage and yaw sign, and count early falls as failures.
+  rehearsal_gate_min_episodes: 64
+  # Levels 13 and 14 certify straight 1.75/2.0 m/s acquisition. Keep sampling
+  # and logging the older turn anchors there, but do not let an inherited
+  # one-sided turn weakness block the straight-speed curriculum. Level 15 is
+  # the first 2.0 m/s yaw stage and must certify both turn directions plus the
+  # retained 1.0/1.5/1.75 m/s skills before advancing.
+  rehearsal_gate_enforce_start_level: 15
+  # High-speed PPO cannot learn a state it never visits. From the straight
+  # recovery stage onward, initialize only part of the non-rehearsal cohort
+  # near the commanded rolling speed. The curriculum gate explicitly excludes
+  # these assisted episodes, so advancement still proves a zero-speed start.
+  reset_speed_bootstrap_enabled: false
+  reset_speed_bootstrap_start_level: 9
+  # Keep target-state coverage but leave most active environments to learn the
+  # complete zero-speed acceleration and recovery trajectory.
+  reset_speed_bootstrap_fraction: 0.35
+  # Half of the bootstrap cohort is initialized exactly at v_cmd as a
+  # physically consistent target-state reference. The other half learns the
+  # final acceleration from a nearby but still underspeed state.
+  reset_speed_bootstrap_exact_target_fraction: 0.50
+  reset_speed_bootstrap_ratio_range: [0.80, 0.95]
+  # Match the rolling equilibrium instead of spawning a 3 m/s root at the
+  # zero-speed upright pose. The target uses the same signed pitch convention
+  # as command pitch tracking and is capped by command_pitch_target_max_deg.
+  reset_speed_bootstrap_match_pitch: false
+  min_posture_env_fraction: 0.90
+  # The long-horizon contact gate averages both main wheels over time.
+  min_wheel_contact_fraction: 0.55
+  # Per-step stability needs at least one main wheel in contact. Applying the
+  # 0.55 long-horizon threshold to two Boolean contacts required both wheels
+  # at every instant and falsely rejected normal turn-side unloading (0.5).
+  min_instantaneous_wheel_contact_fraction: 0.50
+  min_survival_env_fraction: 0.95
+  # Among environments which have a complete 300-step velocity window, at
+  # least 45% must satisfy the per-env speed/yaw/posture criteria. The mean
+  # speed error uses the stage-specific hard limit below. Not-ready periods do
+  # not update this EMA and therefore cannot be counted as failed samples.
+  min_stable_env_fraction: 0.45
+  min_ready_env_fraction: 0.70
+  # Low locomotion posture is allowed; 0.15 m requires physical contact validation.
+  min_operating_root_height_m: 0.15
+  advance_linear_error_mps: 0.35
+  # The 1.5 m/s large-yaw recovery itself must pass the strict speed gate. The
+  # old global 0.35 m/s limit could accept a substantially underspeed turn.
+  high_speed_gate_start_level: 8
+  # The fixed deterministic Level-13 policy has 0.079 m/s long-horizon error,
+  # while the stricter 300-step zero-reset episode metric is about 0.193 m/s.
+  # Use 0.20 for that temporal gate so launch acceleration is not mistaken for
+  # idling; the reward still penalizes underspeed from the first deficit.
+  high_speed_advance_linear_error_mps: 0.20
+  advance_yaw_error_rad_s: 0.05
+  # A turning stage must certify both command signs independently. Aggregate
+  # means alone can hide one failed direction behind the other successful half.
+  turn_gate_min_samples_per_direction: 300
+  # Active and rehearsal stages can have opposite weak yaw directions. Focus
+  # at most 65% of each stage's reset episodes on its larger normalized gate
+  # deficit while retaining at least 35% coverage of the other direction.
+  turn_adaptive_focus_start_level: 15
+  turn_adaptive_focus_fraction: 0.80
+  # A single favorable control step must not advance a level. Require one
+  # second of continuously passing aggregate metrics at the 125 Hz policy rate.
+  advance_confirmation_steps: 125
+
+# Training is intentionally split into separate task stages. Resume the same
+# PPO checkpoint when moving from stand -> command -> rough_robust.
+curriculum:
+  enabled: true
+  gate:
+    evaluation_steps: 2048
+    max_retries_per_stage: 3
+    stand:
+      min_upright_fraction: 0.95
+      max_mean_tilt_deg: 12.0
+      min_wheel_contact_fraction: 0.60
+      max_loop_residual_m: 0.005
+      max_mean_linear_velocity_error_mps: 0.20
+      max_mean_yaw_velocity_error_rad_s: 0.20
+      max_mean_height_error_m: 0.08
+      min_mean_leg_extension_score: 0.70
+      min_mean_wheel_height_score: 0.70
+      min_mean_roll_score: 0.70
+      min_mean_root_height_m: 0.20
+      max_mean_leg_symmetry_error_rad: 0.10
+      min_mean_attitude_score: 0.97
+      min_standing_fraction: 0.95
+      min_mean_leg_length_score: 0.70
+      max_wheel_force_imbalance: 0.35
+    command:
+      # Locomotion turns are intentionally asymmetric; symmetry is not a
+      # command-stage gate or reward term.
+      min_upright_fraction: 0.90
+      max_mean_tilt_deg: 15.0
+      min_wheel_contact_fraction: 0.55
+      max_loop_residual_m: 0.008
+      max_mean_linear_velocity_error_mps: 0.35
+      max_mean_yaw_velocity_error_rad_s: 0.05
+      min_forward_direction_fraction: 0.90
+      max_reverse_motion_fraction: 0.02
+      # Reject policies that have good mean speed only because frequent falls
+      # and resets cancel their temporal tracking error.
+      max_tilt_termination_rate: 0.10
+      min_yaw_direction_fraction: 0.90
+      min_mean_root_height_m: 0.15
+    rough_robust:
+      # Jump/rough contacts may require transient asymmetry; do not enforce
+      # the stand-stage left/right geometry constraint here.
+      min_upright_fraction: 0.85
+      max_mean_tilt_deg: 20.0
+      min_wheel_contact_fraction: 0.50
+      max_loop_residual_m: 0.012
+      max_mean_linear_velocity_error_mps: 0.55
+      max_mean_yaw_velocity_error_rad_s: 0.55
+      min_mean_root_height_m: 0.20
+  stand:
+    task: Robotics-Wheelbipe-V14-RMUC-Flat-v0
+    max_iterations: 3000
+  command:
+    task: Robotics-Wheelbipe-V14-RMUC-Command-v0
+    linear_x_mps: 3.00
+    yaw_rate_rad_s: 0.30
+    max_iterations: 3000
+  rough_robust:
+    task: Robotics-Wheelbipe-V14-RMUC-Rough-v0
+    observation_delay_steps: 2
+    push_interval_steps: 250
+    push_velocity_xy_mps: 0.5
+    friction_static_range: [0.4, 1.0]
+    friction_dynamic_range: [0.3, 0.8]
+    max_iterations: 5000
+
+reward:
+  upright_weight: 2.0
+  velocity_weight: 0.5
+  yaw_weight: 0.25
+  stillness_weight: 0.5
+  action_rate_weight: 0.01
+  energy_weight: 0.002
+  tilt_weight: 1.0
+  velocity_tolerance_mps: 0.4
+  command_velocity_tolerance_mps: 0.10
+  yaw_tolerance_rad_s: 0.5
+  command_yaw_tolerance_rad_s: 0.10
+  # All stand metrics are clipped/normalized in [0, 1] before weighting.
+  # A physically reachable contact height for this USD (wheel center at ~0.06 m).
+  stand_root_height_target_m: 0.40
+  stand_root_height_tolerance_m: 0.08
+  stand_leg_pose_tolerance_rad: 0.25
+  stand_symmetry_tolerance_rad: 0.20
+  stand_height_weight: 0.75
+  stand_leg_extension_weight: 0.75
+  stand_symmetry_weight: 0.50
+  stand_attitude_weight: 0.50
+  stand_contact_weight: 0.75
+  # Sagittal chassis-to-axle extension. The lateral half-track is excluded.
+  stand_leg_length_target_m: 0.34
+  stand_leg_length_tolerance_m: 0.05
+  stand_leg_length_weight: 0.75
+  stand_wheel_height_tolerance_m: 0.015
+  stand_roll_tolerance: 0.10
+  stand_geometry_symmetry_weight: 0.75
+  command_forward_weight: 3.00
+  command_progress_weight: 1.50
+  # Small bounded bonus for safely acquiring speed above the 1.0 m/s baseline.
+  # It is disabled on rehearsal cohorts and gated by upright/root-height/
+  # lateral-safety checks, so it cannot reward falling or uncontrolled sprinting.
+  command_high_speed_exploration_weight: 0.75
+  # Immediate credit for the non-minimum-phase acceleration sequence. Pure
+  # state tracking could not distinguish an actor that was approaching 1.5
+  # m/s from one braking a bootstrapped high-speed state back to 1.1 m/s.
+  # Both terms are bounded before weighting.
+  # Filter the 125 Hz speed difference before acquisition/regression shaping.
+  # Raw one-step velocity noise used to flip these two rewards every frame.
+  command_speed_delta_filter_tau_s: 0.16
+  command_speed_delta_scale_mps: 0.02
+  command_speed_acquisition_weight: 0.75
+  command_speed_regression_penalty_weight: 1.00
+  # Penalize low-pass speed error as well as instantaneous error. v49 reached
+  # 2 m/s on episode average but oscillated between propulsion and braking; the
+  # instantaneous reward did not make that long-horizon instability expensive.
+  command_filtered_speed_error_penalty_weight: 2.00
+  # Penalize the high-pass speed residual after the launch transient. This
+  # targets the propulsion/braking cycle that can have a good mean speed while
+  # failing mean(abs(v-v_cmd)); it does not increase the steady underspeed cost.
+  command_speed_oscillation_start_level: 13
+  command_speed_oscillation_tolerance_mps: 0.08
+  command_speed_oscillation_scale_mps: 0.20
+  command_speed_oscillation_penalty_weight: 2.00
+  # Penalize only excessive forward pitch and pitch-rate excursions.  Small
+  # pitch is required to accelerate the inverted pendulum, so the dead bands
+  # keep this term from suppressing normal high-speed propulsion.
+  # A safety barrier, not an operating-point cost. Normal 3 m/s balancing
+  # needs 4-8 deg pitch and brief angular-rate corrections; penalizing those
+  # made slowing down locally optimal. Keep that motion free, then increase
+  # cost through the recoverable pre-fall range instead of saturating early.
+  command_pitch_excess_tolerance_deg: 15.0
+  command_pitch_excess_scale_deg: 20.0
+  command_pitch_excess_penalty_weight: 5.00
+  command_pitch_rate_tolerance_rad_s: 1.50
+  command_pitch_rate_scale_rad_s: 3.00
+  command_pitch_rate_penalty_weight: 2.00
+  # At 2 m/s the stable Level-13 posture extrapolates to about 3 deg pitch.
+  # Track that signed operating point while allowing a little extra lean during
+  # acceleration; retain the broader absolute-pitch guard above as a backstop.
+  command_pitch_tracking_start_level: 14
+  command_pitch_target_deg_per_mps: 1.50
+  command_pitch_target_underspeed_gain_deg_per_mps: 1.50
+  command_pitch_target_max_deg: 5.00
+  command_pitch_tracking_tolerance_deg: 8.00
+  command_pitch_tracking_scale_deg: 20.00
+  command_pitch_tracking_penalty_weight: 2.00
+  # Long negative-yaw episodes showed a quiet 0.12-0.18 rad/s operating rate
+  # followed by a rapid 5+ rad/s pitch divergence. Preserve normal balancing,
+  # but make the pre-fall 0.75-2.25 rad/s band visible before termination.
+  command_high_speed_pitch_rate_tolerance_rad_s: 0.75
+  command_high_speed_pitch_rate_scale_rad_s: 1.50
+  command_high_speed_pitch_rate_penalty_weight: 5.00
+  # The negative-yaw Level-28 branch develops a persistent 0.11-0.18 rad/s
+  # pitch-rate oscillation long before the terminal 5+ rad/s excursion. Keep
+  # this narrow turn-only shaping signal small so it damps that oscillation
+  # without making the 2.4 m/s propulsion lean or straight skills expensive.
+  command_turn_pitch_rate_start_level: 28
+  command_turn_pitch_rate_tolerance_rad_s: 0.08
+  command_turn_pitch_rate_scale_rad_s: 0.16
+  command_turn_pitch_rate_penalty_weight: 0.50
+  command_tracking_error_penalty_weight: 3.00
+  # Use an absolute m/s band and scale. Dividing this term by target speed made
+  # a 0.2 m/s miss progressively cheaper at high-speed stages and left a broad
+  # 1.7-1.8 m/s local optimum under a 2.0 m/s command.
+  command_speed_error_margin_mps: 0.10
+  command_speed_error_scale_mps: 0.20
+  command_speed_error_penalty_weight: 6.00
+  command_tracking_error_tail_enabled: false
+  command_tracking_error_tail_gain: 0.10
+  # Bounded extra cost for being below the commanded speed. The environment
+  # normalizes this by target speed, preserving a non-saturating gradient at
+  # 1.0-3.0 m/s while the curriculum gate still uses absolute m/s error.
+  # Underspeed is penalized from the first velocity deficit; there is no
+  # dead-band that would make idling locally attractive.
+  command_underspeed_penalty_weight: 4.00
+  # Strong bounded cost for material idling. It is applied only to safe,
+  # active high-speed samples after the unavoidable launch transient, never
+  # to low/medium-speed rehearsal. Smoothstep avoids frame-to-frame reward
+  # shaking near one narrow threshold while preserving a strong bounded cost at
+  # large deficits. The physical-reset step counter enforces the grace period;
+  # RSL-RL's randomized logging episode age must not bypass it. Other tracking
+  # terms remain active from the first error.
+  command_severe_underspeed_start_level: 13
+  command_severe_underspeed_grace_steps: 150
+  command_severe_underspeed_margin_mps: 0.10
+  command_severe_underspeed_scale_mps: 0.40
+  command_severe_underspeed_penalty_weight: 10.00
+  command_reverse_penalty_weight: 2.00
+  # Mild overspeed is acceptable and safer than collapsing into the low-speed
+  # basin. Penalize only beyond +0.10 m/s, then ramp the bounded cost smoothly.
+  command_overspeed_margin_mps: 0.10
+  command_overspeed_scale_mps: 0.30
+  command_overspeed_penalty_weight: 1.50
+  command_yaw_weight: 2.00
+  command_yaw_tracking_penalty_weight: 1.50
+  # At Level 28+ the positive yaw reward is coupled to speed acquisition, so
+  # an underspeed turn receives too little yaw gradient. Add an active-turn
+  # penalty without changing lower-speed certified skills or rehearsal.
+  command_turn_yaw_tracking_start_level: 28
+  command_turn_yaw_tracking_penalty_weight: 5.00
+  command_yaw_stabilization_weight: 1.00
+  command_lateral_weight: 0.35
+  command_yaw_rate_penalty_weight: 0.25
+  command_wheel_sync_weight: 1.50
+  command_leg_sync_weight: 0.35
+  command_roll_penalty_weight: 0.40
+  # Coordinated-turn target: roll = -atan(v_cmd * yaw_cmd / g). This asks for
+  # only about 2.6 deg at 1.5 m/s and 0.30 rad/s, not an arbitrary large lean.
+  command_bank_tracking_weight: 1.50
+  command_bank_tolerance_deg: 1.50
+  # The narrow Gaussian above becomes nearly flat when the inherited policy
+  # banks several degrees in the wrong direction. Keep its precise optimum,
+  # but add a bounded dense error cost so both yaw signs can discover the
+  # coordinated lean instead of optimizing speed/yaw while remaining upright.
+  command_bank_error_penalty_weight: 2.00
+  command_bank_error_scale_deg: 6.00
+  # Turning requires controlled roll. These scales relax only roll/attitude
+  # shaping; height, wheel contact and command-tracking gates remain active.
+  command_turn_roll_scale: 0.25
+  command_turn_attitude_scale: 0.25
+  command_stillness_weight: 0.05
+  command_height_penalty_weight: 0.50
+  command_posture_weight: 0.40
+  command_stand_shape_weight: 0.50
+  # Locomotion has no fixed standing leg-length target; retain safety floors.
+  command_leg_length_preference_scale: 0.0
+  command_contact_weight: 0.25
+  command_min_height_m: 0.15
+  command_survival_bonus: 0.10
+  # Give PPO an immediate bounded signal for unsafe termination. Most legacy
+  # high-speed failures occur 7.5-9.2 s after the accelerating action sequence,
+  # still far beyond the 128-step (1.024 s) high-speed rollout credit horizon.
+  # Normal timeouts are not penalized.
+  command_termination_penalty_weight: 20.00
+  # Preserve the distinction between severe underspeed and an unsafe terminal
+  # transition. The old -10 floor clipped both to the same training return.
+  clip_min: -25.0
+  # With bank shaping scale=2, bounded positive command terms sum to <=14.85.
+  # A cap of 10 flattened rewards even at yaw error 0.06 (> the 0.05 gate).
+  # Preserve fine-tracking reward differences while retaining a finite guard.
+  clip_max: 20.0
+  stand_no_contact_penalty: 0.75
+
+ppo:
+  seed: 42
+  # A 64-step rollout covers 0.512 s at the 8 ms control period. The previous
+  # 32-step horizon was too short to credit the pitch-then-wheel sequence used
+  # by the inverted-pendulum speed controller.
+  num_steps_per_env: 64
+  max_iterations: 20000
+  # Keep denser recovery points for high-speed curriculum runs.
+  save_interval: 125
+  # Reward-shaping finetune starts from an already balanced actor. A fresh
+  # 0.12 exploration std destroys its speed/yaw basin, so keep the four leg
+  # channels narrow. High-speed adaptation must leave the two wheel channels
+  # trainable (the training command starts them at 0.02); freezing every
+  # channel at 0.004 leaves no usable exploration for the 1.5-3.0 m/s stages.
+  # The old checkpoint carried 0.0297 std on only the left hip versus 0.0037
+  # on the right, which made stochastic training roll/terminate while
+  # inference passed.
+  init_noise_std: 0.004
+  activation: elu
+  actor_hidden_dims: [128, 64, 32]
+  critic_hidden_dims: [256, 128, 64]
+  # Level-8 fine-tuning must preserve the already viable 1.5 m/s basin. Use a
+  # small fixed rate and one epoch; adaptive KL can raise the rate when the
+  # policy is temporarily quiet and recreate the late-training drift. Level-9
+  # can raise the rate explicitly after its checkpoint has passed the gate.
+  learning_rate: 0.00002
+  schedule: fixed
+  gamma: 0.99
+  lam: 0.95
+  clip_param: 0.10
+  value_loss_coef: 0.50
+  entropy_coef: 0.0
+  num_learning_epochs: 1
+  num_mini_batches: 4
+  desired_kl: 0.005
+  max_grad_norm: 1.0
+
+sensors:
+  contact_sensor_prim_regex: "{ENV_REGEX_NS}/Robot/(robot|left_wheel|right_wheel|.*_contact.*)"
+  wheel_sensor_prim_regex: "{ENV_REGEX_NS}/Robot/(left_wheel|right_wheel)"
+  history_length: 3
+  force_threshold_N: 2.0
+
+safety:
+  # All safety values are explicit configuration, never code constants.
+  estop:
+    tilt_deg: {real: 30.0, sim: 85.0}
+    position_explosion:
+      max_height_m: 5.0
+      # Hard safety floor only. Reward and curriculum gates enforce the
+      # desired >=0.20 m operating height without killing early exploration.
+      min_root_height_m: 0.08
+      max_velocity_mps: 10.0
+      # A full 12 s episode at 3 m/s travels 36 m. Keep a bounded safety radius
+      # while allowing the high-speed stages to complete without false resets.
+      max_xy_distance_m: 40.0
+  tilt_cost: {start_deg: 30.0, scale: 1.0}
+  torque:
+    limit_ratio_sim: 1.0
+    limit_ratio_real: 0.8
+    current_limit_A: 60.0
+  landing:
+    anticipation_s: 0.05
+    min_predicted_height_m: 0.25
+    descending_velocity_mps: -0.5
+    torque_scale: 0.5
+
+validation:
+  expected_articulation_roots: 1
+  expected_loop_constraints: 4
+  require_excluded_loop_constraints: true
+  require_finite_joint_limits: true
+  require_contact_sensor_config: true
+
+# Compatibility report for the legacy Wheelbipe V14 bookkeeping.  These names
+# are intentionally not added to the RMUC USD: renaming or duplicating joints
+# would change the hardware model.  The adapter maps the equivalent semantic
+# channels and reports direct V14 reuse as unsupported when names/counts differ.
+v14_compatibility:
+  legacy_required_joint_names:
+    - left_front1_joint
+    - right_front1_joint
+    - left_rear1_joint
+    - right_rear1_joint
+    - left_front2_joint
+    - right_front2_joint
+    - left_front3_joint
+    - right_front3_joint
+    - left_front4_joint
+    - right_front4_joint
+    - left_rear2_joint
+    - right_rear2_joint
+  legacy_required_body_patterns:
+    - base_link
+    - ".*_wheel_link"
+  expected_semantic_counts:
+    active_leg_joints: 4
+    wheel_joints: 2
+    spring_joints: 2
+    leg_joints: 12
+    leg_links: 12
+  leg_body_patterns:
+    - left_active_link
+    - left_long_link
+    - left_node_link
+    - left_parallel_link
+    - left_upper_leg
+    - left_lower_leg
+    - right_active_link
+    - right_long_link
+    - right_node_link
+    - right_parallel_link
+    - right_upper_leg
+    - right_lower_leg
+  adapter_mapping:
+    active_leg_joints: [right_active_link_pitch, right_hip_pitch, left_active_link_pitch, left_hip_pitch]
+    wheel_joints: [right_wheel_spin, left_wheel_spin]
+    leg_joints: 12
+    leg_links: 12
+    spring_joints: []
+  direct_reuse: false

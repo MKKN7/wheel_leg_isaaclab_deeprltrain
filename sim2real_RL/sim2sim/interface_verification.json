@@ -1,0 +1,10 @@
+{
+  "passed": true,
+  "samples": 1024,
+  "observation_max_abs_error": 0.0,
+  "consumer_max_abs_error": 0.0,
+  "onnx_jit_max_abs_error": 7.152557373046875e-07,
+  "training_source_sha256": "8fd515caef9790414451bb437c00833f2e5f022985592367183cf620ba006700",
+  "onnx_sha256": "8248685bea0fae43551caa15cc120b0a60b32fdf3ff441c1983a2af74074ab8d",
+  "scope": "Nominal observation, authority consumer and full ONNX/JIT parity only; no MuJoCo closed-loop, state estimator, actuator or DR certification."
+}

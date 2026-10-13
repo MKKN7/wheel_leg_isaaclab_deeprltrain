@@ -1,0 +1,24 @@
+# User-confirmed recovery terrain target; not automatically loaded by trainers.
+schema_version: 1
+enabled: false
+runtime_integration_verified: false
+maximum_inclination_degrees: 10.0
+stage_maximum_inclination_degrees: [0.0, 2.0, 4.0, 6.0, 8.0, 10.0]
+independent_of_dynamics_dr: true
+inclination_sampling: uniform_within_current_stage
+uphill_azimuth_range_degrees: [0.0, 360.0]
+flat_rehearsal_fraction: 0.25
+evaluation:
+  uphill_azimuth_degrees: [0.0, 90.0, 180.0, 270.0]
+  separate_flat_retention: true
+  four_recovery_directions: true
+  continuous_terminal_hold_required: true
+  final_joint_dynamics_and_slope_dr_required: true
+excluded_initial_states: [fully_overturned_chassis_up]
+geometry_contract:
+  gravity: unchanged_world_vertical
+  support_height: signed_distance_to_local_ground_plane
+  wheel_height_difference: relative_to_local_ground_plane
+  slope_angle: ground_plane_inclination_not_robot_fall_angle
+  initial_pose: rotate_audited_flat_start_with_ground_frame
+  certification: requires_native_collision_reset_and_behavior_verification

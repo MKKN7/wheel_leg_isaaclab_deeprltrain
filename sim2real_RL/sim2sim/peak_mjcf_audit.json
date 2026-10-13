@@ -1,0 +1,116 @@
+{
+  "passed": true,
+  "source": "/home/kellen/\u684c\u9762/11 (1)/11/wheeled-legged_RL/sim2real_RL/sim2sim/rmuc_usd_limits.xml",
+  "source_sha256": "b7c522abe35d9a00e0899b98d39d2b0526432856962dd6db8398e86ffde96f5f",
+  "profile_sha256": "385617f0a6eca70e4885414e7cb3808a94796d81da110555981d43f4fbf986db",
+  "output": "/home/kellen/\u684c\u9762/11 (1)/11/wheeled-legged_RL/sim2real_RL/sim2sim/rmuc_peak55.xml",
+  "output_sha256": "49757c2fef4362af1eabee83fca96c62477e050a46f77e50237ea5118ec1c9b8",
+  "continuous_reference_nm": 3.0,
+  "peak_limit_nm": 5.5,
+  "changes": [
+    {
+      "name": "left_wheel_motor",
+      "old_ctrlrange": "-3 3",
+      "old_forcerange": "-3 3",
+      "new_output_peak_nm": 5.5
+    },
+    {
+      "name": "right_wheel_motor",
+      "old_ctrlrange": "-3 3",
+      "old_forcerange": "-3 3",
+      "new_output_peak_nm": 5.5
+    }
+  ],
+  "unchanged_compiled_fields": [
+    "body_parentid",
+    "body_pos",
+    "body_quat",
+    "body_mass",
+    "body_inertia",
+    "jnt_type",
+    "jnt_axis",
+    "jnt_pos",
+    "jnt_range",
+    "qpos0",
+    "dof_damping",
+    "dof_armature",
+    "geom_type",
+    "geom_size",
+    "geom_pos",
+    "geom_quat",
+    "geom_friction",
+    "mesh_vert",
+    "mesh_face",
+    "eq_data",
+    "eq_type",
+    "eq_obj1id",
+    "eq_obj2id",
+    "actuator_gear",
+    "actuator_trnid"
+  ],
+  "scope": "MuJoCo peak-capacity profile only; no behavior, thermal or torque-speed-envelope certification",
+  "positive_negative_saturation_probe_passed": true,
+  "saturation_probe": [
+    {
+      "joint": "left_hip_pitch",
+      "sign": -1,
+      "actual_output_nm": -40.0
+    },
+    {
+      "joint": "left_active_link_pitch",
+      "sign": -1,
+      "actual_output_nm": -40.0
+    },
+    {
+      "joint": "left_wheel_spin",
+      "sign": -1,
+      "actual_output_nm": -5.5
+    },
+    {
+      "joint": "right_hip_pitch",
+      "sign": -1,
+      "actual_output_nm": -40.0
+    },
+    {
+      "joint": "right_active_link_pitch",
+      "sign": -1,
+      "actual_output_nm": -40.0
+    },
+    {
+      "joint": "right_wheel_spin",
+      "sign": -1,
+      "actual_output_nm": -5.5
+    },
+    {
+      "joint": "left_hip_pitch",
+      "sign": 1,
+      "actual_output_nm": 40.0
+    },
+    {
+      "joint": "left_active_link_pitch",
+      "sign": 1,
+      "actual_output_nm": 40.0
+    },
+    {
+      "joint": "left_wheel_spin",
+      "sign": 1,
+      "actual_output_nm": 5.5
+    },
+    {
+      "joint": "right_hip_pitch",
+      "sign": 1,
+      "actual_output_nm": 40.0
+    },
+    {
+      "joint": "right_active_link_pitch",
+      "sign": 1,
+      "actual_output_nm": 40.0
+    },
+    {
+      "joint": "right_wheel_spin",
+      "sign": 1,
+      "actual_output_nm": 5.5
+    }
+  ],
+  "builder_sha256": "adba5720a6f6da8c64a95c4b264f6bbd689882836de86706a9bc56366ea6fe20"
+}

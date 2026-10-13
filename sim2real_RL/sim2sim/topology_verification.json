@@ -1,0 +1,22 @@
+{
+  "reference": "/home/kellen/wheel_leg_sim2sim/assets/wheeled_infantry.xml",
+  "local_original_byte_identical": true,
+  "comparisons": {
+    "wheeled_infantry.xml": {
+      "bodies": true,
+      "joints": true,
+      "equality": true
+    },
+    "rmuc_training_v261.xml": {
+      "bodies": true,
+      "joints": true,
+      "equality": true
+    },
+    "rmuc_usd_limits.xml": {
+      "bodies": true,
+      "joints": true,
+      "equality": true
+    }
+  },
+  "scope": "body hierarchy and transforms, joint connectivity/axis/range, all equality constraints; no topology change"
+}

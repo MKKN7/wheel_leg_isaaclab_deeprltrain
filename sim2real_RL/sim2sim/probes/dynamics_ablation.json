@@ -1,0 +1,54 @@
+[
+  {
+    "name": "reference",
+    "path": "sim2real_RL/sim2sim/probes/v261_ablation_reference.json",
+    "stop_reason": "duration_reached",
+    "metrics": {
+      "samples": 625,
+      "mean_heading_speed": 0.8423780507313599,
+      "mean_yaw_rate": -1.5029675998301213,
+      "mean_abs_speed_error": 0.15762194926864012,
+      "mean_abs_yaw_error": 0.1029675998301213
+    },
+    "max_leg_velocity": 2.5570913244649747
+  },
+  {
+    "name": "dt002",
+    "path": "sim2real_RL/sim2sim/probes/v261_ablation_dt002.json",
+    "stop_reason": "duration_reached",
+    "metrics": {
+      "samples": 624,
+      "mean_heading_speed": 0.8430133008914193,
+      "mean_yaw_rate": -1.503339698770783,
+      "mean_abs_speed_error": 0.1569866991085807,
+      "mean_abs_yaw_error": 0.10333969877078303
+    },
+    "max_leg_velocity": 2.551583010309334
+  },
+  {
+    "name": "passive001",
+    "path": "sim2real_RL/sim2sim/probes/v261_ablation_passive001.json",
+    "stop_reason": "duration_reached",
+    "metrics": {
+      "samples": 625,
+      "mean_heading_speed": 0.8424975418656296,
+      "mean_yaw_rate": -1.502954827163288,
+      "mean_abs_speed_error": 0.1575024581343703,
+      "mean_abs_yaw_error": 0.10295482716328816
+    },
+    "max_leg_velocity": 2.624470002770545
+  },
+  {
+    "name": "combined",
+    "path": "sim2real_RL/sim2sim/probes/v261_ablation_combined.json",
+    "stop_reason": "duration_reached",
+    "metrics": {
+      "samples": 624,
+      "mean_heading_speed": 0.8431279928756985,
+      "mean_yaw_rate": -1.503327370652912,
+      "mean_abs_speed_error": 0.15687200712430147,
+      "mean_abs_yaw_error": 0.10332737065291188
+    },
+    "max_leg_velocity": 2.618906790923453
+  }
+]

@@ -1,0 +1,47 @@
+# Proposed isolated experiment contract; NOT loaded by the production trainer.
+schema_version: 1
+enabled_by_default: false
+units:
+  wheel_velocity: output_shaft_rad_per_s
+  wheel_effort: output_shaft_N_m
+policy:
+  observation_dim: 25
+  action_dim: 6
+  reference_checkpoint_provenance: artifacts/continuation_v208/status.json
+  previous_action_semantics: preserve_legacy_normalized_action_until_explicit_retraining
+legacy_equivalence:
+  controller: P
+  reference_rule: clipped_legacy_effort_target_divided_by_original_explicit_D
+  proportional_gain_rule: original_explicit_D
+  physics_period_s: 0.002
+  integral_gain: 0.0
+  purpose: verify_compute_path_only
+target_controller_proposal:
+  model: discrete_PI_conditional_integration_antiwindup
+  period_s: 0.002
+  proportional_gain_nm_per_rad_s: 0.2
+  integral_gain_nm_per_rad: 0.0
+  velocity_filter_tau_s: 0.0
+  output_effort_limit_nm: 3.0
+  speed_reference_limit_rad_s: 80.0
+  legacy_action_reference_scale_rad_s: 55.0
+  provenance: engineering_starting_point_P_gain_from_local_V14_not_hardware_calibration
+  real_software_limit_ratio: 0.8
+  real_effective_limit_nm_if_ratio_retained: 2.4
+  native_target_policy_verified: false
+mechanical_losses:
+  independent_of_controller_gain: true
+  prior_reference: configs/rmuc_hardware_target.yaml
+  passive_viscous_loss_identified: false
+  gearbox_friction_and_compliance_identified: false
+DR:
+  controller_gain_sampling_interface: kp_override_per_environment_and_wheel
+  sampling_enabled_by_default: false
+  uncertainty_ranges: pending_closed_loop_response_evidence
+  motor_response_transport_delay_and_mechanical_losses: separate_channels_no_double_counting
+validation_pending:
+  - native_target_3Nm_controller_behavior
+  - real_reference_response_current_and_saturation_measurements
+  - new_controller_command_action_and_previous_action_contract
+  - inward_bank_retraining_and_old_speed_retention
+  - full_multiseed_behavior_and_joint_maximum_DR

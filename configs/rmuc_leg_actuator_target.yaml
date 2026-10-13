@@ -1,0 +1,15 @@
+motor_model: DM-J8009P-2EC
+gear_ratio: 9.0
+model_and_ratio_source: user_confirmed
+parameter_frame: gearbox_output_joint
+nominal_velocity_limit_rad_s: 17.0
+nominal_armature_kg_m2: 0.015795
+parameter_source: local_V14_DM8009_reference_not_specific_model_measurement
+reference_rotor_inertia_kg_m2: 0.000195
+reference_reflection: rotor_inertia_times_gear_ratio_squared
+measured_calibration: false
+auto_apply_reference_nominal: false
+dr:
+  velocity_limit_rad_s: [12.0, 17.0]
+  armature_kg_m2: [0.008, 0.024]
+  source: provisional_engineering_ranges_pending_identification

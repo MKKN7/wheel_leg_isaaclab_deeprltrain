@@ -1,0 +1,18 @@
+{
+  "passed": true,
+  "force_law_max_abs_error": 3.552713678800501e-15,
+  "per_leg": [
+    {
+      "length": 0.34266131495399366,
+      "force_n": 10.775
+    },
+    {
+      "length": 0.3427265797031215,
+      "force_n": 10.775
+    }
+  ],
+  "net_free_root_generalized_force_max": 4.440892098500626e-16,
+  "generalized_power": -0.06923349555182333,
+  "finite_difference_power": -0.06923349468446194,
+  "scope": "Virtual radial force law and application-point mechanics; not an identified real gas-spring force/stroke law or behavior acceptance."
+}

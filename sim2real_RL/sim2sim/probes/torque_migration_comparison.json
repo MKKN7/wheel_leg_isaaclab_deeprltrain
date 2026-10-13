@@ -1,0 +1,101 @@
+[
+  {
+    "name": "legacy",
+    "command": [
+      "/home/kellen/anaconda3/envs/robot/bin/python",
+      "sim2real_RL/sim2sim/run_mujoco_probe.py",
+      "--xml",
+      "/home/kellen/wheel_leg_sim2sim/assets/wheeled_infantry.xml",
+      "--seconds",
+      "10",
+      "--speed",
+      "1",
+      "--yaw",
+      "-1.4",
+      "--sliding-friction",
+      "0.5",
+      "--wheel-action-scale",
+      "5.5",
+      "--wheel-effort-limit",
+      "5.5",
+      "--output",
+      "sim2real_RL/sim2sim/probes/v261_torque_legacy.json"
+    ],
+    "metrics": {
+      "samples": 625,
+      "mean_heading_speed": 0.7877358827188056,
+      "mean_yaw_rate": -1.5527093967587746,
+      "mean_abs_speed_error": 0.21226411728119432,
+      "mean_abs_yaw_error": 0.15270939675877457
+    },
+    "max_actual_wheel_torque_nm": [
+      1.3423315729718601,
+      1.1984420162628746
+    ],
+    "saturated_steps": 0
+  },
+  {
+    "name": "limit3",
+    "command": [
+      "/home/kellen/anaconda3/envs/robot/bin/python",
+      "sim2real_RL/sim2sim/run_mujoco_probe.py",
+      "--xml",
+      "/home/kellen/wheel_leg_sim2sim/assets/wheeled_infantry.xml",
+      "--seconds",
+      "10",
+      "--speed",
+      "1",
+      "--yaw",
+      "-1.4",
+      "--sliding-friction",
+      "0.5",
+      "--wheel-action-scale",
+      "5.5",
+      "--wheel-effort-limit",
+      "3",
+      "--output",
+      "sim2real_RL/sim2sim/probes/v261_torque_limit3.json"
+    ],
+    "metrics": {
+      "samples": 625,
+      "mean_heading_speed": 0.7877358827188056,
+      "mean_yaw_rate": -1.5527093967587746,
+      "mean_abs_speed_error": 0.21226411728119432,
+      "mean_abs_yaw_error": 0.15270939675877457
+    },
+    "max_actual_wheel_torque_nm": [
+      1.3423315729718601,
+      1.1984420162628746
+    ],
+    "saturated_steps": 0
+  },
+  {
+    "name": "scale3_limit3",
+    "command": [
+      "/home/kellen/anaconda3/envs/robot/bin/python",
+      "sim2real_RL/sim2sim/run_mujoco_probe.py",
+      "--xml",
+      "/home/kellen/wheel_leg_sim2sim/assets/wheeled_infantry.xml",
+      "--seconds",
+      "10",
+      "--speed",
+      "1",
+      "--yaw",
+      "-1.4",
+      "--sliding-friction",
+      "0.5",
+      "--wheel-action-scale",
+      "3",
+      "--wheel-effort-limit",
+      "3",
+      "--output",
+      "sim2real_RL/sim2sim/probes/v261_torque_scale3_limit3.json"
+    ],
+    "metrics": null,
+    "max_actual_wheel_torque_nm": [
+      1.8824676883905689,
+      0.8126339757350589
+    ],
+    "saturated_steps": 0
+  }
+]

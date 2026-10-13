@@ -1,0 +1,95 @@
+{
+  "measured_calibration": false,
+  "rows": [
+    {
+      "damping": 0.005,
+      "command": [
+        "/home/kellen/anaconda3/envs/robot/bin/python",
+        "sim2real_RL/sim2sim/run_mujoco_probe.py",
+        "--seconds",
+        "10",
+        "--speed",
+        "1",
+        "--yaw",
+        "-1.4",
+        "--radial-force",
+        "10.775",
+        "--wheel-damping",
+        "0.005",
+        "--output",
+        "sim2real_RL/sim2sim/probes/v261_damping_0.005.json"
+      ],
+      "elapsed": 4.343999999999744,
+      "stop_reason": "tilt_or_height_diagnostic_limit",
+      "metrics": null,
+      "wheel_peak": [
+        1.681079748350174,
+        2.755152281571138
+      ]
+    },
+    {
+      "damping": 0.0425,
+      "command": [
+        "/home/kellen/anaconda3/envs/robot/bin/python",
+        "sim2real_RL/sim2sim/run_mujoco_probe.py",
+        "--seconds",
+        "10",
+        "--speed",
+        "1",
+        "--yaw",
+        "-1.4",
+        "--radial-force",
+        "10.775",
+        "--wheel-damping",
+        "0.0425",
+        "--output",
+        "sim2real_RL/sim2sim/probes/v261_damping_0.0425.json"
+      ],
+      "elapsed": 5.999999999999561,
+      "stop_reason": "tilt_or_height_diagnostic_limit",
+      "metrics": {
+        "samples": 125,
+        "mean_heading_speed": -0.5611466892794679,
+        "mean_yaw_rate": -2.270779385588564,
+        "mean_abs_speed_error": 1.561146689279468,
+        "mean_abs_yaw_error": 0.8707793855885639
+      },
+      "wheel_peak": [
+        2.002990579609339,
+        1.9464020712410286
+      ]
+    },
+    {
+      "damping": 0.08,
+      "command": [
+        "/home/kellen/anaconda3/envs/robot/bin/python",
+        "sim2real_RL/sim2sim/run_mujoco_probe.py",
+        "--seconds",
+        "10",
+        "--speed",
+        "1",
+        "--yaw",
+        "-1.4",
+        "--radial-force",
+        "10.775",
+        "--wheel-damping",
+        "0.08",
+        "--output",
+        "sim2real_RL/sim2sim/probes/v261_damping_0.08.json"
+      ],
+      "elapsed": 10.000000000000009,
+      "stop_reason": "duration_reached",
+      "metrics": {
+        "samples": 624,
+        "mean_heading_speed": 0.020613997102379482,
+        "mean_yaw_rate": -1.4623697257065977,
+        "mean_abs_speed_error": 0.9793860028976206,
+        "mean_abs_yaw_error": 0.06337820775368297
+      },
+      "wheel_peak": [
+        1.413305135187442,
+        1.1985107605506071
+      ]
+    }
+  ]
+}

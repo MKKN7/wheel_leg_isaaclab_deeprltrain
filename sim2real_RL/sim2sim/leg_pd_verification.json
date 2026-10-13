@@ -1,0 +1,11 @@
+{
+  "passed": true,
+  "samples": 1024,
+  "max_abs_error_nm": 0.0,
+  "positive_saturated": 1349,
+  "negative_saturated": 1345,
+  "source_sha256": "105f0341f972102f6bd5b0c544bc7c0510662241389a9decd24406bb2371d27e",
+  "clip_source_sha256": "de715f048558dfeb9917ec48d7a110e6942eef6f242e9bab379281e8398beedb",
+  "hardware_controller_verified": false,
+  "scope": "PD algebra and output clipping only; firmware timing, current conversion, filters and limits still require hardware validation"
+}

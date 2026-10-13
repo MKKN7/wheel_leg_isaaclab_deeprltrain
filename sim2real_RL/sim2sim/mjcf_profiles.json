@@ -1,0 +1,44 @@
+{
+  "source_xml_sha256": "663e121ef9aed4bfab09ff0d3d98321b7ce77d80b63584235e4da691bd3aebf3",
+  "source_usd_sha256": "6bf6ce7f64f8d46cdc759bdf48dba0def85f6e9e6915acca27c543dbcf031a27",
+  "source_training_params_sha256": "c507d5b19302baff6c0b68ab09a44e3d840fd0bb2960da9c47b7cf4f0a29fa75",
+  "profiles": [
+    {
+      "profile": "training_v261",
+      "file": "rmuc_training_v261.xml",
+      "sha256": "c9441cee98b91c34121e01311d6ffb6d16097c7397d1e8b194754b926ed417ba",
+      "joint_output_limits_nm": {
+        "left_hip_pitch": 40.0,
+        "left_active_link_pitch": 40.0,
+        "left_wheel_spin": 5.5,
+        "right_hip_pitch": 40.0,
+        "right_active_link_pitch": 40.0,
+        "right_wheel_spin": 5.5
+      },
+      "geometry_inertia_unchanged": true,
+      "positive_negative_saturation_probe_passed": true
+    },
+    {
+      "profile": "usd_limits",
+      "file": "rmuc_usd_limits.xml",
+      "sha256": "b7c522abe35d9a00e0899b98d39d2b0526432856962dd6db8398e86ffde96f5f",
+      "joint_output_limits_nm": {
+        "left_hip_pitch": 40.0,
+        "left_active_link_pitch": 40.0,
+        "left_wheel_spin": 3.0,
+        "right_hip_pitch": 40.0,
+        "right_active_link_pitch": 40.0,
+        "right_wheel_spin": 3.0
+      },
+      "geometry_inertia_unchanged": true,
+      "positive_negative_saturation_probe_passed": true
+    }
+  ],
+  "scope": "Explicit torque units/limits and nominal parameters only; not complete physics parity or final hardware certification.",
+  "remaining": [
+    "Contact solver equivalence",
+    "PhysX velocity limits",
+    "Radial spring and measured damping",
+    "DR and whole behavior acceptance"
+  ]
+}
