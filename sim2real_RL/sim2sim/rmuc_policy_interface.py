@@ -49,7 +49,7 @@ def build_observation(*, angular_velocity_body, gravity_body,
                            (pos-default)[LEG_INDICES], vel*.05, history)).astype(np.float32)
 
 
-def consume_action(observation, action):
+def consume_action(observation, action, speed_plateau_end=1.0):
     """Exact nominal authority clipping; physical joint limits remain required."""
     obs = _vector(observation, 25, "observation")
     action = _vector(action, 6, "action")
@@ -57,8 +57,13 @@ def consume_action(observation, action):
     yaw = obs[2] / np.float32(.25) + obs[8]
     # Mirror env._compute_policy_action, not the smooth actor/helper gates:
     # float rounding immediately next to support boundaries can differ.
-    active = (speed > np.float32(.8) and speed < np.float32(1.2)
-              and abs(yaw) > np.float32(.4501))
+    if not np.isfinite(speed_plateau_end) or speed_plateau_end < 1.0:
+        raise ValueError('Invalid position authority speed plateau')
+    def smooth(value, low, high):
+        t = np.clip((value-np.float32(low))/np.float32(high-low), np.float32(0), np.float32(1))
+        return t*t*(np.float32(3)-np.float32(2)*t)
+    support = smooth(speed, .8, 1.) * (np.float32(1)-smooth(speed, speed_plateau_end, speed_plateau_end+.2))
+    active = support * (smooth(yaw, .4501, .6)+smooth(-yaw, .4501, .6)) > 0
     limits = np.ones(6, dtype=np.float32)
     if active:
         limits[[0, 3]] = 1.+.15/.22

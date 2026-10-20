@@ -151,6 +151,15 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_enabled = False
     rough_terrain_enabled = False
     friction_randomization_enabled = False
+    # Opt-in pair material; legacy source and experiments remain unchanged.
+    arena_ground_severity = -1.0
+    arena_ground_profile_path = str(_PROJECT_ROOT / "configs" / "rmuc_arena_ground.json")
+    arena_ground_migration_progress = -1.0
+    arena_ground_randomization_enabled = False
+    arena_ground_severity_range = (0.0, 1.0)
+    base_com_randomization_enabled = False
+    base_com_max_offset_flu_m = (0.01, 0.01, 0.005)
+    base_com_randomization_strength = 0.0
     push_enabled = False
     observation_delay_steps = 0
     push_interval_steps = 0
@@ -285,6 +294,9 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     # Only separated_passive_v1 uses this explicit PD compute sample/hold.
     leg_pd_update_period_s = 0.002
     separated_wheel_physics_dt_s = 0.001  # 0.002 is an explicit training/diagnostic approximation.
+    # Explicit diagnostic overlay; empty preserves every legacy wheel path.
+    real2sim_wheel_profile: str = ""
+    real2sim_end_to_end_delay: bool = False
     wheel_torque_contract = str(_CONTROL.get("wheel_torque_contract", "legacy_idealpd"))
     wheel_mechanical_viscous_nm_s_rad = float(_CONTROL.get("wheel_mechanical_viscous_nm_s_rad", 0.002))
     wheel_coulomb_friction_nm = float(_CONTROL.get("wheel_coulomb_friction_nm", 0.001))
@@ -325,6 +337,15 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     leg_actuator_armature_dr_range = tuple(_DOMAIN_RANDOMIZATION.get("leg_armature_range_kg_m2", (0.008, 0.024)))
     command_low_speed_turn_yaw_tracking_enabled = False
     command_small_turn_dense_yaw_weight = 0.0
+    command_straight_alignment_weight = 0.0
+    command_straight_alignment_tolerance_deg = 2.0
+    command_straight_alignment_scale_deg = 6.0
+    command_reverse_alignment_scale_deg = 0.0
+    command_exact_low_speed_reward_enabled = False
+    command_leg_scale_profile = None
+    # Opt-in zero-command precision; no deployment feedback or position target.
+    command_idle_micro_speed_penalty_weight = 0.0
+    command_idle_micro_speed_scale_mps = 0.005
     command_small_turn_dense_yaw_max_rad_s = 0.4501
     command_low_speed_turn_yaw_error_scale_rad_s = 0.10
     wheel_authored_effort_limit_nm = float(
@@ -551,6 +572,22 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_rehearsal_fraction = float(_COMMAND.get("rehearsal_fraction", 0.30))
     # Additional training cohort; excluded from fixed-command certificates.
     command_continuous_sampling_fraction = float(_COMMAND.get("continuous_sampling_fraction", 0.0))
+    # Optional training-only straight cohort; does not change the 25D/6D interface.
+    command_continuous_straight_speed_range = ()
+    # Opt-in episode-time [seconds, vx, yaw] for the existing continuous cohort.
+    command_training_sequence = ()
+    command_random_speed_range = ()
+    command_random_hold_s = (2.0, 4.0)
+    command_random_ramp_s = (0.4, 0.8)
+    command_random_step_fraction = 0.5
+    command_random_stop_probability = 0.1
+    command_random_max_delta_mps = 1.5
+    command_random_isolated_rng = False
+    command_dynamic_tracking_weight = 0.0
+    command_dynamic_tracking_include_fixed_reverse = False
+    command_dynamic_tracking_scale_mps = 0.5
+    command_dynamic_stop_posture_weight = 0.0
+    command_dynamic_matched_filter_enabled = False
     command_speed_extension_sampling_box = ()
     command_speed_extension_anchors = ()
     command_speed_extension_anchor_fraction = 0.0
@@ -585,6 +622,7 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
             (1.0,) * len(command_rehearsal_priority_stage_ids),
         )
     )
+    command_rehearsal_stratified_coverage = False
     command_rehearsal_priority_fraction = float(
         _COMMAND.get("rehearsal_priority_fraction", 0.75)
     )

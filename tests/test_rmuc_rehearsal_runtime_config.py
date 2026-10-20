@@ -37,7 +37,10 @@ def test_explicit_paired_weights_and_empty_priority_allowed():
 def test_validation_precedes_simulation_construction():
     cls = next(n for n in TREE.body if isinstance(n, ast.ClassDef) and n.name == 'RmucWheelLegEnv')
     init = next(n for n in cls.body if isinstance(n, ast.FunctionDef) and n.name == '__init__')
-    calls = [ast.unparse(node) for node in init.body[:3]]
-    assert calls[0] == 'self._separated_wheel_passive = configure_wheel_torque_contract(cfg)'
-    assert calls[1] == 'validate_rehearsal_priority_config(cfg)'
-    assert calls[2].startswith('super().__init__')
+    # End-to-end timing configuration may precede these checks; the invariant
+    # is that both validations run before simulator allocation.
+    calls = [ast.unparse(node) for node in init.body]
+    wheel = calls.index('self._separated_wheel_passive = configure_wheel_torque_contract(cfg)')
+    rehearsal = calls.index('validate_rehearsal_priority_config(cfg)')
+    construction = next(i for i, call in enumerate(calls) if call.startswith('super().__init__'))
+    assert wheel < rehearsal < construction

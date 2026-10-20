@@ -2,6 +2,22 @@
 from __future__ import annotations
 
 import torch
+from collections.abc import Mapping
+
+
+def validate_leg_scale_profile(profile):
+    """Explicit absolute-speed action mapping shared by all command cohorts."""
+    import math
+    if not isinstance(profile, Mapping) or set(profile) != {'schema_version','speed_abs_mps','scale_rad'} or profile['schema_version'] != 1:
+        raise ValueError('Explicit schema1 leg-scale profile required')
+    speeds, scales = profile['speed_abs_mps'], profile['scale_rad']
+    if (len(speeds) < 2 or len(speeds) != len(scales)
+            or any(isinstance(v,bool) or not isinstance(v,(float,int)) or not math.isfinite(v) for v in [*speeds,*scales])
+            or speeds[0] != 0 or speeds[-1] > 3.2
+            or any(b <= a for a,b in zip(speeds,speeds[1:]))
+            or any(not 0 < v <= 1 for v in scales)):
+        raise ValueError('Ordered nonnegative speed knots and positive leg scales required')
+    return list(speeds), list(scales)
 
 
 def sample_speed_extension_commands(count, bounds, *, device, anchors=(), anchor_fraction=0.0):

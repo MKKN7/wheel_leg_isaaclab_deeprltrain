@@ -16,5 +16,11 @@ def main():
  reg=[r for key,r in by.items() if r['survival']+1e-6<old[key]['survival']]
  minimum=min(r['completed_episodes'] for r in rows);ratio=len(retained)/len(required)
  report=dict(student_sha256=sha,teacher_sha256=baseline['checkpoint_sha256'],passed=minimum>=32 and ratio>=.9 and not reg and not lost,promoted=False,minimum_episodes=minimum,retention_fraction=ratio,retained=len(retained),teacher_passed=len(required),total_passed=sum(r['passed'] for r in rows),lost_conditions=lost,survival_regressions=reg,required_count_90_percent=math.ceil(.9*len(required)),mandatory_skill_policy='All previously accepted teacher skills retained;90percent alone does not override required skills',limitations=['Isaac same-contract gate only; MuJoCo/FSM/CubeAI/board timing require separate evidence'])
- a.output.write_text(json.dumps(report,indent=2));print(json.dumps({k:v for k,v in report.items() if k not in ['lost_conditions','survival_regressions']},indent=2))
+ import sys
+ sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+ from rmuc_strict_acceptance import audit
+ report['legacy_retention_passed']=report['passed']
+ report['strict_acceptance']=audit(dict(rows=rows,bank_contract=baseline.get('bank_contract')))
+ report['passed']=report['legacy_retention_passed'] and report['strict_acceptance']['passed']
+ a.output.write_text(json.dumps(report,indent=2));print(json.dumps({k:v for k,v in report.items() if k not in ['lost_conditions','survival_regressions','strict_acceptance']},indent=2))
 if __name__=='__main__':main()

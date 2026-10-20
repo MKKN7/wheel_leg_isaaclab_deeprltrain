@@ -34,7 +34,8 @@ def test_reset_cohort_quota_and_partial_reset_preserve_existing_commands():
         command_stage_linear_x_mps=[0.,1.,2.],command_stage_yaw_rate_rad_s=[0.,.3,.3])
     env=SimpleNamespace(cfg=cfg,num_envs=100,device='cpu',_command_level=2,
         _continuous_command_mask=torch.zeros(100,dtype=torch.bool),_continuous_commands=torch.zeros(100,3),
-        _rehearsal_mask=torch.arange(100)<60)
+        _rehearsal_mask=torch.arange(100)<60,
+        _random_speed_sequence=None, _training_sequence_table=None)
     fn=method('_refresh_continuous_commands');fn(env,torch.arange(100))
     assert env._continuous_command_mask.sum()==15
     assert not (env._continuous_command_mask&env._rehearsal_mask).any()
@@ -127,7 +128,8 @@ def test_actual_env_reset_consumes_extension_configuration():
         command_final_turn_envelope=cfg['final_turn_envelope'],command_extended_sampling_start_level=47)
     env=SimpleNamespace(cfg=runtime,num_envs=2000,device='cpu',_command_level=len(speeds)-1,
         _continuous_command_mask=torch.zeros(2000,dtype=torch.bool),_continuous_commands=torch.zeros(2000,3),
-        _rehearsal_mask=torch.arange(2000)<1200)
+        _rehearsal_mask=torch.arange(2000)<1200,
+        _random_speed_sequence=None, _training_sequence_table=None)
     method('_refresh_continuous_commands')(env,torch.arange(2000))
     assert env._continuous_command_mask.sum()==400
     x=env._continuous_commands[env._continuous_command_mask]
@@ -138,3 +140,31 @@ def test_invalid_extension_envelope_rejected():
     with pytest.raises(ValueError):
         m.sample_opened_commands(10,[1.,2.],[.3,.3],1,extended_start_level=0,
             final_turn_envelope=[{'speed_mps':2.,'yaw_max_rad_s':1.},{'speed_mps':1.,'yaw_max_rad_s':2.}])
+
+
+def test_straight_continuous_covers_intermediate_speeds_without_yaw_or_future_speed():
+    x=m.sample_opened_commands(10000,[.25,.5,1.,1.5,3.2],[0,.3,2.5,1.8,0],3,
+        generator=torch.Generator().manual_seed(31),straight_speed_range=(.5,1.5))
+    assert .5 <= x[:,0].min() < .51 and 1.49 < x[:,0].max() <= 1.5
+    assert x[:,1:].count_nonzero()==0
+    assert torch.unique(x[:,0]).numel()>9900
+    with pytest.raises(ValueError):
+        m.sample_opened_commands(10,[.25,1.5,3.2],[0,0,0],1,straight_speed_range=(.5,2.))
+
+
+def test_straight_runtime_cohort_keeps_rehearsal_and_rejects_conflicting_sampler():
+    cfg=SimpleNamespace(command_continuous_sampling_fraction=.1,curriculum_stage=1,play=False,
+        feedback_contract_by_command=True,command_reward_contract_by_command=True,
+        command_rehearsal_fraction=.75,command_rehearsal_speed_focus_fraction=.3,
+        command_stage_linear_x_mps=[.25,.5,1.,1.5],command_stage_yaw_rate_rad_s=[0,.3,1.4,.3],
+        command_continuous_straight_speed_range=(.5,1.5))
+    env=SimpleNamespace(cfg=cfg,num_envs=1000,device='cpu',_command_level=3,
+        _continuous_command_mask=torch.zeros(1000,dtype=torch.bool),_continuous_commands=torch.zeros(1000,3),
+        _rehearsal_mask=torch.arange(1000)<750,
+        _random_speed_sequence=None, _training_sequence_table=None)
+    method('_refresh_continuous_commands')(env,torch.arange(1000))
+    assert env._continuous_command_mask.sum()==100
+    assert not env._continuous_command_mask[:750].any()
+    assert env._continuous_commands[env._continuous_command_mask,1:].count_nonzero()==0
+    cfg.command_speed_extension_sampling_box=(1.,1.5,.6,1.)
+    with pytest.raises(ValueError):method('_refresh_continuous_commands')(env,torch.arange(1000))

@@ -36,6 +36,15 @@ def checkpoint_observation_contract(payload):
     return observation_contract() if recorded is None else validate_observation_contract(recorded)
 
 
+def validate_checkpoint_leg_scale_contract(payload, cfg):
+    """An explicitly bound action map must not silently disappear on resume."""
+    recorded = (payload.get('infos') or {}).get('rmuc_action_leg_scale_profile')
+    current = getattr(cfg, 'command_leg_scale_profile', None)
+    if recorded is not None and current != recorded:
+        raise ValueError('Training leg-scale profile differs from checkpoint action contract')
+    return dict(checkpoint_bound=recorded is not None, profile=copy.deepcopy(current))
+
+
 def configure_checkpoint_observation_contract(runner, cfg):
     contract = observation_contract(cfg)
     runner.alg.get_policy().rmuc_observation_contract = copy.deepcopy(contract)
@@ -44,6 +53,8 @@ def configure_checkpoint_observation_contract(runner, cfg):
     def save(path, infos=None):
         info = dict(infos or {})
         info['rmuc_observation_contract'] = copy.deepcopy(contract)
+        if getattr(cfg, 'command_leg_scale_profile', None) is not None:
+            info['rmuc_action_leg_scale_profile'] = copy.deepcopy(cfg.command_leg_scale_profile)
         return original(path, infos=info)
 
     runner.save = save
@@ -51,6 +62,13 @@ def configure_checkpoint_observation_contract(runner, cfg):
 
 def required_training_commands(cfg):
     """Gate IDs do not feed the sampler: validate the actual reachable pool."""
+    continuous = getattr(cfg, 'command_continuous_sampling_fraction', 0.)
+    rehearsal = max(cfg.command_rehearsal_fraction,
+                    getattr(cfg, 'command_rehearsal_speed_focus_fraction', 0.))
+    if not math.isfinite(continuous) or not 0 <= continuous <= .25:
+        raise ValueError('Invalid continuous sampling fraction')
+    if continuous > 0 and continuous + rehearsal >= .9:
+        raise ValueError('Continuous/rehearsal cohorts must leave more than10% fixed active environments')
     active = cfg.command_start_level
     ids = tuple(cfg.command_rehearsal_priority_stage_ids)
     weights = tuple(cfg.command_rehearsal_priority_stage_weights)
@@ -80,6 +98,22 @@ def required_training_commands(cfg):
         pairs.add((float(vx), float(yaw)))
         if yaw:
             pairs.add((float(vx), -float(yaw)))
+    sequence = getattr(cfg, 'command_training_sequence', ())
+    if sequence:
+        if not 0 < getattr(cfg, 'command_continuous_sampling_fraction', 0) <= .25:
+            raise ValueError('Training sequence has no reachable continuous cohort')
+        for row in sequence:
+            if len(row) != 3 or not all(isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v) for v in row):
+                raise ValueError('Finite training sequence rows required')
+            pairs.add((float(row[1]), float(row[2])))
+    random_range = getattr(cfg, 'command_random_speed_range', ())
+    if random_range:
+        if sequence or not 0 < getattr(cfg, 'command_continuous_sampling_fraction', 0) <= .25:
+            raise ValueError('Random sequence requires an exclusive reachable continuous cohort')
+        lo, hi = random_range
+        if not (math.isfinite(lo) and math.isfinite(hi) and -1.5 <= lo < hi <= 3.2):
+            raise ValueError('Invalid random speed domain')
+        pairs.update((float(v), 0.) for v in random_range)
     if any(abs(yaw) > cfg.command_yaw_observation_error_clip for _, yaw in pairs):
         raise ValueError('Yaw clip aliases a required command at rest')
     return sorted(pairs)
@@ -158,7 +192,10 @@ def validate_trainable_target_gate(state, vx, yaw, *, physics_only=False, local_
                 return 1.-t*t*(3.-2.*t)
             gate=gate*fade((obs[:,7]/.5).abs(),domain[0],domain[1])*fade(obs[:,8].abs(),domain[2],domain[3])
     else:
-        pos, neg = PositionAuthorityHead.gates(obs)
+        end=float(state.get("rmuc_position_authority.speed_plateau_end",1.0))
+        if not math.isfinite(end) or not 1.0 <= end <= 1.5:
+            raise ValueError("Invalid authority speed plateau")
+        pos, neg = PositionAuthorityHead.gates(obs,end)
         gate = pos + neg
         prefix = 'rmuc_position_authority.local_correction.'
         if prefix + 'centers' in state:

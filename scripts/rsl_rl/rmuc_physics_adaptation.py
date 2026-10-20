@@ -99,6 +99,129 @@ class PhysicsAdaptation(nn.Module):
         return (smooth((speed-d[0])/(d[1]-d[0]))*(1.-smooth((speed-d[2])/(d[3]-d[2])))
                 *smooth((yaw-d[4])/(d[5]-d[4]))*(1.-smooth((yaw-d[6])/(d[7]-d[6]))))
 
+    def install_alignment_network(self, budget, domain):
+        """Opt-in zero-output alignment head; does not widen inherited budgets."""
+        if hasattr(self, 'alignment_network'):
+            raise ValueError('Alignment head already installed')
+        b = torch.as_tensor(budget, dtype=self.budget.dtype, device=self.budget.device)
+        d = torch.as_tensor(domain, dtype=self.budget.dtype, device=self.budget.device)
+        if (b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any()
+                or (b > .5).any() or d.shape != (4,) or not torch.isfinite(d).all()
+                or not (-.05 <= d[0] < d[1] and 0 <= d[1] <= d[2] < d[3] <= 1.7)):
+            raise ValueError('Finite bounded alignment budget and ordered forward-speed domain required')
+        self.register_buffer('alignment_budget', b.clone())
+        self.register_buffer('alignment_domain', d.clone())
+        self.alignment_network = copy.deepcopy(self.network)
+        nn.init.zeros_(self.alignment_network[-1].weight)
+        nn.init.zeros_(self.alignment_network[-1].bias)
+
+    def alignment_gate(self, observation):
+        d = self.alignment_domain
+        speed = observation[..., 7] / .5
+        yaw = observation[..., 2] / .25 + observation[..., 8]
+        def smooth(t):
+            t = t.clamp(0., 1.)
+            return t*t*(3.-2.*t)
+        # Match the measured straight-only reward. Nonzero turn commands
+        # remain outside the new head; actual yaw still enters its network.
+        original = (smooth((speed-d[0])/(d[1]-d[0]))
+                * (1.-smooth((speed-d[2])/(d[3]-d[2])))
+                * (yaw.abs() <= 1e-4).to(observation.dtype))
+        return original + PhysicsAdaptation._straight_bridge_extra(self, observation, True)
+
+    def install_straight_bridge(self):
+        """Opt-in convex fill of the gap between existing straight branches.
+
+        This changes only the previously incomplete transition interval. Existing
+        checkpoints and the ongoing training run keep their original gates.
+        """
+        if not hasattr(self, 'straight_extension_network') or hasattr(self, 'straight_bridge_enabled'):
+            raise ValueError('A single bridge requires both existing straight networks')
+        self.register_buffer('straight_bridge_enabled', self.budget.new_tensor(1.))
+
+    def _straight_bridge_extra(self, observation, low_branch):
+        if not hasattr(self, 'straight_bridge_enabled'):
+            return torch.zeros_like(observation[..., 7])
+        a, b = self.alignment_domain, self.straight_extension_domain
+        v=observation[...,7]/.5
+        def smooth(t):
+            t=t.clamp(0.,1.)
+            return t*t*(3.-2.*t)
+        low=smooth((v-a[0])/(a[1]-a[0]))*(1.-smooth((v-a[2])/(a[3]-a[2])))
+        high=smooth((v-b[0])/(b[1]-b[0]))*(1.-smooth((v-b[2])/(b[3]-b[2])))
+        missing=(1.-low-high).clamp(0.,1.)
+        blend=smooth((v-a[2])/(b[1]-a[2]))
+        yaw=observation[...,2]/.25+observation[...,8]
+        active=((v>a[2]) & (v<b[1]) & (yaw.abs()<=1e-4) & (observation[...,8].abs()<1.99))
+        return missing*(1.-blend if low_branch else blend)*active.to(v.dtype)
+
+    def correction_bound(self):
+        alignment = getattr(self, 'alignment_budget', torch.zeros_like(self.budget))
+        extension = getattr(self, 'straight_extension_budget', torch.zeros_like(self.budget))
+        reverse = getattr(self, 'reverse_budget', torch.zeros_like(self.budget))
+        # Base domains are disjoint; optional bridge is a convex combination.
+        return self.budget + torch.maximum(alignment, extension) + reverse
+
+    def install_reverse_network(self, budget, domain):
+        """Explicit zero-output reverse-only branch; forward routing is untouched."""
+        if hasattr(self, 'reverse_network'):
+            raise ValueError('Reverse branch already installed')
+        b = torch.as_tensor(budget, dtype=self.budget.dtype, device=self.budget.device)
+        d = torch.as_tensor(domain, dtype=self.budget.dtype, device=self.budget.device)
+        if (b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any()
+                or (b > .5).any() or d.shape != (4,) or not torch.isfinite(d).all()
+                or not -1.5 <= d[0] < d[1] <= d[2] < d[3] <= 0):
+            raise ValueError('Bounded reverse budget and ordered negative speed domain required')
+        self.register_buffer('reverse_budget', b.clone())
+        self.register_buffer('reverse_domain', d.clone())
+        self.reverse_network = copy.deepcopy(self.network)
+        nn.init.zeros_(self.reverse_network[-1].weight)
+        nn.init.zeros_(self.reverse_network[-1].bias)
+
+    def reverse_gate(self, observation):
+        d = self.reverse_domain
+        speed = observation[..., 7] / .5
+        yaw = observation[..., 2] / .25 + observation[..., 8]
+        def smooth(t):
+            t = t.clamp(0., 1.)
+            return t*t*(3.-2.*t)
+        return (smooth((speed-d[0])/(d[1]-d[0]))
+                * (1.-smooth((speed-d[2])/(d[3]-d[2])))
+                * (yaw.abs() <= 1e-4).to(observation.dtype))
+
+    def install_straight_extension(self, budget, domain):
+        """Checkpoint-defined forward-straight branch, disjoint from crawl.
+
+        Existing domains stay unchanged; an explicitly migrated checkpoint may
+        extend through 3.2 m/s with a bounded fade-out ending at most 3.4.
+        """
+        if hasattr(self, 'straight_extension_network') or not hasattr(self, 'alignment_network'):
+            raise ValueError('Straight extension requires existing crawl alignment and one new head only')
+        b = torch.as_tensor(budget, device=self.budget.device, dtype=self.budget.dtype)
+        d = torch.as_tensor(domain, device=self.budget.device, dtype=self.budget.dtype)
+        if (b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any() or (b > .5).any()
+                or d.shape != (4,) or not torch.isfinite(d).all()
+                or not float(self.alignment_domain[3]) <= d[0] < d[1] <= d[2] < d[3] <= 3.4):
+            raise ValueError('Straight extension must be bounded and not overlap crawl alignment')
+        self.register_buffer('straight_extension_budget', b.clone())
+        self.register_buffer('straight_extension_domain', d.clone())
+        self.straight_extension_network = copy.deepcopy(self.network)
+        nn.init.zeros_(self.straight_extension_network[-1].weight)
+        nn.init.zeros_(self.straight_extension_network[-1].bias)
+
+    def straight_extension_gate(self, observation):
+        d = self.straight_extension_domain
+        speed = observation[..., 7] / .5
+        error = observation[..., 8]
+        yaw = observation[..., 2] / .25 + error
+        def smooth(t):
+            t = t.clamp(0.,1.)
+            return t*t*(3.-2.*t)
+        original = (smooth((speed-d[0])/(d[1]-d[0]))
+                * (1.-smooth((speed-d[2])/(d[3]-d[2])))
+                * ((yaw.abs() <= 1e-4) & (error.abs() < 1.99)).to(observation.dtype))
+        return original + PhysicsAdaptation._straight_bridge_extra(self, observation, False)
+
     def frozen_reference_gate(self,observation):
         d=self.frozen_reference_update_domain
         speed=observation[...,7]/.5
@@ -163,7 +286,7 @@ class PhysicsAdaptation(nn.Module):
             gate=gate*fade(speed,self.update_domain[0],self.update_domain[1])*fade(yaw,self.update_domain[2],self.update_domain[3])
         return gate
 
-    def correction(self,observation):
+    def _legacy_correction(self,observation):
         output = torch.tanh(self.network(observation))
         if hasattr(self,'network_anchor'):
             anchor=torch.tanh(self.network_anchor(observation))
@@ -187,6 +310,22 @@ class PhysicsAdaptation(nn.Module):
         # Share the existing physical residual envelope; do not double authority.
         delta = torch.maximum(torch.minimum(delta, self.budget-inherited), -self.budget-inherited)
         return inherited + delta
+
+    def correction(self, observation):
+        original = self._legacy_correction(observation)
+        if hasattr(self, 'reverse_network'):
+            original = original + (self.reverse_gate(observation)[..., None]
+                * self.reverse_budget * torch.tanh(self.reverse_network(observation)))
+        if not hasattr(self, 'alignment_network'):
+            return original
+        result = original + (self.alignment_gate(observation)[..., None]
+                           * self.alignment_budget
+                           * torch.tanh(self.alignment_network(observation)))
+        if hasattr(self, 'straight_extension_network'):
+            result = result + (self.straight_extension_gate(observation)[..., None]
+                               * self.straight_extension_budget
+                               * torch.tanh(self.straight_extension_network(observation)))
+        return result
 
     def forward(self,observation,source_action):
         return source_action+self.correction(observation)

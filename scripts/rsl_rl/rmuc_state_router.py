@@ -136,12 +136,32 @@ class IsolatedTurnStateRouter(nn.Module):
 
     def turn_branch_output(self, name, observation):
         original = getattr(self, name)(observation)
-        copies = getattr(self, 'speed_extensions', None)
+        copies = getattr(self, 'post_authority_anchors', getattr(self, 'speed_extensions', None))
         if copies is None or name not in copies:
             return original
         weight = self.speed_extension_gate(observation)[..., None]
         # Convex replacement: retain each original branch's output budget.
         return original + weight * (copies[name](observation) - original)
+
+    def install_post_authority_extensions(self, budget=(.3,.3,.06,.3,.3,.06)):
+        """Freeze the existing pre-clip behavior; learn only a bounded post-clip delta."""
+        import copy
+        if not hasattr(self, 'speed_extensions') or hasattr(self, 'post_authority_anchors'):
+            raise ValueError('One explicit migration of existing speed extensions required')
+        bound=torch.as_tensor(budget,device=self.budget.device,dtype=self.budget.dtype).detach().clone()
+        maximum=self.budget.new_tensor([.3,.3,.06,.3,.3,.06])
+        if bound.shape!=(6,) or not torch.isfinite(bound).all() or not ((bound>0)&(bound<=maximum)).all():
+            raise ValueError('Invalid bounded post-authority action correction')
+        self.post_authority_anchors=copy.deepcopy(self.speed_extensions).requires_grad_(False)
+        self.register_buffer('post_authority_budget',bound)
+
+    def post_authority_correction(self, observation):
+        delta=torch.zeros_like(observation[..., :6])
+        for direction in ('positive','negative'):
+            for name,module,gate in self.speed_extension_branches(observation,direction):
+                scale=self.budget if name in ('extended_positive_1p0','extended_negative_1p0') else 1.
+                delta=delta+gate[...,None]*scale*(module(observation)-self.post_authority_anchors[name](observation))
+        return torch.maximum(torch.minimum(delta,self.post_authority_budget),-self.post_authority_budget)
 
     def speed_extension_branches(self, observation, direction):
         if direction not in ('positive', 'negative'):

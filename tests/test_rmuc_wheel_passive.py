@@ -48,6 +48,18 @@ def test_unsupported_explicit_period_fails_closed():
     with pytest.raises(ValueError):m.configure_wheel_torque_contract(cfg)
 
 
+def test_declared_hardware_peak_is_shared_by_training_and_simulator():
+    cfg=config();cfg.wheel_authored_effort_limit_nm=4.89
+    motor=cfg.robot_cfg.actuators['wheel_motors']
+    motor.effort_limit=motor.effort_limit_sim=4.89
+    assert m.configure_wheel_torque_contract(cfg)
+    assert cfg.wheel_torque_scale_nm==5.5
+    motor.effort_limit_sim=5.5
+    with pytest.raises(ValueError,match='Simulator'):m.configure_wheel_torque_contract(cfg)
+    motor.effort_limit_sim=4.89;motor.effort_limit=5.5
+    with pytest.raises(ValueError,match='declared'):m.configure_wheel_torque_contract(cfg)
+
+
 @pytest.mark.parametrize('field,value', [('wheel_torque_contract','bad'),
     ('wheel_damping_anneal_target',0.),('wheel_damping_compensation_ratio',.1),
     ('wheel_coulomb_omega_eps_rad_s',0.),('wheel_mechanical_viscous_nm_s_rad',-1.),
@@ -248,3 +260,14 @@ def test_separated_forces_backend_spring_order_legacy_preserves_history():
     cfg.wheel_torque_contract='separated_passive_v1'
     m.configure_wheel_torque_contract(cfg);assert cfg.gas_spring_quaternion_order=='xyzw'
     assert cfg.robot_cfg.actuators['wheel_motors'].damping==0.
+
+
+def test_explicit_lower_electromagnetic_peak_keeps_action_scale():
+    cfg=config()
+    cfg.robot_cfg.actuators['wheel_motors'].effort_limit=2.4469479
+    with pytest.raises(ValueError):m.configure_wheel_torque_contract(cfg)
+    cfg.diagnostic_wheel_peak_nm=2.4469479
+    assert m.configure_wheel_torque_contract(cfg)
+    assert cfg.wheel_torque_scale_nm==5.5
+    cfg.diagnostic_wheel_peak_nm=float('nan')
+    with pytest.raises(ValueError):m.configure_wheel_torque_contract(cfg)

@@ -11,6 +11,7 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 bank_reference = runpy.run_path(str(ROOT/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg/bank_geometry.py'))['bank_reference']
+tracking_targets = runpy.run_path(str(ROOT/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg/low_speed_tracking.py'))['tracking_targets']
 
 
 def reward_function():
@@ -21,7 +22,8 @@ def reward_function():
     stop = next(i for i, n in enumerate(fn.body) if isinstance(n, ast.Assign)
                 and any(isinstance(t, ast.Name) and t.id == 'clipped_reward' for t in n.targets))
     fn.body = fn.body[:stop + 1] + ast.parse('return reward, command_pitch_tracking_score, command_filtered_speed_error_score').body
-    namespace = {'torch': torch, 'math': math, 'bank_reference': bank_reference}
+    namespace = {'torch': torch, 'math': math, 'bank_reference': bank_reference,
+                 'tracking_targets': tracking_targets, 'rebase_aligned_history': runpy.run_path(str(ROOT/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg/low_speed_tracking.py'))['rebase_aligned_history']}
     exec(compile(ast.fix_missing_locations(ast.Module(body=[fn], type_ignores=[])), str(path), 'exec'), namespace)
     return namespace['_get_rewards']
 
@@ -71,6 +73,8 @@ def make_env():
         _policy_actions=torch.zeros(count, 6), _previous_actions=torch.zeros(count, 6),
         _control_dof_ids=list(range(6)), _rehearsal_mask=torch.zeros(count, dtype=torch.bool),
         _previous_command_aligned_speed=velocity[:, 0] - .03,
+        _previous_filtered_command_target=torch.zeros(count),
+        _previous_reward_direction=torch.ones(count),
         _previous_command_aligned_speed_valid=torch.ones(count, dtype=torch.bool),
         _curriculum_step_counter=torch.full((count,), 1300),
         _last_termination_reasons={'tilt': zeros.bool()})
@@ -311,3 +315,60 @@ def test_operator_tracking_reward_has_no_analytic_bank_shaping():
     torch.testing.assert_close(reward(env)[0],original,rtol=0,atol=0)
     env.cfg.command_require_analytic_bank=True
     assert not torch.equal(reward(env)[0],original)
+
+
+def test_exact_low_speed_fix_preserves_actual_regular_reward():
+    env, reward = make_env(), reward_function()
+    env.cfg.command_reward_contract_by_command = True
+    before = reward(env)
+    env.cfg.command_exact_low_speed_reward_enabled = True
+    after = reward(env)
+    assert all(torch.equal(a,b) for a,b in zip(before,after))
+
+
+def test_actual_filtered_reward_sees_idle_drift_and_creep_target():
+    env, reward = make_env(), reward_function()
+    env.cfg.command_reward_contract_by_command = True
+    env.cfg.command_speed_error_margin_mps = .02
+    command=env._current_command();command.zero_()
+    command[:,0]=torch.tensor([0.,0.,0.,.05,-.05,.1])
+    gravity,velocity,angular=env._state();angular.zero_()
+    velocity.zero_();velocity[:,0]=torch.tensor([0.,-.1,.1,.05,-.05,.1])
+    env._previous_command_aligned_speed_valid.zero_()
+    legacy=reward(env)[2]
+    env.cfg.command_exact_low_speed_reward_enabled = True
+    fixed=reward(env)[2]
+    assert legacy[0]>0 and legacy[3]>0  # old .1 target leaked into reference
+    assert fixed[0]==0 and (fixed[3:]==0).all()
+    assert fixed[1]==fixed[2] and fixed[1]>.9
+    assert torch.isfinite(reward(env)[0]).all()
+
+
+def test_idle_micro_speed_penalty_actual_reward_is_symmetric_and_local():
+    env, reward = make_env(), reward_function()
+    env.cfg.command_reward_contract_by_command = True
+    env.cfg.command_exact_low_speed_reward_enabled = True
+    command = env._current_command(); command.zero_()
+    command[4, 0] = .05
+    command[5, 2] = 1.
+    _, velocity, _ = env._state()
+    velocity.zero_(); velocity[:, 0] = torch.tensor([0., .0025, .005, -.005, .005, .005])
+    baseline = reward(env)[0]
+    env.cfg.command_idle_micro_speed_penalty_weight = 1.
+    changed = reward(env)[0]
+    torch.testing.assert_close(baseline-changed, torch.tensor([0., .2, .5, .5, 0., 0.]), atol=1e-5, rtol=0)
+    assert torch.equal(baseline[4:], changed[4:])
+    env._rehearsal_mask.fill_(True)
+    assert torch.equal(changed, reward(env)[0])
+
+
+def test_idle_micro_speed_opt_in_preserves_regular_reward_and_validates_scale():
+    import pytest
+    env, reward = make_env(), reward_function()
+    baseline = reward(env)[0]
+    env.cfg.command_idle_micro_speed_penalty_weight = 1.
+    assert torch.equal(baseline, reward(env)[0])
+    for scale in (0., -1., float('nan'), float('inf')):
+        env.cfg.command_idle_micro_speed_scale_mps = scale
+        with pytest.raises(ValueError, match='Idle micro-speed'):
+            reward(env)

@@ -82,13 +82,30 @@ def install_rmuc_physics_adaptation(actor, state=None):
         if depth > 3:
             raise ValueError('At most three frozen physical migration stages are supported')
         inner = reconstruct(prefix+'frozen_source.',depth+1) if prefix+'frozen_source.network.0.weight' in state else None
-        return PhysicsAdaptation(inner, update_domain=state.get(prefix+'update_domain'),
+        module = PhysicsAdaptation(inner, update_domain=state.get(prefix+'update_domain'),
                                  scoped_network_domain=state.get(prefix+'scoped_network_domain'),
                                  positive_update_domain=state.get(prefix+'positive_update_domain'),
                                  positive_straight_enabled=state.get(prefix+'positive_straight_enabled'),
                                  reference_update_domain=state.get(prefix+'reference_update_domain'),
                                  frozen_reference_update_domain=state.get(prefix+'frozen_reference_update_domain'),
                                  network_update_domain=state.get(prefix+'network_update_domain'))
+        if prefix+'alignment_network.0.weight' in state:
+            if depth:
+                raise ValueError('Alignment head is supported only at the outer physics stage')
+            module.install_alignment_network(state[prefix+'alignment_budget'], state[prefix+'alignment_domain'])
+        if prefix+'straight_extension_network.0.weight' in state:
+            if depth:
+                raise ValueError('Straight extension is supported only at outer physics stage')
+            module.install_straight_extension(state[prefix+'straight_extension_budget'], state[prefix+'straight_extension_domain'])
+        if prefix+'straight_bridge_enabled' in state:
+            if float(state[prefix+'straight_bridge_enabled']) != 1.:
+                raise ValueError('Explicit straight bridge flag must be one')
+            module.install_straight_bridge()
+        if prefix+'reverse_network.0.weight' in state:
+            if depth:
+                raise ValueError('Reverse branch is supported only at outer physics stage')
+            module.install_reverse_network(state[prefix+'reverse_budget'], state[prefix+'reverse_domain'])
+        return module
     if head is None:
         head = (reconstruct('rmuc_physics_adaptation.') if state is not None else PhysicsAdaptation()).to(actor.mlp[0].weight.device)
         actor.add_module('rmuc_physics_adaptation', head)
@@ -166,6 +183,13 @@ def install_rmuc_state_router(actor, state=None):
                 or not 0.4501 <= float(domain[2]) < float(domain[3]) <= 1.0):
             raise ValueError('Invalid low-yaw speed blend contract')
         router.register_buffer('low_yaw_speed_blend',domain.to(router.budget).clone())
+    if state is not None:
+        anchor_present=any(k.startswith('rmuc_state_router.post_authority_anchors.') for k in state)
+        bound=state.get('rmuc_state_router.post_authority_budget')
+        if anchor_present != (bound is not None):
+            raise ValueError('Post-authority migration requires both frozen anchors and budget')
+        if anchor_present:
+            router.install_post_authority_extensions(bound)
     actor.add_module('rmuc_state_router', router)
     return router
 
@@ -822,6 +846,15 @@ def install_rmuc_turn_adapter(
         position_authority = getattr(self, 'rmuc_position_authority', None)
         if position_authority is not None:
             mlp_output = position_authority(latent, mlp_output)
+        if state_router is not None and hasattr(state_router, 'post_authority_anchors'):
+            if position_authority is None:
+                raise ValueError('Post-authority correction requires an authority consumer')
+            from rmuc_position_authority import execute_authority_action
+            post_output = execute_authority_action(
+                latent, mlp_output + state_router.post_authority_correction(latent),
+                getattr(position_authority, 'speed_plateau_end', 1.0))
+            pos,neg=position_authority.gates(latent,getattr(position_authority,'speed_plateau_end',1.0))
+            mlp_output = torch.where((pos+neg)[...,None]>0,post_output,mlp_output)
         physics_adaptation = getattr(self, 'rmuc_physics_adaptation', None)
         if physics_adaptation is not None:
             mlp_output = physics_adaptation(latent, mlp_output)

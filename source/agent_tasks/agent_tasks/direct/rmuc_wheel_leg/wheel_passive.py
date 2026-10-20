@@ -33,8 +33,18 @@ def configure_wheel_torque_contract(cfg):
     if cfg.wheel_damping_anneal_target >= 0 or cfg.wheel_damping_compensation_ratio != 0:
         raise ValueError('Separated wheel passive contract forbids legacy damping anneal/compensation')
     actuator = cfg.robot_cfg.actuators['wheel_motors']
-    if cfg.wheel_torque_scale_nm != 5.5 or actuator.effort_limit != 5.5:
-        raise ValueError('Separated wheel contract requires wheel-side action scale and motor peak 5.5 Nm')
+    declared_peak = getattr(cfg, 'wheel_authored_effort_limit_nm', 5.5)
+    # Historical configs can leave the USD limit unspecified (infinity).
+    # Explicit deployment contracts must also be usable by the training path.
+    declared_peak = declared_peak if math.isfinite(declared_peak) else 5.5
+    expected_peak = getattr(cfg, 'diagnostic_wheel_peak_nm', declared_peak)
+    if not math.isfinite(expected_peak) or not 0 < expected_peak <= 5.5:
+        raise ValueError('Diagnostic electromagnetic peak must be finite in (0,5.5]')
+    if cfg.wheel_torque_scale_nm != 5.5 or actuator.effort_limit != expected_peak:
+        raise ValueError('Separated wheel contract requires action scale 5.5 and actuator peak matching the declared contract')
+    simulator_peak = getattr(actuator, 'effort_limit_sim', None)
+    if simulator_peak is not None and simulator_peak != expected_peak:
+        raise ValueError('Simulator and electromagnetic wheel peaks must match')
     if getattr(cfg, 'leg_pd_update_period_s', 0.002) != 0.002:
         raise ValueError('Separated contract requires leg PD update period 0.002 s')
     feedback_damping_is_active_motor(cfg)

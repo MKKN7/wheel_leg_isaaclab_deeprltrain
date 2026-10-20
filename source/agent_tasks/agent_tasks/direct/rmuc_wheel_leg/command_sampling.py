@@ -24,7 +24,8 @@ def _interpolate_inside(values, knots, limits):
 
 
 def sample_opened_commands(count, stage_speeds, stage_yaws, level, *, device='cpu', generator=None,
-                           final_turn_envelope=None, extended_start_level=None):
+                           final_turn_envelope=None, extended_start_level=None,
+                           straight_speed_range=None):
     """Sample vx uniformly and signed yaw under conservative adjacent bounds.
 
     Opened means eligible for training, not certified. No command is a gate
@@ -37,6 +38,13 @@ def sample_opened_commands(count, stage_speeds, stage_yaws, level, *, device='cp
     if not torch.isfinite(speeds).all() or not torch.isfinite(yaws).all() or (speeds<0).any():
         raise ValueError('Opened forward command bounds must be finite and nonnegative')
     knots=torch.unique(speeds,sorted=True)
+    if straight_speed_range:
+        bounds=torch.as_tensor(straight_speed_range,device=device,dtype=torch.float32)
+        if (bounds.shape != (2,) or not torch.isfinite(bounds).all()
+                or not knots[0] <= bounds[0] < bounds[1] <= knots[-1]):
+            raise ValueError('Straight sampling range must stay inside opened forward speeds')
+        vx=bounds[0]+torch.rand(count,device=device,generator=generator)*(bounds[1]-bounds[0])
+        return torch.stack((vx,torch.zeros_like(vx),torch.zeros_like(vx)),dim=-1)
     vx=knots[0]+torch.rand(count,device=device,generator=generator)*(knots[-1]-knots[0])
     # A straight-only stage is not evidence that turns are forbidden there.
     # Interpolate conservatively between opened TURN anchors separately.
@@ -74,3 +82,20 @@ def sample_opened_commands(count, stage_speeds, stage_yaws, level, *, device='cp
                 bound = torch.maximum(bound, torch.minimum(opened, target))
     yaw=(2*torch.rand(count,device=device,generator=generator)-1)*bound
     return torch.stack((vx,torch.zeros_like(vx),yaw),dim=-1)
+def ensure_priority_sign_coverage(sampled_stages, positive_mask, priority_stages):
+    """Reserve each priority once per fixed sign on sufficiently large resets.
+
+    Keep the weighted random remainder and leave small asynchronous reset batches
+    unchanged, so repeated single-env resets cannot collapse to the first stage.
+    Does not draw randomness or mutate the caller's sampled assignments.
+    """
+    positive = positive_mask.nonzero(as_tuple=True)[0]
+    negative = (~positive_mask).nonzero(as_tuple=True)[0]
+    count = priority_stages.numel()
+    if not count or min(positive.numel(), negative.numel()) < count:
+        return sampled_stages
+    result = sampled_stages.clone()
+    result[positive[:count]] = priority_stages
+    result[negative[:count]] = priority_stages
+    return result
+

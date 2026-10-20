@@ -34,6 +34,8 @@ def main():
                         help='JSON list of {policy_step,vx,yaw}; overrides fixed speed/yaw, no resets')
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--physics-dt', type=float)
+    parser.add_argument('--diagnostic-motor-tau-ms', type=float, nargs=6,
+                        help='Diagnostic per-joint effort response in policy order; zero bypasses filtering')
     parser.add_argument('--passive-damping', type=float)
     parser.add_argument('--sliding-friction', type=float)
     parser.add_argument('--wheel-action-scale', type=float, default=5.5)
@@ -95,6 +97,8 @@ def main():
     if (controller_contract and args.wheel_torque_contract is not None and
             args.wheel_torque_contract != controller_contract.get('wheel_torque_contract', 'legacy')):
         parser.error('CLI wheel torque contract differs from controller contract')
+    if controller_contract and 'wheel_fit_profile' in controller_contract:
+        wheel_settings['wheel_fit_profile'] = controller_contract['wheel_fit_profile']
     separated = wheel_settings['wheel_torque_contract'] == SEPARATED
     if separated:
         wheel_settings['hardware_sign_verified'] = False
@@ -106,8 +110,8 @@ def main():
         args.physics_dt = expected_dt
         if list(args.wheel_action_sign) != [-1., -1.]:
             parser.error('Separated contract inherits simulation signs [-1,-1]')
-        if args.wheel_action_scale != 5.5 or args.wheel_effort_limit != 5.5:
-            parser.error('Separated contract requires 5.5Nm scale and peak')
+        if args.wheel_action_scale != 5.5 or args.wheel_effort_limit not in (4.89, 5.5):
+            parser.error('Separated contract requires scale5.5 and explicit peak4.89 or5.5')
     try:
         validate_wheel_contract(wheel_settings)
     except ValueError as exc:
@@ -255,6 +259,11 @@ def main():
         wheel_peak_nm=args.wheel_effort_limit, wheel_action_scale_nm=args.wheel_action_scale,
         wheel_action_sign=list(args.wheel_action_sign), **wheel_settings)
     effort_scheduler = LowLevelEffortScheduler(effort_contract)
+    motor_tau = np.asarray(args.diagnostic_motor_tau_ms or [0.]*6, dtype=float)/1000.
+    if not np.isfinite(motor_tau).all() or (motor_tau < 0).any():
+        raise ValueError('Motor time constants must be finite and nonnegative')
+    motor_alpha = -np.expm1(-dt/np.maximum(motor_tau, 1e-12))
+    motor_effort = np.zeros(6)
     rows=[]
     torque_rows=[]
     stop_reason='duration_reached'
@@ -286,7 +295,7 @@ def main():
                 yaw_error_clip=controller_contract.get('command_yaw_observation_error_clip', 2.0)
                     if controller_contract else 2.0)
             raw = session.run([session.get_outputs()[0].name],{session.get_inputs()[0].name:obs[None]})[0][0]
-            action = consume_action(obs,raw)
+            action = consume_action(obs,raw,effort_contract.get('position_authority_speed_plateau_end', 1.0))
             history = action.copy()
             tilt = float(np.degrees(np.arccos(np.clip(-gravity[2],-1,1))))
             rows.append(dict(time=float(data.time),height=float(data.xpos[body,2]),tilt_deg=tilt,
@@ -306,6 +315,9 @@ def main():
         torque, targets, wheel_unclipped = effort_scheduler.compute(
             action, data.qpos[qids], data.qvel[vids],
             default, model.jnt_range[joints], command_vx=command['vx'])
+        motor_effort = np.where(motor_tau > 0,
+                                motor_effort + motor_alpha*(torque-motor_effort), torque)
+        torque = motor_effort.copy()
         wheel_saturated_steps += int((abs(wheel_unclipped)>=args.wheel_effort_limit).any())
         data.ctrl[actuator_ids] = np.clip(torque/gears,model.actuator_ctrlrange[actuator_ids,0],
                                          model.actuator_ctrlrange[actuator_ids,1])
@@ -379,6 +391,7 @@ def main():
         wheel_native_passive_removed=wheel_native_passive,
         wheel_torque_trace=torque_rows,
         runtime_overrides=dict(controlled_joint_original_damping=original_damping.tolist(),
+            diagnostic_motor_time_constants_ms=(motor_tau*1000.).tolist(),
             passive_damping_overrides=passive_overrides,
             sliding_friction_override=args.sliding_friction,
             controlled_joint_damping=0.,leg_armature=.01,leg_kp=60.,leg_kd=2.,leg_scale=effort_contract['leg_scale_rad'],

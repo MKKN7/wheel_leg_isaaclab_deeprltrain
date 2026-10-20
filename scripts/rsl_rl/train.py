@@ -3293,10 +3293,16 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_cfg.position_authority_enabled = True
         from rmuc_position_authority import checkpoint_authority_speed_plateau_end
         authority_source_state = torch.load(args_cli.checkpoint, map_location='cpu', weights_only=False)['actor_state_dict']
-        if 'rmuc_state_router.turn_speed_plateau_end' in authority_source_state and not args_cli.router_speed_direction:
+        isolated_physics_selection = (args_cli.train_physics_adaptation
+                                      and bool(args_cli.physics_train_modules)
+                                      and args_cli.reset_optimizer)
+        isolated_local_selection = (args_cli.train_local_authority
+                                    and bool(args_cli.local_authority_train_indices)
+                                    and args_cli.reset_optimizer)
+        if 'rmuc_state_router.turn_speed_plateau_end' in authority_source_state and not (args_cli.router_speed_direction or isolated_physics_selection or isolated_local_selection):
             raise ValueError('Router support migration is diagnostic-only until isolated extension training is implemented')
         env_cfg.position_authority_speed_plateau_end = checkpoint_authority_speed_plateau_end(authority_source_state)
-        if env_cfg.position_authority_speed_plateau_end > 1.0 and not args_cli.router_speed_direction:
+        if env_cfg.position_authority_speed_plateau_end > 1.0 and not (args_cli.router_speed_direction or isolated_physics_selection or isolated_local_selection):
             raise ValueError('Expanded authority checkpoint is diagnostic-only until isolated extension training is implemented')
         agent_cfg.clip_actions = None
     if args_cli.router_speed_direction:
@@ -3330,6 +3336,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         print(f'[RMUC_OBSERVATION_CONTRACT] {current_observation_contract}', flush=True)
         from rmuc_training_contract import validate_trainable_target_gate
         gate_payload = torch.load(args_cli.checkpoint, map_location='cpu', weights_only=False)
+        from rmuc_training_contract import validate_checkpoint_leg_scale_contract
+        action_mapping_contract = validate_checkpoint_leg_scale_contract(gate_payload, env_cfg)
+        print(f'[RMUC_ACTION_MAPPING_CONTRACT] {action_mapping_contract}', flush=True)
         gate_level = env_cfg.command_start_level
         target_gate = validate_trainable_target_gate(
             gate_payload['actor_state_dict'],
@@ -3339,6 +3348,25 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             local_indices=args_cli.local_authority_train_indices,
             physics_modules=args_cli.physics_train_modules,
             router_speed_direction=args_cli.router_speed_direction)
+        sequence_gates = [validate_trainable_target_gate(
+            gate_payload['actor_state_dict'], row[1], row[2],
+            physics_only=args_cli.train_physics_adaptation,
+            local_indices=args_cli.local_authority_train_indices,
+            physics_modules=args_cli.physics_train_modules,
+            router_speed_direction=args_cli.router_speed_direction)
+            for row in getattr(env_cfg, 'command_training_sequence', ())]
+        if sequence_gates:
+            print(f'[RMUC_TRAINING_SEQUENCE_GATES] {sequence_gates}', flush=True)
+        random_range = getattr(env_cfg, 'command_random_speed_range', ())
+        if random_range:
+            random_gates = [validate_trainable_target_gate(
+                gate_payload['actor_state_dict'], float(v), 0.,
+                physics_only=args_cli.train_physics_adaptation,
+                local_indices=args_cli.local_authority_train_indices,
+                physics_modules=args_cli.physics_train_modules,
+                router_speed_direction=args_cli.router_speed_direction)
+                for v in torch.linspace(*random_range, 65)]
+            print(f'[RMUC_RANDOM_SPEED_GATES] {random_gates}', flush=True)
         del gate_payload
         print(f'[RMUC_TRAINABLE_TARGET_GATE] {target_gate}', flush=True)
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -3804,8 +3832,38 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             spring_torque_nm=u.cfg.gas_spring_assist_torque_nm,
             radial_force_n=u.cfg.gas_spring_radial_force_n,
             firmware_spring_enabled=u.cfg.firmware_spring_enabled,
+            command_training_sequence=getattr(u.cfg, 'command_training_sequence', ()),
+            command_random_speed_range=getattr(u.cfg, 'command_random_speed_range', ()),
+            command_random_hold_s=getattr(u.cfg, 'command_random_hold_s', ()),
+            command_random_ramp_s=getattr(u.cfg, 'command_random_ramp_s', ()),
+            command_random_step_fraction=getattr(u.cfg, 'command_random_step_fraction', 0),
+            command_random_stop_probability=u._random_speed_sequence.stop_probability if u._random_speed_sequence is not None else None,
+            command_random_max_delta_mps=getattr(u.cfg, 'command_random_max_delta_mps', 0),
+            command_random_isolated_rng=getattr(u.cfg, 'command_random_isolated_rng', False),
+            command_training_sequence_policy_steps=u._training_sequence_table,
+            continuous_cohort_count=int(u._continuous_command_mask.sum().item()),
+            command_leg_scale_profile=u.cfg.command_leg_scale_profile,
+            actual_leg_scale_knots={'speed_abs_mps':u._manual_leg_speed_knots.detach().cpu().tolist(), 'scale_rad':u._manual_leg_scale_knots.detach().cpu().tolist()},
+            optimizer_parameter_groups=[dict(
+                group=g.get('rmuc_group', 'unnamed'),
+                learning_rate=float(g['lr']),
+                parameter_count=sum(v.numel() for v in g['params']),
+                physics_modules=g.get('rmuc_physics_modules'))
+                for g in runner.alg.optimizer.param_groups],
             scope='Post-reset actual actuator tensors and sampled wheel parameters; not behavior certification')
+        if getattr(u, '_arena_ground_randomizer', None) is not None:
+            readback['arena_ground_curriculum'] = u._arena_ground_randomizer.readback()
+            readback['domain_friction_scale'] = u._domain_friction_scale.detach().cpu().tolist()
+        if getattr(u.cfg, 'base_com_randomization_enabled', False):
+            readback['base_com_randomization'] = u._base_com_randomizer.readback()
         Path(log_dir, 'physical_runtime_readback.json').write_text(json.dumps(readback, indent=2)+'\n')
+        schedule = getattr(u, '_random_speed_sequence', None)
+        if schedule is not None:
+            torch.save(dict(schedule=schedule.snapshot(),
+                continuous_cohort_mask=u._continuous_command_mask.detach().cpu().clone(),
+                policy_dt=u.step_dt,
+                scope='Initial post-reset schedule only; later resets resample selected environments'),
+                Path(log_dir, 'initial_random_speed_schedule.pt'))
     if hasattr(unwrapped_env, "ignore_current_episodes_for_survival_gate"):
         # This must run after env.reset(), which marks all episodes as started.
         # RSL-RL randomizes their ages inside learn(); the first completion is

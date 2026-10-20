@@ -45,6 +45,41 @@ def test_required_training_commands_rejects_mismatched_priority_lists():
         required_training_commands(cfg(priority=(48,), weights=(1., 1.)))
 
 
+def test_cohort_budget_rejected_before_simulator_allocation():
+    from rmuc_training_contract import required_training_commands
+    c=cfg()
+    for fraction in [.2,.15]:
+        c.command_continuous_sampling_fraction=fraction
+        with pytest.raises(ValueError,match='fixed active'):
+            required_training_commands(c)
+    c.command_continuous_sampling_fraction=.14
+    assert required_training_commands(c)
+
+
+def test_explicit_leg_scale_profile_is_checkpoint_metadata_not_mutable_alias():
+    from rmuc_training_contract import configure_checkpoint_observation_contract,observation_contract
+    profile={'schema_version':1,'speed_abs_mps':[0.,1.5],'scale_rad':[.19,.24]}
+    c=NS(**observation_contract(),command_leg_scale_profile=profile)
+    actor=NS();saved=[]
+    runner=NS(alg=NS(get_policy=lambda:actor),save=lambda path,infos=None:saved.append((path,infos)))
+    configure_checkpoint_observation_contract(runner,c)
+    runner.save('candidate.pt',{'original':True})
+    profile['scale_rad'][0]=.2
+    assert saved[0][1]['rmuc_action_leg_scale_profile']['scale_rad'][0]==.19
+    assert saved[0][1]['original'] is True
+
+
+def test_resume_refuses_missing_or_changed_bound_action_mapping():
+    from rmuc_training_contract import validate_checkpoint_leg_scale_contract
+    p={'schema_version':1,'speed_abs_mps':[0.,1.5],'scale_rad':[.19,.24]}
+    payload={'infos':{'rmuc_action_leg_scale_profile':p}}
+    assert validate_checkpoint_leg_scale_contract(payload,NS(command_leg_scale_profile=p))['checkpoint_bound']
+    for current in [None,dict(p,scale_rad=[.18,.24])]:
+        with pytest.raises(ValueError,match='checkpoint action contract'):
+            validate_checkpoint_leg_scale_contract(payload,NS(command_leg_scale_profile=current))
+    assert not validate_checkpoint_leg_scale_contract({},NS())['checkpoint_bound']
+
+
 def test_highspeed_guard_preserves_highspeed_but_excludes_extended_slow_turn():
     from rmuc_training_contract import highspeed_guard_applies
     speeds = [1.] * 60
@@ -105,3 +140,24 @@ def test_observation_contract_requires_explicit_yaw_capacity():
     value['command_yaw_observation_error_clip'] = 1.9
     with pytest.raises(ValueError, match='>=2'):
         validate_observation_contract(value)
+
+
+def test_local_gate_honors_checkpoint_speed_plateau():
+    from rmuc_training_contract import validate_trainable_target_gate
+    state={'rmuc_position_authority.local_correction.centers':torch.tensor([-1.4]),
+           'rmuc_position_authority.local_correction.half_width':torch.tensor(.15)}
+    with pytest.raises(ValueError):validate_trainable_target_gate(state,1.5,1.4,local_indices=[0])
+    state['rmuc_position_authority.speed_plateau_end']=torch.tensor(1.5)
+    result=validate_trainable_target_gate(state,1.5,1.4,local_indices=[0])
+    assert result['gates']==[0.,1.]
+    with pytest.raises(ValueError):validate_trainable_target_gate(state,1.5,.6,local_indices=[0])
+
+
+def test_dynamic_commands_enter_coverage_and_require_live_cohort():
+    from rmuc_training_contract import required_training_commands
+    c=cfg();c.command_training_sequence=[[0,.5,0],[6,0,0]]
+    with pytest.raises(ValueError,match='reachable'):
+        required_training_commands(c)
+    c.command_continuous_sampling_fraction=.1
+    pairs=required_training_commands(c)
+    assert (.5,0.) in pairs and (0.,0.) in pairs

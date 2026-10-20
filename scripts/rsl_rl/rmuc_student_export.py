@@ -26,6 +26,6 @@ def main():
  assert set(n.op_type for n in model.graph.node)<= {'Gemm','Relu'}
  session=ort.InferenceSession(str(a.output/'policy.onnx'),providers=['CPUExecutionProvider']);actual=np.concatenate([session.run(None,{'observation':z[None].numpy()})[0] for z in x]);np.testing.assert_allclose(actual,expected.numpy(),atol=2e-5,rtol=2e-5)
  np.savez(a.output/'golden_100.npz',observations=x.numpy(),pytorch=expected.numpy(),onnx=actual)
- report=dict(diagnostic_only=a.diagnostic_only,deployable=False,student_sha256=sha,onnx_sha256=hashlib.sha256((a.output/'policy.onnx').read_bytes()).hexdigest(),parameters=20614,weight_bytes=82456,batch=1,ops=[n.op_type for n in model.graph.node],max_error=float(np.abs(actual-expected.numpy()).max()),normalizer_folded=True,cubeai_validated=False,hardware_validated=False)
+ report=dict(diagnostic_only=a.diagnostic_only,deployable=False,student_sha256=sha,onnx_sha256=hashlib.sha256((a.output/'policy.onnx').read_bytes()).hexdigest(),parameters=sum(v.numel() for v in net.parameters()),weight_bytes=4*sum(v.numel() for v in net.parameters()),batch=1,ops=[n.op_type for n in model.graph.node],max_error=float(np.abs(actual-expected.numpy()).max()),normalizer_folded=True,cubeai_validated=False,hardware_validated=False)
  (a.output/'export_report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report,indent=2))
 if __name__=='__main__':main()

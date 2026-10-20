@@ -164,11 +164,29 @@ def configure_authority_audit(runner, required_commands=None):
         raise ValueError('RMUC_CAPTURE_PPO_ROLLOUT_UPDATE must be >= 1')
     capture_labels=[]
     capture_enabled=os.environ.get('RMUC_CAPTURE_PPO_ROLLOUT')=='1'
+    tail_start=int(os.environ.get('RMUC_TRAINING_TAIL_START_UPDATE','0'))
+    if tail_start < 0:
+        raise ValueError('Training tail start must be nonnegative')
+    tail_frames=[]
+    if tail_start:
+        tail_environment=runner.env.unwrapped
+        tail_original_act=runner.alg.act
+        def record_training_tail(observations):
+            if count+1 >= tail_start:
+                q=tail_environment.robot.data.joint_pos.torch[:,tail_environment._control_dof_ids]
+                cmd=tail_environment._current_command()
+                vx=tail_environment._heading_forward_velocity(tail_environment.robot.data.root_lin_vel_w.torch)
+                tail_frames.append(torch.cat((
+                    tail_environment._curriculum_step_counter.to(q.dtype)[:,None],
+                    cmd[:,[0,2]],vx[:,None],q),dim=-1).detach().clone())
+            return tail_original_act(observations)
+        runner.alg.act=record_training_tail
     capture_only=os.environ.get('RMUC_CAPTURE_PPO_ROLLOUT_ONLY')=='1'
     if capture_only and not capture_enabled:
         raise ValueError('Capture-only requires physical rollout capture enabled')
     if capture_enabled:
         environment=runner.env.unwrapped
+        random_schedule_frames=[]
         original_act=runner.alg.act
         previous_command=None
         command_age=None
@@ -186,12 +204,28 @@ def configure_authority_audit(runner, required_commands=None):
                                             torch.zeros_like(command_age))
                 previous_command=command.detach().clone()
                 if count+1==capture_update:
+                    schedule=getattr(environment, '_random_speed_sequence', None)
+                    if schedule is not None:
+                        random_schedule_frames.append(schedule.snapshot())
                     capture_labels.append((obs.detach().cpu().clone(),episode_age.cpu(),
-                                           command_age.detach().cpu().clone()))
+                                           command_age.detach().cpu().clone(),
+                                           environment._continuous_command_mask.detach().cpu().clone(),
+                                           environment._current_command().detach().cpu().clone()))
             return original_act(observations)
         runner.alg.act=labelled_act
     def update(*args,**kwargs):
         nonlocal count
+        if tail_frames:
+            import numpy as np
+            trace=path.parent/f'training_tail_trace_{start+count}.npz'
+            if trace.exists():
+                raise RuntimeError(f'Refusing to overwrite training trace: {trace}')
+            np.savez_compressed(trace, frames=torch.stack(tail_frames).cpu().numpy(),
+                dt=float(tail_environment.step_dt),iteration=start+count,
+                columns=['episode_step','command_vx','command_yaw','heading_vx',
+                         'q0','q1','q2','q3','q4','q5'],
+                scope='Actual stochastic training rollout, pre-action state; no deterministic acceptance implied')
+            tail_frames.clear()
         if coverage is not None:
             coverage.observe(runner.alg.storage.observations['policy'])
         # Capture before PPO clears/overwrites the rollout buffer.
@@ -206,7 +240,7 @@ def configure_authority_audit(runner, required_commands=None):
             if capture.exists():
                 raise RuntimeError(f'Refusing to overwrite rollout diagnostic: {capture}')
             assert len(capture_labels)==storage.actions.shape[0]
-            labelled_obs,episode_age,command_age_labels=(torch.stack(x) for x in zip(*capture_labels))
+            labelled_obs,episode_age,command_age_labels,continuous_labels,physical_commands=(torch.stack(x) for x in zip(*capture_labels))
             assert torch.equal(labelled_obs,storage.observations['policy'].detach().cpu()),'Rollout labels are misaligned'
             torch.save({
                 'observations':storage.observations['policy'].detach().cpu(),
@@ -222,10 +256,15 @@ def configure_authority_audit(runner, required_commands=None):
                 'optimizer_updates_disabled':capture_only,
                 'physical_episode_age_steps':episode_age,
                 'delivered_command_age_steps':command_age_labels,
+                'continuous_cohort_mask':continuous_labels,
+                'physical_commands':physical_commands,
+                'random_speed_schedule_per_step':random_schedule_frames,
+                'training_sequence_enabled':getattr(environment, '_training_sequence_table', None) is not None or getattr(environment, '_random_speed_sequence', None) is not None,
                 'age_label_scope':'Pre-action physical episode age and observed command continuity; not a stability certificate',
                 'scope':'Pre-update rollout; optional diagnostic only, no optimizer mutation',
             },capture)
             capture_labels.clear()
+            random_schedule_frames.clear()
         if capture_only:
             # Keep actor, critic and optimizer fixed while collecting later
             # on-policy data. clear() resets the storage cursor, not tensors.
@@ -257,16 +296,46 @@ def configure_authority_audit(runner, required_commands=None):
                 bound=actor.rmuc_state_router.correction_bound(obs)
                 if not torch.isfinite(router_delta).all() or not (router_delta.abs()<=bound+1e-6).all():
                     raise RuntimeError('Speed router correction bound violated')
+                if hasattr(actor.rmuc_state_router,'post_authority_anchors'):
+                    post=actor.rmuc_state_router.post_authority_correction(obs)
+                    limit=actor.rmuc_state_router.post_authority_budget
+                    if not torch.isfinite(post).all() or not (post.abs()<=limit+1e-6).all():
+                        raise RuntimeError('Post-authority correction bound violated')
+                    record['post_authority_residual_abs_max']=post.abs().amax(0).tolist()
         if retention_result is not None:
             record['physics_retention']=retention_result
         if head.local_correction is not None:
             record['local_samples']=(head.local_correction.gates(obs)>0).sum(0).tolist()
         if physics is not None:
             with torch.no_grad():delta=physics.correction(obs)
-            if not torch.isfinite(delta).all() or not (delta.abs()<=physics.budget+1e-6).all():
+            if not torch.isfinite(delta).all() or not (delta.abs()<=physics.correction_bound()+1e-6).all():
                 raise RuntimeError('Physical adaptation residual bound violated')
             record['physics_samples']=int((physics.update_gate(obs)>0).sum())
             record['physics_residual_abs_max']=delta.abs().amax(0).tolist()
+            if hasattr(physics, 'reverse_network'):
+                with torch.no_grad():
+                    gate = physics.reverse_gate(obs)
+                    delta = gate[:, None] * physics.reverse_budget * torch.tanh(physics.reverse_network(obs))
+                if not torch.isfinite(delta).all() or not (delta.abs() <= physics.reverse_budget+1e-6).all():
+                    raise RuntimeError('Reverse residual bound violated')
+                record['reverse_samples'] = int((gate > 0).sum())
+                record['reverse_residual_abs_max'] = delta.abs().amax(0).tolist()
+            if hasattr(physics, 'alignment_network'):
+                with torch.no_grad():
+                    gate = physics.alignment_gate(obs)
+                    alignment = gate[:, None] * physics.alignment_budget * torch.tanh(physics.alignment_network(obs))
+                if not torch.isfinite(alignment).all() or not (alignment.abs() <= physics.alignment_budget+1e-6).all():
+                    raise RuntimeError('Alignment residual bound violated')
+                record['alignment_samples'] = int((gate > 0).sum())
+                record['alignment_residual_abs_max'] = alignment.abs().amax(0).tolist()
+            if hasattr(physics, 'straight_extension_network'):
+                with torch.no_grad():
+                    gate = physics.straight_extension_gate(obs)
+                    delta = gate[:, None] * physics.straight_extension_budget * torch.tanh(physics.straight_extension_network(obs))
+                if not torch.isfinite(delta).all() or not (delta.abs() <= physics.straight_extension_budget+1e-6).all():
+                    raise RuntimeError('Straight extension bound violated')
+                record['straight_extension_samples'] = int((gate > 0).sum())
+                record['straight_extension_residual_abs_max'] = delta.abs().amax(0).tolist()
         with path.open('a') as f:f.write(json.dumps(record)+'\n')
         count+=1
         return result

@@ -1,0 +1,87 @@
+{
+  "schema_version": 2,
+  "status": "engineering_prior_not_measured_not_behavior_certified",
+  "surface_description": "User supplied: 3mm textured PVC flooring over plywood",
+  "thickness_m": 0.003,
+  "thickness_is_geometry_metadata_not_solver_impedance": true,
+  "profiles": {
+    "fresh": {
+      "effective_static_friction": 0.65,
+      "effective_dynamic_friction": 0.55,
+      "effective_restitution": 0.02
+    },
+    "worn": {
+      "effective_static_friction": 0.45,
+      "effective_dynamic_friction": 0.38,
+      "effective_restitution": 0.02
+    }
+  },
+  "isaac_pair_convention": {
+    "friction_combine_mode": "multiply",
+    "restitution_combine_mode": "max",
+    "wheel_static_friction": 1.0,
+    "wheel_dynamic_friction": 1.0,
+    "wheel_restitution": 0.0,
+    "note": "Unit wheel friction is a contact-pair factorization, not measured bare-tire friction. Use multiply for friction and max for restitution, wheel restitution0/ground0.02. Bind wheel-only materials and audit both combine modes and runtime values before activation; other body contacts unchanged."
+  },
+  "curriculum": {
+    "activate_after_current_frozen_physics_experiment": true,
+    "severity_knots": [
+      0.0,
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "static_mu": "0.65 - 0.20 * severity",
+    "dynamic_mu": "0.55 - 0.17 * severity",
+    "sample_static_dynamic_with_same_severity": true,
+    "independent_of_global_dr_strength": true,
+    "disable_duplicate_legacy_friction_scaling_when_activated": true,
+    "gate": "frozen checkpoint comparison, progressive training, retention; no automatic promotion",
+    "activation_gate": "After isolated last-three tracking repairs and random command-domain validation; retain original terrain regression"
+  },
+  "mujoco": {
+    "sliding_friction_uses_dynamic_prior": true,
+    "wheel_ground_explicit_pairs": true,
+    "condim": 3,
+    "restitution_mapping": "No direct PhysX restitution scalar equivalent; preserve baseline solref/solimp until contact validation",
+    "preserve_geometry_mass_inertia_actuators_closed_loop": true,
+    "user_proposed_solref": [
+      0.015,
+      0.8
+    ],
+    "user_proposed_solimp": [
+      0.005,
+      0.02,
+      0.5
+    ],
+    "user_solver_values_applied": false
+  },
+  "isaac_runtime_integrated": true,
+  "mujoco_behavior_certified": false,
+  "isaac_runtime_behavior_certified": false,
+  "reset_randomization": {
+    "default_enabled": false,
+    "migration_progress_knots": [
+      0,
+      0.1,
+      0.25,
+      0.5,
+      0.75,
+      1.0
+    ],
+    "severity_range": [
+      0,
+      1
+    ],
+    "num_material_buckets": 64,
+    "scope": "wheel-ground effective contact coefficients, shared severity per env and both wheels, re-sampled at reset",
+    "factorization": "unchanged actual ground; dedicated wheel multiply/max material carries per-env target contact pair",
+    "baseline": "effective pair derived from original wheel binding and actual terrain material combine modes",
+    "runtime_readback_required": true,
+    "other_contact_shapes_unchanged": true,
+    "activation": "opt-in after current run; engineering prior, no automatic promotion or behavior certification"
+  }
+}

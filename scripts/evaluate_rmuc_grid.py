@@ -20,14 +20,20 @@ from rmuc_hardware_profile import apply_hardware_profile
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--checkpoint', type=Path, required=True)
+parser.add_argument('--command-sequence', type=Path, default=None, help='Episode-time [seconds,vx,yaw] steps; requires world/leg traces; fixed-grid acceptance invalid.')
 parser.add_argument('--distilled-student', type=Path, default=None, help='Student weights; checkpoint remains explicit teacher physical/observation contract source.')
 parser.add_argument('--output', type=Path, required=True)
 parser.add_argument('--speeds', default='1.0,1.5,2.0,2.5,2.9,3.0,3.2')
 parser.add_argument('--yaws', default='0,0.15,-0.15,0.30,-0.30')
 parser.add_argument('--command-grid', type=Path, default=None,
                     help='Exact JSON list of [vx, yaw] pairs instead of a Cartesian product.')
+parser.add_argument('--command-leg-scale-profile', type=Path, default=None,
+                    help='Explicit training action-mapping profile; positive/negative vx use identical absolute-speed knots.')
+parser.add_argument('--diagnostic-wheel-peak-nm', type=float, default=None, help='Explicit electromagnetic peak only; action scale and passive drag unchanged.')
 parser.add_argument('--replicas', type=int, default=3)
 parser.add_argument('--steps', type=int, default=34000)
+parser.add_argument('--episode-length-seconds', type=float, default=None,
+                    help='Explicit evaluation episode duration, e.g.13s for 2s settling plus full10s idle window.')
 parser.add_argument('--min-episodes', type=int, default=64)
 parser.add_argument('--diagnostic-speed-ramp-seconds', type=float, default=0.,
                     help='Diagnostic per-episode ramp from1m/s to final straight target; never a fixed-command certificate.')
@@ -55,7 +61,10 @@ parser.add_argument('--motor-response-time-constants-ms', type=float, nargs=2, d
                     help='Diagnostic independent effort-response time-constant range; not communication delay or a policy certificate.')
 parser.add_argument('--dr-ablation', choices=['none', 'physics_only', 'observation_only', 'damping_torque_only'], default='none',
                     help='Diagnostic component isolation; never a full DR policy certificate.')
+parser.add_argument('--record-leg-tracking', action='store_true', help='Read-only physical velocity/joint trace for post-training charts.')
 parser.add_argument('--max-bank-error-deg', type=float, default=3.0)
+parser.add_argument('--arena-ground-severity',type=float,default=None,
+                    help='Explicit PVC contact-pair prior 0=fresh,1=worn; disables legacy friction scaling, diagnostic only.')
 parser.add_argument('--require-analytic-bank', action='store_true', help='Historical analytic lean acceptance only; not operator tracking default.')
 parser.add_argument('--pitch-rate-feedback', type=float, default=None,
                     help='Diagnostic gain override in [-0.2,0.2]; not a policy certificate.')
@@ -79,6 +88,7 @@ parser.add_argument('--gas-spring-torque', type=float, default=None,
                     help='Diagnostic passive spring magnitude in [0,10.775]Nm; not a policy certificate.')
 parser.add_argument('--firmware-spring-equivalent', action='store_true',
                     help='Use the read-only RMUC firmware leg spring compensation law as an explicit diagnostic actuator mode.')
+parser.add_argument('--record-policy-trace', action='store_true', help='Read-only full per-step action/input/post-state trace for branch diagnosis.')
 parser.add_argument('--failure-traces', action='store_true',
                     help='Record up to 16 unsafe episodes with pre-reset state/action histories and DR parameters.')
 parser.add_argument('--diagnostic-wheel-velocity-fraction',type=float,default=1.,
@@ -100,6 +110,14 @@ parser.add_argument('--audit-critic', action='store_true',
 parser.add_argument('--critic-gamma', type=float, default=.99)
 parser.add_argument('--action-bias-sweep', type=Path, default=None,
                     help='Diagnostic JSON list of {name, action:[six bounded offsets]}; never a policy certificate.')
+parser.add_argument('--real2sim-wheel-profile', type=Path, default=None,
+                    help='Explicit reported-fit wheel/compensation overlay; hypotheses only, no deployment certificate.')
+parser.add_argument('--real2sim-end-to-end-delay', action='store_true',
+                    help='Profile wheel transport owns total observed-to-execution delay; disables old policy delay buffers.')
+parser.add_argument('--arena-ground-progress', type=float, default=None,
+                    help='Interpolate actual legacy wheel-ground pair toward randomized PVC prior; 0..1.')
+parser.add_argument('--base-com-dr-strength', type=float, default=None,
+                    help='Root COM engineering prior: strength1 means FLU +/-10/10/5mm.')
 parser.add_argument('--action-bias-start-seconds', type=float, default=0.)
 parser.add_argument('--action-bias-ramp-seconds', type=float, default=0.)
 parser.add_argument('--diagnostic-hold-legs-after-seconds', type=float, default=None)
@@ -230,6 +248,8 @@ if not 1 <= count <= 128 or args.replicas < 1:
     parser.error('Grid must use 1–128 environments; larger scenes are not validated')
 if not 0 <= args.dr_strength <= 1 or args.steps < 1 or args.min_episodes < 1:
     parser.error('Invalid strength, steps, or episode requirement')
+if args.episode_length_seconds is not None and not 12. <= args.episode_length_seconds <= 60.:
+    parser.error('Evaluation episode duration must be finite within12..60seconds')
 if args.pitch_rate_feedback is not None and not -.2 <= args.pitch_rate_feedback <= .2:
     parser.error('Diagnostic pitch-rate feedback must be within [-0.2,0.2]')
 if args.base_wheel_clip is not None and not 0.5 <= args.base_wheel_clip <= 1.0:
@@ -269,6 +289,20 @@ def main() -> int:
     cfg = parse_env_cfg('Robotics-Wheelbipe-V14-RMUC-Command-v0',
                         device=args.device, num_envs=count, use_fabric=True)
     cfg.seed = args.seed
+    leg_scale_profile_record = None
+    stored_leg_profile = (torch.load(args.checkpoint, map_location='cpu', weights_only=False).get('infos') or {}).get('rmuc_action_leg_scale_profile')
+    if args.command_leg_scale_profile is not None or stored_leg_profile is not None:
+        from agent_tasks.direct.rmuc_wheel_leg.command_contract import validate_leg_scale_profile
+        profile = (json.loads(args.command_leg_scale_profile.read_text())
+                   if args.command_leg_scale_profile is not None else stored_leg_profile)
+        if stored_leg_profile is not None and profile != stored_leg_profile:
+            raise ValueError('Explicit leg-scale profile differs from checkpoint action contract')
+        speeds, scales = validate_leg_scale_profile(profile)
+        if max(abs(v) for v, _ in commands_list) > speeds[-1]:
+            raise ValueError('Command grid exceeds explicit leg-scale profile')
+        cfg.command_leg_scale_profile = profile
+        leg_scale_profile_record = dict(profile=profile,checkpoint_bound=stored_leg_profile is not None,
+            file_sha256=hashlib.sha256(args.command_leg_scale_profile.read_bytes()).hexdigest() if args.command_leg_scale_profile is not None else None)
     applied_velocity_profile = None
     if args.diagnostic_wheel_velocity_profile is not None:
         import yaml
@@ -321,6 +355,8 @@ def main() -> int:
     cfg.command_start_level = 46
     cfg.command_start_at_target = True
     cfg.command_stage_hold_steps = 1 << 60
+    if args.episode_length_seconds is not None:
+        cfg.episode_length_s = args.episode_length_seconds
     cfg.command_rehearsal_enabled = False
     cfg.feedback_contract_by_command = True
     cfg.wheel_yaw_feedback_low_speed_action_clip = .3
@@ -397,6 +433,14 @@ def main() -> int:
         import yaml
         from rmuc_joint_dr_profile import apply_joint_dr_profile
         apply_joint_dr_profile(cfg, yaml.safe_load(args.diagnostic_joint_dr_profile.read_text()))
+    if args.real2sim_wheel_profile:
+        if separated_wheel_profile is None or not args.diagnostic_disable_outer_feedback:
+            raise ValueError('real2sim overlay requires separated wheel profile and disabled outer feedback')
+        cfg.real2sim_wheel_profile = str(args.real2sim_wheel_profile.resolve())
+    if args.real2sim_end_to_end_delay:
+        if not args.real2sim_wheel_profile:
+            raise ValueError('End-to-end timing requires real2sim wheel profile')
+        cfg.real2sim_end_to_end_delay = True
     from rmuc_training_contract import checkpoint_observation_contract, observation_contract
     checkpoint_observation = checkpoint_observation_contract(
         torch.load(args.checkpoint, map_location='cpu', weights_only=False))
@@ -424,6 +468,12 @@ def main() -> int:
     if args.diagnostic_joint_dr_profile:
         source_paths.extend([args.diagnostic_joint_dr_profile, source_root/'scripts/rmuc_joint_dr_profile.py'])
     task_root = source_root / 'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg'
+    if args.arena_ground_progress is not None:
+        source_paths.extend([task_root/'arena_ground.py', Path(cfg.arena_ground_profile_path)])
+    if args.base_com_dr_strength is not None:
+        source_paths.append(task_root/'com_randomization.py')
+    if args.real2sim_wheel_profile:
+        source_paths.extend([args.real2sim_wheel_profile, task_root/'real2sim_wheel.py'])
     source_paths += [task_root / name for name in ('env.py', 'env_cfg.py', 'flat_terrain.py', 'observation_noise.py', 'motor_response.py', 'gas_spring.py', 'command_contract.py', 'bank_geometry.py', 'wheel_velocity_control.py')]
     source_paths += [Path(cfg.robot_cfg.spawn.usd_path)]
     if args.diagnostic_separated_wheel_profile is not None:
@@ -464,10 +514,43 @@ def main() -> int:
         cfg.position_authority_speed_plateau_end = checkpoint_authority_speed_plateau_end(
             torch.load(args.checkpoint, map_location='cpu', weights_only=False)['actor_state_dict'])
         runtime_contract['position_authority_speed_plateau_end'] = cfg.position_authority_speed_plateau_end
+    if args.arena_ground_severity is not None:
+        if not 0 <= args.arena_ground_severity <= 1:
+            raise ValueError('Arena severity must be finite and in[0,1]')
+        cfg.arena_ground_severity=args.arena_ground_severity
+        cfg.friction_randomization_enabled=False
+        cfg.domain_randomization_max_friction_fraction=0.
+    if args.arena_ground_progress is not None:
+        if args.arena_ground_severity is not None or not math.isfinite(args.arena_ground_progress) or not 0 <= args.arena_ground_progress <= 1:
+            raise ValueError('Arena progress requires0..1 and no fixed arena severity')
+        cfg.arena_ground_migration_progress=args.arena_ground_progress
+        cfg.arena_ground_randomization_enabled=True
+        cfg.arena_ground_severity_range=(0.,1.)
+        cfg.friction_randomization_enabled=False
+        cfg.domain_randomization_max_friction_fraction=0.
+    if args.base_com_dr_strength is not None:
+        if not math.isfinite(args.base_com_dr_strength) or not 0 <= args.base_com_dr_strength <= 1:
+            raise ValueError('COM strength requires0..1')
+        cfg.base_com_randomization_enabled=True
+        cfg.base_com_randomization_strength=args.base_com_dr_strength
+    if args.diagnostic_wheel_peak_nm is not None:
+        peak=args.diagnostic_wheel_peak_nm
+        if not math.isfinite(peak) or not 0 < peak <= 5.5:
+            raise ValueError('Diagnostic wheel peak must be in (0,5.5]')
+        cfg.diagnostic_wheel_peak_nm=peak
+        cfg.robot_cfg.actuators['wheel_motors'].effort_limit=peak
+        cfg.robot_cfg.actuators['wheel_motors'].effort_limit_sim=peak
     env = RslRlVecEnvWrapper(gym.make('Robotics-Wheelbipe-V14-RMUC-Command-v0', cfg=cfg),
                             clip_actions=None if args.position_authority_consumer else 1.0)
     u = env.unwrapped
     device = u.device
+    # Some explicit diagnostics and the environment's total-delay adapter
+    # finalize config during construction. Report the actual resulting config,
+    # not the earlier pre-construction snapshot (which could show stale DR).
+    runtime_contract.update({name: getattr(u.cfg, name) for name in dir(u.cfg)
+        if name.startswith(('command_', 'domain_', 'wheel_', 'motor_response_', 'gas_spring_',
+                            'observation_', 'asset_frame_', 'torque_limit_', 'arena_ground_',
+                            'base_com_', 'real2sim_')) and primitive(getattr(u.cfg, name))})
     if args.diagnostic_physics_dt is not None:
         actual_dt = u.sim.get_physics_dt()
         if abs(actual_dt - args.diagnostic_physics_dt) > 1e-9 or abs(u.step_dt - .008) > 1e-9:
@@ -658,6 +741,20 @@ def main() -> int:
             return original_position_target(target, joint_ids=joint_ids, env_ids=env_ids)
         u.robot.set_joint_position_target = position_target_with_diagnostic_offset
     u.set_manual_command(command)
+    sequence_table = None
+    if args.command_sequence is not None:
+        from rmuc_command_sequence import validate_sequence, sequence_commands
+        if args.diagnostic_turn_entry or args.diagnostic_speed_ramp_seconds or not args.record_world_trajectory or not args.record_leg_tracking:
+            raise ValueError('Sequence requires world/leg traces and no other command schedule')
+        if len(commands_list)!=1:
+            raise ValueError('Sequence uses one bucket with replicas, not a fixed multi-command grid')
+        sequence_table=validate_sequence(json.loads(args.command_sequence.read_text()),u.step_dt,cfg.episode_length_s)
+        original_sequence_observations=u._get_observations
+        def observations_with_sequence():
+            command.copy_(sequence_commands(sequence_table,u._curriculum_step_counter))
+            u.set_manual_command(command)
+            return original_sequence_observations()
+        u._get_observations=observations_with_sequence
     if args.diagnostic_turn_entry and args.diagnostic_speed_ramp_seconds:
         raise ValueError('Use only one diagnostic command entry schedule')
     if args.diagnostic_turn_entry:
@@ -724,6 +821,15 @@ def main() -> int:
         'wheel_torque_gain': u._domain_wheel_torque_gain.tolist(),
     }
     initial_material_readback = material_readback()
+    initial_mass_inertia_readback = {
+        'root_body_id': u._root_body_id,
+        'mass_kg': u.robot.data.body_mass.torch[:, u._root_body_id].tolist(),
+        'inertia_tensor_kg_m2': u.robot.data.body_inertia.torch[:, u._root_body_id, :].tolist(),
+        'mass_scale': u._domain_base_mass_scale.tolist(),
+        'independent_inertia_shape_scale': u._domain_base_inertia_shape_scale.tolist(),
+        'total_inertia_scale': u._domain_base_inertia_scale.tolist(),
+        'scope': 'Snapshot after initial reset, before rollout; later resets may resample DR',
+    }
     critic = None
     critic_samples = []
     last_terminated = torch.zeros(count, dtype=torch.bool, device=device)
@@ -750,6 +856,10 @@ def main() -> int:
     bank_sum = torch.zeros_like(samples)
     torque_sum = torch.zeros_like(samples)
     torque_clip_sum = torch.zeros_like(samples)
+    demand_hits=torch.zeros(count,2,device=device)
+    demand_run=torch.zeros(count,2,device=device)
+    demand_longest=torch.zeros(count,2,device=device)
+    demand_peak=torch.zeros(count,2,device=device)
     slip_sum = torch.zeros_like(samples)
     turn_dynamics_sum = None
     turn_extrema = None
@@ -809,17 +919,18 @@ def main() -> int:
                       'wheel_target_right_nm', 'wheel_target_left_nm']
     action_input_observation = torch.zeros(count, 25, device=device)
     # Sample every 10 control steps, retain the last 500 steps on the GPU.
-    trace_ring = torch.zeros(50, count, len(trace_columns), device=device) if args.failure_traces else None
+    trace_ring = torch.zeros(50, count, len(trace_columns), device=device) if (args.failure_traces or args.record_policy_trace) else None
     trace_cursor = 0
     trace_count = torch.zeros(count, dtype=torch.long, device=device)
     trace_recorded = torch.zeros(count, dtype=torch.bool, device=device)
     failure_traces = []
+    full_policy_frames = []
     # Bounded offline evidence for nonterminal tracking failures. Keep on GPU
     # during stepping; this must not affect control, windows, resets or gates.
     tracking_probe_columns = trace_columns + ['window_linear_error', 'window_yaw_error']
     tracking_probe_limit = 20
     tracking_probe_frames = (torch.zeros(tracking_probe_limit, count, len(tracking_probe_columns), device=device)
-                             if args.failure_traces else None)
+                             if (args.failure_traces or args.record_policy_trace) else None)
     tracking_probe_counts = torch.zeros(count, dtype=torch.long, device=device)
     wheel_teacher_samples = []
 
@@ -884,6 +995,8 @@ def main() -> int:
                 u.robot.data.applied_torque.torch[:, u._control_dof_ids],
                 u._last_requested_wheel_effort_nm,
                 u._last_wheel_effort_target_nm), -1)
+            if args.record_policy_trace:
+                full_policy_frames.append(frame.cpu())
             if observed_steps % 10 == 0:
                 tracking_bad = ready & ((linear >= limits) | (yaw >= cfg.command_advance_yaw_error_rad_s))
                 probe_ids = (tracking_bad & (tracking_probe_counts < tracking_probe_limit)).nonzero().flatten()
@@ -944,6 +1057,13 @@ def main() -> int:
         effort = u.robot.data.applied_torque.torch[:, u._wheel_control_ids].abs()
         torque_sum.add_(effort.mean(-1))
         torque_clip_sum.add_((effort >= .99 * u._last_effective_wheel_effort_limit[:, None]).float().mean(-1))
+        demand=u._last_requested_wheel_effort_nm.abs()
+        hit=demand > u._last_effective_wheel_effort_limit[:,None]
+        demand_hits.add_(hit)
+        demand_run.copy_(torch.where(hit,demand_run+u.step_dt,0.))
+        demand_longest.copy_(torch.maximum(demand_longest,demand_run))
+        demand_peak.copy_(torch.maximum(demand_peak,demand))
+        demand_run[done]=0
         completed.add_(done.long())
         survived.add_((done & ~terminated & (u._curriculum_step_counter >= warmup)).long())
         for key, value in u.get_termination_reasons().items():
@@ -957,6 +1077,7 @@ def main() -> int:
     u._get_dones = observe_terminal_physics
     held_legs = None
     startup_samples = []
+    leg_tracking_samples = []
     # Opt-in short trace piggybacks on startup capture. Sample immediately
     # before physics, after actuator computation/write, without changing state.
     startup_physics = []
@@ -1019,6 +1140,11 @@ def main() -> int:
                                    args.distill_dataset_dir / f'shard_{distill_shard:05d}.pt')
                         distill_buffer.clear(); distill_shard += 1
                 current_raw_action.copy_(action)
+                if args.record_leg_tracking:
+                    leg_tracking_samples.append(torch.cat((
+                        u._curriculum_step_counter[:,None],
+                        u._heading_forward_velocity(u.robot.data.root_lin_vel_w.torch)[:,None],
+                        u.robot.data.joint_pos.torch[:,u._control_dof_ids]),dim=-1).detach().clone())
                 if (len(startup_samples) < args.capture_startup_steps
                         and step % args.capture_observation_stride == 0):
                     startup_closure.append(closure_audit.sample())
@@ -1041,6 +1167,14 @@ def main() -> int:
                 if bool(torch.all(counts >= args.min_episodes)):
                     break
         rows = []
+        # A min-episode early break must not discard the final partial shard.
+        if args.distill_dataset_dir and distill_buffer:
+            torch.save(dict(observations=torch.cat([v[0] for v in distill_buffer]),
+                            actions=torch.cat([v[1] for v in distill_buffer]),
+                            checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
+                            rollout_student_sha256=student_sha256, deterministic_teacher=True),
+                       args.distill_dataset_dir / f'shard_{distill_shard:05d}.pt')
+            distill_buffer.clear()
         for bucket, (vx, yaw) in enumerate(commands_list):
             selection = bucket_ids == bucket
             n = int(completed[selection].sum())
@@ -1069,6 +1203,9 @@ def main() -> int:
                    'root_mean': float(root_sum[selection].mean()) / observed_steps,
                    'mean_wheel_effort_nm': float(torque_sum[selection].mean()) / observed_steps,
                    'applied_torque_saturation': float(torque_clip_sum[selection].mean()) / observed_steps,
+                   'preclip_request_saturation_fraction_by_joint': (demand_hits[selection].mean(0)/observed_steps).tolist(),
+                   'longest_sampled_saturation_s_by_joint': demand_longest[selection].amax(0).tolist(),
+                   'max_sampled_preclip_request_nm_by_joint': demand_peak[selection].amax(0).tolist(),
                    'termination_counts': {k: int(v[selection].sum()) for k, v in reason_counts.items()}}
             if sample_count == 0:
                 for key in ('linear_error', 'yaw_error', 'steady_signed_yaw_error_rad_s',
@@ -1119,6 +1256,8 @@ def main() -> int:
                   'turn_dynamics_scope': 'Steady ready samples only; wheel-center slip projected on root heading; net_forces_w contains NORMAL forces only: its horizontal/vertical ratio is NOT friction utilization. Quasistatic support margin is not exact ZMP or dynamic feasibility. COM is mass-weighted body COM, not root height.',
                   'runtime_contract': runtime_contract,
                   'checkpoint_observation_contract': checkpoint_observation,
+                  'command_leg_scale_profile': leg_scale_profile_record,
+                  'actual_leg_scale_knots': {'speed_abs_mps':u._manual_leg_speed_knots.detach().cpu().tolist(), 'scale_rad':u._manual_leg_scale_knots.detach().cpu().tolist()},
                   'diagnostic_hardware_profile': applied_hardware_profile,
                   'actual_wheel_actuator_damping_range': [float(u._wheel_actuator.damping.min()),float(u._wheel_actuator.damping.max())],
                   'actual_wheel_actuator_effort_limit_range_nm': [float(u._wheel_actuator.effort_limit.min()),float(u._wheel_actuator.effort_limit.max())],
@@ -1129,6 +1268,7 @@ def main() -> int:
                   'terrain_prim_audit': terrain_prim_audit,
                   'initial_state_audit': initial_state_audit,
                   'initial_material_readback': initial_material_readback,
+                  'initial_mass_inertia_readback': initial_mass_inertia_readback,
                   'final_material_readback': material_readback(),
                   'layout_seed': args.layout_seed, 'environment_bucket_ids': bucket_ids.tolist(),
                   'checkpoint_sha256': hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
@@ -1163,6 +1303,10 @@ def main() -> int:
                   'gas_spring_radial_dr_fraction': cfg.gas_spring_radial_dr_fraction,
                   'final_radial_spring_force_per_env_n': u._radial_spring_force_n.tolist() if cfg.gas_spring_radial_force_n > 0 else None,
                   'dr_ablation': args.dr_ablation,
+                  'command_sequence_policy_steps': sequence_table,
+                  'fixed_grid_metrics_valid': sequence_table is None,
+                  'diagnostic_wheel_peak_nm': args.diagnostic_wheel_peak_nm,
+                  'preclip_saturation_scope': 'Last physics substep sampled each8ms; per-policy contiguous runs, not full physics-substep statistics',
                   'wheel_dr_sampling': 'per_environment_reset_v1' if wheel_dr_streams is not None else 'global_rng_legacy',
                   'wheel_dr_reset_budget': None if wheel_dr_streams is None else wheel_dr_streams.scales.shape[1],
                   'wheel_dr_reset_counts': None if wheel_dr_streams is None else wheel_dr_streams.indices.tolist(),
@@ -1214,7 +1358,7 @@ def main() -> int:
                       'joint_ids': list(u._leg_control_ids),
                       'velocity_limit_rad_s': u.robot.data.joint_vel_limits.torch[:, u._leg_control_ids].tolist(),
                       'armature_kg_m2': u.robot.data.joint_armature.torch[:, u._leg_control_ids].tolist()},
-                  'passed': getattr(args,'diagnostic_wheel_velocity_profile',None) is None and not getattr(args,'diagnostic_wheel_velocity_equivalence',False) and not args.diagnostic_plane_terrain and args.diagnostic_total_residual_budget is None and not args.disable_high_speed_feedback and args.disable_stage_head is None and args.base_wheel_clip is None and args.radial_spring_force is None and args.gas_spring_torque is None and args.dr_ablation == 'none' and not args.audit_critic and args.action_bias_sweep is None and args.pitch_rate_feedback is None
+                  'passed': sequence_table is None and args.diagnostic_wheel_peak_nm is None and getattr(args,'diagnostic_wheel_velocity_profile',None) is None and not getattr(args,'diagnostic_wheel_velocity_equivalence',False) and not args.diagnostic_plane_terrain and args.diagnostic_total_residual_budget is None and not args.disable_high_speed_feedback and args.disable_stage_head is None and args.base_wheel_clip is None and args.radial_spring_force is None and args.gas_spring_torque is None and args.dr_ablation == 'none' and not args.audit_critic and args.action_bias_sweep is None and args.pitch_rate_feedback is None
                             and getattr(args, 'motor_response_time_constants_ms', None) is None
                             and not getattr(args, 'diagnostic_disable_outer_feedback', False)
                             and not getattr(args, 'collect_wheel_teacher', False)
@@ -1227,8 +1371,29 @@ def main() -> int:
             report['passed'] = False
         if args.diagnostic_mesh_subdivisions:
             report['passed'] = False
+        if args.arena_ground_severity is not None:
+            report['arena_ground_material']=u.arena_ground_audit
+            report['arena_ground_material']['legacy_friction_scaling_disabled']=True
+            report['passed']=False
+        if args.arena_ground_progress is not None:
+            report['arena_ground_curriculum']=u._arena_ground_randomizer.readback()
+            report['passed']=False
+        if args.base_com_dr_strength is not None:
+            report['base_com_randomization']=u._base_com_randomizer.readback()
+            report['passed']=False
         if applied_separated_wheel_profile is not None:
             report['diagnostic_separated_wheel_profile'] = applied_separated_wheel_profile
+            report['passed'] = False
+        if args.real2sim_wheel_profile:
+            report['real2sim_wheel'] = u._real2sim_wheel.readback()
+            report['real2sim_wheel']['runtime_joint_armature_by_policy_wheel'] = u.robot.data.joint_armature.torch[:, u._wheel_control_ids].cpu().tolist()
+            report['real2sim_wheel']['runtime_actuator_joint_order'] = list(u._wheel_actuator.joint_names)
+            report['real2sim_wheel']['policy_wheel_order'] = [u.robot.joint_names[i] for i in u._wheel_control_ids]
+            report['real2sim_wheel']['end_to_end_delay_mode'] = bool(cfg.real2sim_end_to_end_delay)
+            report['real2sim_wheel']['legacy_fixed_observation_delay_steps'] = int(u._obs_delay_steps)
+            report['real2sim_wheel']['profile_path'] = str(args.real2sim_wheel_profile.resolve())
+            report['real2sim_wheel']['profile_sha256'] = hashlib.sha256(args.real2sim_wheel_profile.read_bytes()).hexdigest()
+            report['real2sim_wheel']['source_estimates_validated'] = False
             report['passed'] = False
         if args.diagnostic_joint_dr_profile:
             report['diagnostic_joint_dr_profile'] = str(args.diagnostic_joint_dr_profile.resolve())
@@ -1258,6 +1423,16 @@ def main() -> int:
             report['world_trajectory'] = analyze_trace(frames, float(u.step_dt))
             report['world_trajectory']['trace_path'] = str(trace_path)
             report['world_trajectory']['trace_sha256'] = hashlib.sha256(trace_path.read_bytes()).hexdigest()
+        if args.record_leg_tracking:
+            import numpy as np
+            tracking_path=args.output.with_suffix('.leg_tracking.npz')
+            if tracking_path.exists():
+                raise RuntimeError(f'Refusing to overwrite {tracking_path}')
+            np.savez_compressed(tracking_path,frames=torch.stack(leg_tracking_samples).cpu().numpy(),
+                                dt=float(u.step_dt),bucket_ids=bucket_ids.cpu().numpy(),
+                                columns=np.array(['episode_step','actual_vx','q0','q1','q2','q3','q4','q5']))
+            report['leg_tracking_trace']=dict(path=str(tracking_path),sha256=hashlib.sha256(tracking_path.read_bytes()).hexdigest(),
+                scope='Pre-action simulator state each policy step; final-checkpoint evaluation, not training rollouts')
         if startup_samples:
             report['startup_physics_trace'] = startup_physics
             report['startup_closure_trace_m'] = startup_closure
@@ -1316,6 +1491,18 @@ def main() -> int:
                 'reward_overrides': audit_reward_overrides,
                 'command_reward_contract_by_command': cfg.command_reward_contract_by_command,
                 'dataset': str(dataset), 'overall': value_metrics(values[eligible], targets[eligible])}
+        if sequence_table is not None:
+            for row in report['rows']:
+                row['fixed_command_checks_diagnostic_only']=row['checks']
+                row['checks']={'fixed_command_not_applicable':False}
+                row['passed']=False
+            report['passed']=False
+        if args.record_policy_trace:
+            import numpy as np
+            trace_path=args.output.with_suffix('.policy_trace.npz')
+            with trace_path.open('xb') as trace_file:
+                np.savez_compressed(trace_file,frames=torch.stack(full_policy_frames).numpy(),columns=np.asarray(trace_columns),bucket_ids=bucket_ids.cpu().numpy(),dt=float(u.step_dt))
+            report['policy_trace']=dict(path=str(trace_path),sha256=hashlib.sha256(trace_path.read_bytes()).hexdigest(),scope='Input/raw action pre-step; physical state sampled post-step before reset, every policy step; not physics-substep trace')
         if args.failure_traces:
             report.update(failure_trace_columns=trace_columns, failure_traces=failure_traces,
                           failure_trace_motor_scope='Policy slot order; post-step final physics substep motor output, excludes passive spring/constraint reactions and intermediate substep peaks',
@@ -1383,6 +1570,11 @@ def main() -> int:
             report['reward_contract_audit'] = audit
             report['audit_reward_overrides'] = audit_reward_overrides
         args.output.parent.mkdir(parents=True, exist_ok=True)
+        from rmuc_strict_acceptance import audit as strict_acceptance_audit
+        report['legacy_stage_passed'] = report['passed']
+        report['strict_acceptance'] = strict_acceptance_audit(report)
+        report['passed'] = report['strict_acceptance']['passed']
+        report['row_passed_semantics'] = 'Legacy stage diagnostic only; strict_acceptance controls qualification'
         args.output.write_text(json.dumps(report, indent=2) + '\n')
         print('[RMUC_GRID_RESULT] ' + json.dumps(report), flush=True)
         return 0 if report['passed'] else 2

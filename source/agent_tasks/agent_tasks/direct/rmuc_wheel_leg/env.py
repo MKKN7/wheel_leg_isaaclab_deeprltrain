@@ -33,8 +33,10 @@ from .env_cfg import (
     RmucWheelLegCourseEnvCfg,
 )
 from .observation_noise import add_command_consistent_noise, sensor_noise, delayed_sensor_observation
-from .command_contract import interpolate_leg_scale
-from .command_sampling import sample_opened_commands, fixed_turn_sign_cohorts
+from .command_contract import interpolate_leg_scale, validate_leg_scale_profile
+from .command_sequence import validate_sequence, sequence_commands, dynamic_tracking_cost, dynamic_stop_posture_cost, matched_filtered_target, tracking_cohort_mask
+from .command_sampling import sample_opened_commands, fixed_turn_sign_cohorts, ensure_priority_sign_coverage
+from .low_speed_tracking import tracking_targets, rebase_aligned_history
 from .motor_response import install_effort_response
 from .wheel_passive import (configure_wheel_torque_contract, read_wheel_joint_geometry,
                             mechanical_torque, feedback_damping_torque, body_torque_pair,
@@ -62,6 +64,9 @@ def validate_rehearsal_priority_config(cfg):
         raise ValueError("command_rehearsal_priority_stage_ids must be unique")
     if any(not math.isfinite(w) or w <= 0 for w in weights):
         raise ValueError("command_rehearsal_priority_stage_weights must be finite and positive")
+    if (getattr(cfg, 'command_rehearsal_stratified_coverage', False)
+            and not getattr(cfg, 'command_turn_fixed_sign_cohorts', False)):
+        raise ValueError('Stratified rehearsal coverage requires fixed turn sign cohorts')
 
 
 class RmucWheelLegEnv(DirectRLEnv):
@@ -76,8 +81,55 @@ class RmucWheelLegEnv(DirectRLEnv):
     cfg: RmucWheelLegCourseEnvCfg
 
     def __init__(self, cfg: RmucWheelLegCourseEnvCfg, render_mode: str | None = None, **kwargs):
+        if cfg.real2sim_end_to_end_delay:
+            from .real2sim_wheel import load_profile, configure_total_delay
+            if not cfg.real2sim_wheel_profile:
+                raise ValueError('End-to-end timing requires explicit real2sim wheel profile')
+            timing_profile = load_profile(cfg.real2sim_wheel_profile)
+            # Identified wheel transport owns the full observed-to-execution
+            # delay; do not add the historical whole-policy 8ms buffers again.
+            configure_total_delay(cfg, timing_profile)
         self._separated_wheel_passive = configure_wheel_torque_contract(cfg)
         validate_rehearsal_priority_config(cfg)
+        reverse_alignment_scale = cfg.command_reverse_alignment_scale_deg
+        if not math.isfinite(reverse_alignment_scale) or reverse_alignment_scale < 0:
+            raise ValueError('Reverse alignment scale must be finite and nonnegative')
+        sequence = getattr(cfg, 'command_training_sequence', ())
+        random_range = getattr(cfg, 'command_random_speed_range', ())
+        dynamic_schedule = bool(sequence or random_range)
+        if sequence and random_range:
+            raise ValueError('Fixed and random training sequences are mutually exclusive')
+        self._random_speed_sequence = None
+        self._training_sequence_table = None
+        dynamic_weight = cfg.command_dynamic_tracking_weight
+        stop_weight = cfg.command_dynamic_stop_posture_weight
+        if not math.isfinite(stop_weight) or stop_weight < 0 or (stop_weight and not dynamic_schedule):
+            raise ValueError('Stop posture weight must be finite, nonnegative and require training sequence')
+        if not math.isfinite(dynamic_weight) or dynamic_weight < 0:
+            raise ValueError('Dynamic tracking weight must be finite and nonnegative')
+        if dynamic_weight and not dynamic_schedule:
+            raise ValueError('Dynamic tracking reward requires explicit training sequence')
+        if dynamic_weight:
+            dynamic_tracking_cost(torch.zeros(1), torch.zeros(1), torch.zeros(1), cfg.command_dynamic_tracking_scale_mps)
+        if dynamic_schedule:
+            if (getattr(cfg, 'play', False) or cfg.curriculum_stage != 1
+                    or not 0 < cfg.command_continuous_sampling_fraction <= .25
+                    or not cfg.feedback_contract_by_command
+                    or not cfg.command_reward_contract_by_command
+                    or cfg.command_reset_acquisition_ramp_s > 0
+                    or cfg.command_speed_extension_sampling_box):
+                raise ValueError('Training sequence requires command-consistent continuous cohort without play, acquisition ramp or turn box')
+            if sequence:
+                self._training_sequence_table = validate_sequence(
+                    [list(row) for row in sequence], cfg.sim.dt * cfg.decimation, cfg.episode_length_s)
+            if random_range:
+                from .random_speed_sequence import RandomSpeedSequence
+                # Validate on CPU before allocating the simulation.
+                RandomSpeedSequence(0, 'cpu', cfg.sim.dt * cfg.decimation, cfg.episode_length_s,
+                    random_range, cfg.command_random_hold_s, cfg.command_random_ramp_s,
+                    cfg.command_random_step_fraction, cfg.command_random_max_delta_mps,
+                    isolated_rng=cfg.command_random_isolated_rng,
+                    stop_probability=cfg.command_random_stop_probability)
         entry_times = (cfg.command_turn_entry_hold_s, cfg.command_turn_entry_ramp_s)
         if any(not math.isfinite(t) or not 0 <= t <= 4 for t in entry_times):
             raise ValueError('Turn entry durations must be finite within0..4s')
@@ -245,6 +297,32 @@ class RmucWheelLegEnv(DirectRLEnv):
                     self.robot.actuators[group], self.cfg.sim.dt,
                     self.cfg.motor_response_time_constant_min_s,
                     self.cfg.motor_response_time_constant_max_s)
+        self._real2sim_wheel = None
+        if self.cfg.real2sim_wheel_profile:
+            if not self._separated_wheel_passive or self.cfg.wheel_feedback_damping_mode != 'active_motor_v1':
+                raise ValueError('real2sim wheels require separated active_motor_v1')
+            if self.cfg.policy_outer_feedback_enabled:
+                raise ValueError('real2sim diagnostic forbids task outer feedback')
+            from .real2sim_wheel import Real2SimWheel, load_profile
+            self._real2sim_wheel = Real2SimWheel(
+                self._last_wheel_feedback_torque_nm, self.cfg.sim.dt,
+                load_profile(self.cfg.real2sim_wheel_profile))
+            # Actuator internal order is not guaranteed to follow policy order.
+            motor_to_policy = [self._wheel_actuator.joint_names.index(n) for n in WHEEL_POLICY_DOF_NAMES]
+            policy_to_motor = [list(WHEEL_POLICY_DOF_NAMES).index(n) for n in self._wheel_actuator.joint_names]
+            wheel_compute = self._wheel_actuator.compute
+            wheel_reset = self._wheel_actuator.reset
+            def real2sim_compute(control_action, joint_pos, joint_vel):
+                action = wheel_compute(control_action, joint_pos, joint_vel)
+                effort = self._real2sim_wheel.motor_effort(action.joint_efforts[:, motor_to_policy])[:, policy_to_motor]
+                self._wheel_actuator.applied_effort = effort
+                action.joint_efforts = effort
+                return action
+            def real2sim_reset(env_ids):
+                wheel_reset(env_ids)
+                self._real2sim_wheel.reset(env_ids)
+            self._wheel_actuator.compute = real2sim_compute
+            self._wheel_actuator.reset = real2sim_reset
         self._wheel_authored_effort_limit = torch.full_like(
             self._wheel_effort_limit,
             float(self.cfg.wheel_authored_effort_limit_nm),
@@ -271,6 +349,11 @@ class RmucWheelLegEnv(DirectRLEnv):
         self._domain_nominal_root_inertia = self.robot.data.body_inertia.torch[
             :, self._root_body_id, :
         ].clone()
+        from .com_randomization import RootComRandomizer
+        self._base_com_randomizer = RootComRandomizer(
+            self.robot, self._root_body_id,
+            enabled=self.cfg.base_com_randomization_enabled,
+            max_offset_flu_m=self.cfg.base_com_max_offset_flu_m)
         self._domain_nominal_material_properties: torch.Tensor | None = None
         self._domain_material_properties: torch.Tensor | None = None
         if self.cfg.domain_randomization_enabled:
@@ -279,6 +362,10 @@ class RmucWheelLegEnv(DirectRLEnv):
             ).clone()
             self._domain_nominal_material_properties = material_properties
             self._domain_material_properties = material_properties.clone()
+        self._arena_ground_randomizer = None
+        if self.cfg.arena_ground_migration_progress >= 0:
+            from .arena_ground import ArenaGroundRandomizer
+            self._arena_ground_randomizer = ArenaGroundRandomizer(self)
         self._last_effective_wheel_damping.fill_(self._wheel_actuator_damping)
         self._last_effective_wheel_torque_scale.fill_(self.cfg.wheel_torque_scale_nm)
         self._last_effective_wheel_effort_limit.fill_(
@@ -445,6 +532,13 @@ class RmucWheelLegEnv(DirectRLEnv):
         self._rehearsal_mask = torch.zeros(self.num_envs, dtype=torch.bool, device=self.device)
         self._continuous_command_mask = torch.zeros_like(self._rehearsal_mask)
         self._continuous_commands = torch.zeros(self.num_envs, 3, device=self.device)
+        if random_range:
+            self._random_speed_sequence = RandomSpeedSequence(
+                self.num_envs, self.device, self.step_dt, cfg.episode_length_s,
+                random_range, cfg.command_random_hold_s, cfg.command_random_ramp_s,
+                cfg.command_random_step_fraction, cfg.command_random_max_delta_mps,
+                isolated_rng=cfg.command_random_isolated_rng,
+                stop_probability=cfg.command_random_stop_probability)
         self._rehearsal_stage = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._rehearsal_gate_stage_ids = torch.as_tensor(
             self.cfg.command_rehearsal_gate_stage_ids,
@@ -509,6 +603,8 @@ class RmucWheelLegEnv(DirectRLEnv):
             self.num_envs, device=self.device
         )
         self._previous_command_aligned_speed = torch.zeros(self.num_envs, device=self.device)
+        self._previous_filtered_command_target = torch.zeros(self.num_envs, device=self.device)
+        self._previous_reward_direction = torch.ones(self.num_envs, device=self.device)
         self._previous_command_aligned_speed_valid = torch.zeros(
             self.num_envs, dtype=torch.bool, device=self.device
         )
@@ -561,6 +657,11 @@ class RmucWheelLegEnv(DirectRLEnv):
         ordered_knots = sorted(leg_knots)
         self._manual_leg_speed_knots = torch.tensor(ordered_knots, device=self.device)
         self._manual_leg_scale_knots = torch.tensor([leg_knots[k] for k in ordered_knots], device=self.device)
+        if cfg.command_leg_scale_profile is not None:
+            speeds, scales = validate_leg_scale_profile(cfg.command_leg_scale_profile)
+            cfg.command_leg_scale_profile = dict(schema_version=1, speed_abs_mps=speeds, scale_rad=scales)
+            self._manual_leg_speed_knots = torch.tensor(speeds, device=self.device)
+            self._manual_leg_scale_knots = torch.tensor(scales, device=self.device)
         self._termination_debug_printed = False
 
     def set_training_progress(self, iteration: int) -> None:
@@ -1006,7 +1107,14 @@ class RmucWheelLegEnv(DirectRLEnv):
                     priority_count,
                     replacement=True,
                 )
-                self._rehearsal_stage[replay_ids[:priority_count]] = priority_tensor[priority_bucket]
+                sampled_stages = priority_tensor[priority_bucket]
+                if getattr(self.cfg, 'command_rehearsal_stratified_coverage', False):
+                    sampled_stages = ensure_priority_sign_coverage(
+                        sampled_stages,
+                        self._turn_fixed_sign_mask[replay_ids[:priority_count]],
+                        priority_tensor,
+                    )
+                self._rehearsal_stage[replay_ids[:priority_count]] = sampled_stages
             general_ids = replay_ids[priority_count:]
             general_candidates = [stage for stage in candidates if stage not in priority_candidates]
             if general_ids.numel() > 0:
@@ -1275,12 +1383,29 @@ class RmucWheelLegEnv(DirectRLEnv):
         self._rehearsal_gate_sample_count.copy_(updated_count)
 
     def _setup_scene(self) -> None:
+        self.arena_ground_audit = None
+        if self.cfg.arena_ground_severity >= 0:
+            from .arena_ground import prepare_ground
+            self.arena_ground_audit = dict(severity=self.cfg.arena_ground_severity,
+                                           targets=prepare_ground(self.cfg),behavior_certified=False)
+        if self.cfg.arena_ground_migration_progress >= 0:
+            from .arena_ground import prepare_curriculum_ground
+            self.arena_ground_audit = prepare_curriculum_ground(self.cfg)
         self.robot = Articulation(self.cfg.robot_cfg)
+        if self.cfg.arena_ground_migration_progress >= 0:
+            from .arena_ground import bind_curriculum_wheels
+            self.arena_ground_audit = bind_curriculum_wheels(sim_utils.get_current_stage(), self.cfg)
+        elif self.arena_ground_audit is not None:
+            from .arena_ground import bind_wheels
+            self.arena_ground_audit.update(bind_wheels(sim_utils.get_current_stage()))
         if self.cfg.friction_randomization_enabled:
             self._randomize_terrain_friction()
         self.cfg.terrain.num_envs = self.cfg.scene.num_envs
         self.terrain = self.cfg.terrain.class_type(self.cfg.terrain)
         self.scene.clone_environments(copy_from_source=False)
+        if self.cfg.arena_ground_migration_progress >= 0:
+            from .arena_ground import bind_curriculum_clones
+            bind_curriculum_clones(sim_utils.get_current_stage(), self.cfg, self.arena_ground_audit)
         self.scene.articulations["robot"] = self.robot
         if self.device == "cpu":
             self.scene.filter_collisions(global_prim_paths=[self.cfg.terrain.prim_path])
@@ -1356,6 +1481,12 @@ class RmucWheelLegEnv(DirectRLEnv):
                                        self._wheel_coulomb_per_env,
                                        self._wheel_feedback_damping_per_env), sampled):
                 target[env_ids] = values
+            if getattr(self, '_real2sim_wheel', None) is not None:
+                # Fixed reported estimates; never recalculate perfect compensation
+                # for each random draw or allow reset to restore the old priors.
+                self._wheel_mechanical_viscous_per_env[env_ids] = self._real2sim_wheel.mechanical_viscous
+                self._wheel_coulomb_per_env[env_ids] = self._real2sim_wheel.coulomb
+                self._wheel_feedback_damping_per_env[env_ids] = self._real2sim_wheel.damping_compensation
         for response in self._motor_responses.values():
             response.sample(env_ids, strength)
         if self._sensor_model_enabled:
@@ -2114,8 +2245,12 @@ class RmucWheelLegEnv(DirectRLEnv):
             omega = self.robot.data.joint_vel.torch[:, self._wheel_control_ids]
             mechanical = mechanical_torque(omega, self._wheel_mechanical_viscous_per_env,
                                            self._wheel_coulomb_per_env,
-                                           self.cfg.wheel_coulomb_omega_eps_rad_s)
+                                           (self._real2sim_wheel.profile['friction_epsilon_rad_s']
+                                            if getattr(self, '_real2sim_wheel', None) is not None
+                                            else self.cfg.wheel_coulomb_omega_eps_rad_s))
             feedback = feedback_damping_torque(omega, self._wheel_feedback_damping_per_env)
+            if getattr(self, '_real2sim_wheel', None) is not None:
+                feedback = self._real2sim_wheel.feedback(omega)
             feedback_is_active_motor = (
                 getattr(self.cfg, "wheel_feedback_damping_mode", "postclip_loss_v1")
                 == "active_motor_v1"
@@ -2606,6 +2741,9 @@ class RmucWheelLegEnv(DirectRLEnv):
         command_progress_score = torch.zeros_like(reward)
         command_reverse_score = torch.zeros_like(reward)
         command_overspeed_score = torch.zeros_like(reward)
+        command_idle_micro_speed_score = torch.zeros_like(reward)
+        command_dynamic_tracking_score = torch.zeros_like(reward)
+        command_dynamic_stop_posture_score = torch.zeros_like(reward)
         command_underspeed_score = torch.zeros_like(reward)
         command_severe_underspeed_score = torch.zeros_like(reward)
         command_speed_error_excess_score = torch.zeros_like(reward)
@@ -2622,6 +2760,7 @@ class RmucWheelLegEnv(DirectRLEnv):
         command_pitch_tracking_score = torch.zeros_like(reward)
         command_high_speed_pitch_rate_score = torch.zeros_like(reward)
         command_filtered_aligned_speed = torch.zeros_like(reward)
+        command_straight_alignment_cost = torch.zeros_like(reward)
         command_bank_tracking_score = torch.zeros_like(reward)
         command_bank_target_deg = torch.zeros_like(reward)
         command_bank_error_penalty_score = torch.zeros_like(reward)
@@ -2641,7 +2780,17 @@ class RmucWheelLegEnv(DirectRLEnv):
                 - self.cfg.stand_no_contact_penalty * contact_loss
             )
         elif self.cfg.curriculum_stage == 1:
-            target_speed = torch.abs(command[:, 0]).clamp_min(0.10)
+            exact_low_speed = self.cfg.command_exact_low_speed_reward_enabled
+            target_speed, speed_normalizer, command_direction, speed_margin = tracking_targets(
+                command[:,0], self.cfg.command_speed_error_margin_mps, exact_low_speed)
+            if exact_low_speed:
+                # Keep temporal reward state in one physical frame through
+                # reverse/stop transitions. Forward-only behavior is unchanged.
+                for history in (self._previous_command_aligned_speed,
+                                self._previous_filtered_command_target):
+                    history.copy_(rebase_aligned_history(
+                        history, self._previous_reward_direction, command_direction))
+                self._previous_reward_direction.copy_(command_direction)
             consistent_reward = self.cfg.command_reward_contract_by_command
             reward_scope = (torch.ones_like(self._rehearsal_mask) if consistent_reward
                             else ~self._rehearsal_mask)
@@ -2654,12 +2803,13 @@ class RmucWheelLegEnv(DirectRLEnv):
                     return target_speed >= start_speed - 1.0e-5
                 return torch.full_like(self._rehearsal_mask, self._command_level >= start_level)
 
-            command_direction = torch.sign(command[:, 0])
             # Use the same horizontal heading projection as velocity tracking
             # and the curriculum gate.  Mixing this with body-frame x makes
             # turning and tilted states receive contradictory speed gradients.
             aligned_speed = command_linear_velocity * command_direction
-            command_progress_score = torch.clamp(aligned_speed / target_speed, 0.0, 1.0)
+            command_progress_score = torch.clamp(aligned_speed / speed_normalizer, 0.0, 1.0)
+            if exact_low_speed:
+                command_progress_score = command_progress_score * (target_speed > 1e-6)
             # Keep a useful gradient when the policy is far below target.  A
             # tanh(error / tolerance) saturates after a few tolerance widths,
             # leaving only the progress term to pull a stalled policy forward.
@@ -2676,7 +2826,7 @@ class RmucWheelLegEnv(DirectRLEnv):
             command_speed_error_excess_score = torch.clamp(
                 (
                     torch.abs(velocity_error)
-                    - self.cfg.command_speed_error_margin_mps
+                    - speed_margin
                 )
                 / self.cfg.command_speed_error_scale_mps,
                 0.0,
@@ -2684,7 +2834,7 @@ class RmucWheelLegEnv(DirectRLEnv):
             )
             if self.cfg.command_tracking_error_tail_enabled:
                 speed_excess = (
-                    (torch.abs(velocity_error) - self.cfg.command_speed_error_margin_mps)
+                    (torch.abs(velocity_error) - speed_margin)
                     / self.cfg.command_speed_error_scale_mps
                 ).clamp_min(0.0)
                 command_speed_error_excess_score = (
@@ -2698,15 +2848,15 @@ class RmucWheelLegEnv(DirectRLEnv):
             command_speed_coupling_score = 1.0 - torch.clamp(
                 (
                     torch.abs(velocity_error)
-                    - self.cfg.command_speed_error_margin_mps
+                    - speed_margin
                 )
-                / (0.5 * target_speed),
+                / (0.5 * speed_normalizer),
                 0.0,
                 1.0,
             )
             underspeed_deficit = torch.clamp(target_speed - aligned_speed, min=0.0)
             command_underspeed_score = torch.clamp(
-                underspeed_deficit / target_speed,
+                underspeed_deficit / speed_normalizer,
                 0.0,
                 1.0,
             )
@@ -2722,10 +2872,11 @@ class RmucWheelLegEnv(DirectRLEnv):
             command_severe_underspeed_score = severe_underspeed_progress.square() * (
                 3.0 - 2.0 * severe_underspeed_progress
             )
-            command_reverse_score = torch.clamp(-aligned_speed / target_speed, 0.0, 1.0)
+            command_reverse_score = torch.clamp(-aligned_speed / speed_normalizer, 0.0, 1.0)
             command_overspeed_score = torch.clamp(
                 (
-                    aligned_speed
+                    (torch.where(target_speed <= 1e-6, aligned_speed.abs(), aligned_speed)
+                     if exact_low_speed else aligned_speed)
                     - target_speed
                     - self.cfg.command_overspeed_margin_mps
                 )
@@ -2734,6 +2885,11 @@ class RmucWheelLegEnv(DirectRLEnv):
                 1.0,
             )
             high_speed_factor = torch.clamp((target_speed - 1.0) / 2.0, 0.0, 1.0)
+            if exact_low_speed:
+                moving = (target_speed > 1e-6).to(reward.dtype)
+                command_underspeed_score = command_underspeed_score * moving
+                command_severe_underspeed_score = command_severe_underspeed_score * moving
+                command_reverse_score = command_reverse_score * moving
             safe_speed_mask = (
                 (-gravity[:, 2] > 0.90)
                 & (torch.abs(linear_velocity[:, 1]) < 0.45)
@@ -2775,12 +2931,20 @@ class RmucWheelLegEnv(DirectRLEnv):
             # Use the same low-pass state for a bounded long-horizon tracking
             # cost. This distinguishes a stable 2 m/s trajectory from one whose
             # mean is 2 m/s only because repeated slow/fast cycles cancel.
+            filtered_target = target_speed
+            if self.cfg.command_dynamic_matched_filter_enabled:
+                matched_target = matched_filtered_target(
+                    self._previous_filtered_command_target, target_speed,
+                    self._previous_command_aligned_speed_valid, filter_alpha)
+                self._previous_filtered_command_target.copy_(matched_target)
+                filtered_target = torch.where(self._continuous_command_mask,
+                                              matched_target, target_speed)
             command_filtered_speed_error_score = torch.clamp(
                 (
-                    torch.abs(command_filtered_aligned_speed - target_speed)
-                    - self.cfg.command_speed_error_margin_mps
+                    torch.abs(command_filtered_aligned_speed - filtered_target)
+                    - speed_margin
                 )
-                / target_speed,
+                / speed_normalizer,
                 0.0,
                 1.0,
             )
@@ -2931,6 +3095,16 @@ class RmucWheelLegEnv(DirectRLEnv):
                 1.0,
             ) * turn_pitch_rate_active
             straight_weight = 1.0 - turning
+            if self.cfg.command_straight_alignment_weight > 0:
+                from .straight_alignment import alignment_cost
+                command_straight_alignment_cost, _, _ = alignment_cost(
+                    self.robot.data.joint_pos.torch[:,self._control_dof_ids],
+                    command[:,2], angular_velocity[:,2],
+                    self.cfg.command_straight_alignment_tolerance_deg,
+                    self.cfg.command_straight_alignment_scale_deg,
+                    command_vx=command[:,0],
+                    reverse_scale_deg=self.cfg.command_reverse_alignment_scale_deg)
+                reward = reward - self.cfg.command_straight_alignment_weight * command_straight_alignment_cost
             wheel_sync = torch.clamp((self._policy_actions[:, 2] - self._policy_actions[:, 5]).square(), 0.0, 4.0)
             leg_sync = torch.clamp(
                 0.5 * (
@@ -3011,6 +3185,25 @@ class RmucWheelLegEnv(DirectRLEnv):
                     self.cfg.command_small_turn_dense_yaw_max_rad_s,
                 ) * reward_scope
             yaw_stabilization = (1.0 - turning) * yaw_error.square()
+            if self.cfg.command_dynamic_stop_posture_weight > 0:
+                command_dynamic_stop_posture_score = dynamic_stop_posture_cost(
+                    command, command_linear_velocity, pitch_rad, angular_velocity[:, 1],
+                    self._continuous_command_mask)
+            if self.cfg.command_dynamic_tracking_weight > 0:
+                command_dynamic_tracking_score = dynamic_tracking_cost(
+                    command[:, 0], command_linear_velocity,
+                    tracking_cohort_mask(command, self._continuous_command_mask,
+                        self.cfg.command_dynamic_tracking_include_fixed_reverse),
+                    self.cfg.command_dynamic_tracking_scale_mps)
+            if self.cfg.command_idle_micro_speed_penalty_weight > 0.0:
+                idle_scale = self.cfg.command_idle_micro_speed_scale_mps
+                if not math.isfinite(idle_scale) or idle_scale <= 0.0:
+                    raise ValueError("Idle micro-speed scale must be finite and positive")
+                idle_mask = (command.abs().amax(dim=1) <= 1.0e-6).to(reward.dtype)
+                micro_speed_squared = (command_linear_velocity / idle_scale).square()
+                command_idle_micro_speed_score = (
+                    micro_speed_squared / (1.0 + micro_speed_squared) * idle_mask
+                )
             bank_reward_scale = torch.where(
                 ~(reward_level_eligible(self.cfg.command_turn_yaw_tracking_start_level)
                   if consistent_reward else reward_scope), torch.ones_like(reward),
@@ -3037,6 +3230,9 @@ class RmucWheelLegEnv(DirectRLEnv):
                 * command_speed_oscillation_score
                 - self.cfg.command_reverse_penalty_weight * command_reverse_score
                 - self.cfg.command_overspeed_penalty_weight * command_overspeed_score
+                - self.cfg.command_idle_micro_speed_penalty_weight * command_idle_micro_speed_score
+                - self.cfg.command_dynamic_tracking_weight * command_dynamic_tracking_score
+                - self.cfg.command_dynamic_stop_posture_weight * command_dynamic_stop_posture_score
                 - self.cfg.command_yaw_tracking_penalty_weight * command_yaw_tracking_error_score
                 - self.cfg.command_turn_yaw_tracking_penalty_weight
                 * command_turn_yaw_tracking_score
@@ -3456,6 +3652,7 @@ class RmucWheelLegEnv(DirectRLEnv):
                 ),
             ),
             "actual_vx": command_linear_velocity,
+            "penalty_straight_measured_alignment": command_straight_alignment_cost,
             "command_active_actual_vx": active_actual_vx.expand_as(reward),
             "command_active_v_actual_over_v_cmd": active_speed_ratio.expand_as(reward),
             "command_unassisted_active_actual_vx": unassisted_active_actual_vx.expand_as(reward),
@@ -3570,6 +3767,14 @@ class RmucWheelLegEnv(DirectRLEnv):
             "wheel_pitch_emergency_feedback_action_abs": torch.abs(self._last_pitch_emergency_feedback_action),
             "leg_action_abs_mean": self._policy_actions[:, [0, 1, 3, 4]].abs().mean(dim=-1),
             "reward_step": clipped_reward,
+            "dynamic_reward_clip_low_fraction": (
+                ((reward < self.cfg.reward_clip_min) & self._continuous_command_mask).sum()
+                / self._continuous_command_mask.sum().clamp_min(1)
+            ).expand_as(reward),
+            "dynamic_reward_clip_high_fraction": (
+                ((reward > self.cfg.reward_clip_max) & self._continuous_command_mask).sum()
+                / self._continuous_command_mask.sum().clamp_min(1)
+            ).expand_as(reward),
             "reward_unclipped": reward,
             "reward_clip_low_fraction": (
                 reward < self.cfg.reward_clip_min
@@ -3617,6 +3822,9 @@ class RmucWheelLegEnv(DirectRLEnv):
             ),
             "penalty_reverse_motion": command_reverse_score,
             "penalty_forward_overspeed": command_overspeed_score,
+            "penalty_idle_micro_speed": command_idle_micro_speed_score,
+            "penalty_dynamic_tracking": command_dynamic_tracking_score,
+            "penalty_dynamic_stop_posture": command_dynamic_stop_posture_score,
             "penalty_yaw_stabilization": yaw_stabilization if self.cfg.curriculum_stage == 1 else torch.zeros_like(reward),
             "penalty_wheel_sync": wheel_sync if self.cfg.curriculum_stage == 1 else torch.zeros_like(reward),
             "penalty_unsafe_termination": (
@@ -3697,7 +3905,7 @@ class RmucWheelLegEnv(DirectRLEnv):
         command[:, 0] = vx
         command[:, 1] = 0.0
         command[:, 2] = yaw * self._command_turn_sign
-        command[self._continuous_command_mask] = self._continuous_commands[self._continuous_command_mask]
+        command[self._continuous_command_mask] = self._continuous_command_values()[self._continuous_command_mask]
         hold = getattr(self.cfg, 'command_turn_entry_hold_s', 0.)
         ramp = getattr(self.cfg, 'command_turn_entry_ramp_s', 0.)
         if hold + ramp > 0:
@@ -3733,6 +3941,14 @@ class RmucWheelLegEnv(DirectRLEnv):
         end = math.ceil(self.cfg.command_reset_acquisition_ramp_s / self.step_dt) + self.cfg.command_gate_steps
         return ~self._acquisition_ramp_mask() | (self._acquisition_command_age() >= end)
 
+    def _continuous_command_values(self) -> torch.Tensor:
+        if getattr(self, '_random_speed_sequence', None) is not None:
+            return self._random_speed_sequence.commands(self._acquisition_command_age())
+        if self._training_sequence_table is None:
+            return self._continuous_commands
+        # One age convention for observation, control, scale, reward and done.
+        return sequence_commands(self._training_sequence_table, self._acquisition_command_age())
+
     def _refresh_continuous_commands(self, env_ids: torch.Tensor) -> None:
         self._continuous_command_mask[env_ids] = False
         fraction = self.cfg.command_continuous_sampling_fraction
@@ -3745,10 +3961,28 @@ class RmucWheelLegEnv(DirectRLEnv):
         available = env_ids[~self._rehearsal_mask[env_ids]]
         missing = max(round(self.num_envs * fraction) - int(self._continuous_command_mask.sum()), 0)
         selected = available[torch.randperm(len(available), device=self.device)[:missing]]
-        values = sample_opened_commands(len(selected), self.cfg.command_stage_linear_x_mps,
-            self.cfg.command_stage_yaw_rate_rad_s, self._command_level, device=self.device,
-            final_turn_envelope=getattr(self.cfg, 'command_final_turn_envelope', None),
-            extended_start_level=getattr(self.cfg, 'command_extended_sampling_start_level', None))
+        straight_range=getattr(self.cfg, 'command_continuous_straight_speed_range', ())
+        if straight_range and getattr(self.cfg, 'command_speed_extension_sampling_box', ()):
+            raise ValueError('Straight and turn-extension continuous samplers are mutually exclusive')
+        signed_schedule = (
+            (self._random_speed_sequence is not None and self._random_speed_sequence.lo < 0)
+            or (self._training_sequence_table is not None
+                and any(row[1] < 0 for row in self._training_sequence_table)))
+        if signed_schedule or (
+            self._random_speed_sequence is not None
+            and any(v < 0 for v in self.cfg.command_stage_linear_x_mps[:self._command_level+1])
+        ):
+            # Mixed-history courses may return to forward-only schedules.
+            # The explicit schedule owns delivered commands. Do not ask the
+            # forward-only envelope to sample an unused placeholder at negative vx.
+            values = torch.zeros(len(selected), 3, device=self.device)
+        else:
+            # Preserve historical forward-course sampling/RNG exactly.
+            values = sample_opened_commands(len(selected), self.cfg.command_stage_linear_x_mps,
+                self.cfg.command_stage_yaw_rate_rad_s, self._command_level, device=self.device,
+                final_turn_envelope=getattr(self.cfg, 'command_final_turn_envelope', None),
+                extended_start_level=getattr(self.cfg, 'command_extended_sampling_start_level', None),
+                straight_speed_range=straight_range)
         box=getattr(self.cfg, 'command_speed_extension_sampling_box', ())
         if box:
             from .command_contract import sample_speed_extension_commands
@@ -3757,6 +3991,8 @@ class RmucWheelLegEnv(DirectRLEnv):
                 anchor_fraction=getattr(self.cfg, 'command_speed_extension_anchor_fraction', 0.0))
         self._continuous_command_mask[selected] = True
         self._continuous_commands[selected] = values
+        if self._random_speed_sequence is not None:
+            self._random_speed_sequence.reset(selected)
 
     def set_manual_command(self, command: torch.Tensor) -> None:
         """Set a play-only command override for an external Isaac controller."""
@@ -3961,11 +4197,14 @@ class RmucWheelLegEnv(DirectRLEnv):
             leg_t[replay_ids] = stage_leg
         random_ids = self._continuous_command_mask
         if torch.any(random_ids):
-            sampled = self._continuous_commands[random_ids]
+            sampled = self._continuous_command_values()[random_ids]
             vx_t[random_ids] = sampled[:, 0]
             yaw_t[random_ids] = sampled[:, 2].abs()
             leg_t[random_ids] = interpolate_leg_scale(sampled[:, 0], self._manual_leg_speed_knots,
                                                        self._manual_leg_scale_knots)
+        if getattr(self.cfg, 'command_leg_scale_profile', None) is not None:
+            leg_t = interpolate_leg_scale(vx_t, self._manual_leg_speed_knots,
+                                           self._manual_leg_scale_knots)
         return vx_t, yaw_t, leg_t
 
     def _stand_metrics(self, gravity: torch.Tensor | None = None) -> dict[str, torch.Tensor]:
@@ -4330,6 +4569,9 @@ class RmucWheelLegEnv(DirectRLEnv):
                     )
         super()._reset_idx(env_ids)
         self._apply_progressive_domain_randomization(env_ids)
+        self._base_com_randomizer.reset(env_ids, self.cfg.base_com_randomization_strength)
+        if self._arena_ground_randomizer is not None:
+            self._arena_ground_randomizer.reset(env_ids)
         if self._gas_spring_body_ids is not None:
             self._gas_spring_torque_nm[env_ids]=sample_equivalent_torques(len(env_ids),self.cfg.gas_spring_assist_torque_nm,
                 self._progressive_domain_randomization_strength(),self.cfg.gas_spring_torque_common_dr_fraction,
@@ -4387,6 +4629,8 @@ class RmucWheelLegEnv(DirectRLEnv):
         self._reset_speed_bootstrap_speed[env_ids] = 0.0
         self._reset_speed_bootstrap_pitch_deg[env_ids] = 0.0
         self._previous_command_aligned_speed[env_ids] = 0.0
+        self._previous_filtered_command_target[env_ids] = 0.0
+        self._previous_reward_direction[env_ids] = 1.0
         self._previous_command_aligned_speed_valid[env_ids] = False
         self._command_episode_linear_error_sum[env_ids] = 0.0
         self._command_episode_yaw_error_sum[env_ids] = 0.0

@@ -30,11 +30,13 @@ def load_contract(path):
         raise ValueError('Separated contract requires leg_pd_dt=.002')
     expected = {
         'observation_dim': 25, 'action_dim': 6, 'policy_dt': .008,
-        'physics_dt': separated_physics_dt(contract) if separated else .002, 'wheel_peak_nm': 5.5, 'wheel_continuous_nm': 3.,
+        'physics_dt': separated_physics_dt(contract) if separated else .002, 'wheel_peak_nm': contract.get('wheel_peak_nm'), 'wheel_continuous_nm': 3.,
         'wheel_action_scale_nm': 5.5, 'leg_kp': 60., 'leg_kd': 2.,
         'leg_limit_nm': 40., 'leg_scale_rad': .22, 'outer_feedback': False,
         'radial_force_n': 0., 'wheel_gear': 1.,
     }
+    if contract.get('wheel_peak_nm') not in (4.89, 5.5):
+        raise ValueError('Unsupported controller contract: wheel_peak_nm')
     for key, value in expected.items():
         if key not in contract or contract[key] != value:
             raise ValueError(f'Unsupported controller contract: {key}')
@@ -167,7 +169,7 @@ def compute_effort(contract, action, position, velocity, default_position, joint
         wheel_request = contract['wheel_action_scale_nm'] * np.asarray(
             contract['wheel_action_sign']) * action[[2, 5]]
         if feedback_damping_is_active_motor(contract):
-            # The only clamp is the electromagnetic 5.5 Nm boundary. Passive
+            # The only clamp is the explicit electromagnetic peak boundary. Passive
             # mechanical b/C remains in qfrc_applied in the MuJoCo consumer.
             wheel_request = contract['wheel_action_scale_nm'] * np.asarray(
                 contract['wheel_action_sign']) * np.clip(action[[2, 5]], -1., 1.)
@@ -230,4 +232,4 @@ class OnnxReplayController:
         raw = self.session.run([outputs[0].name], {inputs[0].name: obs[None]})[0][0]
         if raw.shape != (6,) or not np.isfinite(raw).all():
             raise ValueError('Finite6D policy action required')
-        return raw, consume_action(obs, raw)
+        return raw, consume_action(obs, raw, self.contract.get('position_authority_speed_plateau_end', 1.0))
