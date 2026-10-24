@@ -123,6 +123,11 @@ def configure_authority_audit(runner, required_commands=None):
     speed_direction=getattr(actor,'rmuc_router_speed_direction',None)
     frozen={k:p.detach().clone() for k,p in actor.named_parameters() if not p.requires_grad}
     buffers={k:b.detach().clone() for k,b in actor.named_buffers()}
+    startup_anchor=None
+    if os.environ.get('RMUC_STARTUP_ANCHOR'):
+        if not physics_training:raise ValueError('Startup anchor requires physical actor training')
+        from rmuc_startup_anchor import StartupAnchor
+        startup_anchor=StartupAnchor(actor,runner.alg.optimizer,os.environ['RMUC_STARTUP_ANCHOR'])
     pending={'observation':None}
     def capture(module,inputs):
         if torch.is_grad_enabled():pending['observation']=inputs[0].detach()
@@ -246,6 +251,11 @@ def configure_authority_audit(runner, required_commands=None):
                 'observations':storage.observations['policy'].detach().cpu(),
                 'actions':storage.actions.detach().cpu(),
                 'advantages':storage.advantages.detach().cpu(),
+                'critic_values':storage.values.detach().cpu(),
+                'gae_returns':storage.returns.detach().cpu(),
+                'storage_rewards':storage.rewards.detach().cpu(),
+                'storage_dones':storage.dones.detach().cpu(),
+                'value_capture_scope':'PPO stored rewards may include timeout bootstrap; GAE returns are not independent Monte Carlo truth',
                 'distribution_params':tuple(x.detach().cpu() for x in storage.distribution_params),
                 'actor_state_dict':{k:v.detach().cpu().clone() for k,v in actor.state_dict().items()},
                 'iteration':start+count,
@@ -271,7 +281,9 @@ def configure_authority_audit(runner, required_commands=None):
             runner.alg.storage.clear()
             result={}
         else:
+            if startup_anchor is not None:startup_anchor.begin()
             result=original(*args,**kwargs)
+            startup_anchor_result=startup_anchor.finish() if startup_anchor is not None else None
         retention_result=retention.finish() if retention is not None else None
         changed=[k for k,p in actor.named_parameters() if k in frozen and not torch.equal(p,frozen[k])]
         changed_buffers=[k for k,b in actor.named_buffers() if not torch.equal(b,buffers[k])]
@@ -302,6 +314,17 @@ def configure_authority_audit(runner, required_commands=None):
                     if not torch.isfinite(post).all() or not (post.abs()<=limit+1e-6).all():
                         raise RuntimeError('Post-authority correction bound violated')
                     record['post_authority_residual_abs_max']=post.abs().amax(0).tolist()
+        if startup_anchor is not None and not capture_only:
+            record['startup_anchor']=startup_anchor_result
+        runtime_env = getattr(runner, 'env', None)
+        wheel_timing=getattr(getattr(runtime_env, 'unwrapped', runtime_env),'_real2sim_wheel',None)
+        if wheel_timing is not None and 0 < wheel_timing.transport_probability < 1:
+            record['wheel_transport_exposure'] = dict(
+                configured_probability=wheel_timing.transport_probability,
+                active_envs=int(wheel_timing._transport_active.sum().item()),
+                total_envs=int(wheel_timing._transport_active.numel()),
+                delayed_physics_calls=int(wheel_timing._transport_delayed_calls.sum().item()),
+                total_physics_calls=int(wheel_timing._transport_total_calls.sum().item()))
         if retention_result is not None:
             record['physics_retention']=retention_result
         if head.local_correction is not None:
@@ -312,6 +335,20 @@ def configure_authority_audit(runner, required_commands=None):
                 raise RuntimeError('Physical adaptation residual bound violated')
             record['physics_samples']=int((physics.update_gate(obs)>0).sum())
             record['physics_residual_abs_max']=delta.abs().amax(0).tolist()
+            if hasattr(physics, 'timing_network'):
+                with torch.no_grad():
+                    timing = physics.timing_budget * torch.tanh(physics.timing_network(obs))
+                if not torch.isfinite(timing).all() or not (timing.abs() <= physics.timing_budget+1e-6).all():
+                    raise RuntimeError('Timing residual bound violated')
+                record['timing_residual_abs_max'] = timing.abs().amax(0).tolist()
+            if hasattr(physics, 'high_straight_network'):
+                with torch.no_grad():
+                    gate = physics.high_straight_gate(obs)
+                    delta = gate[:, None] * physics.high_straight_budget * torch.tanh(physics.high_straight_network(obs))
+                if not torch.isfinite(delta).all() or not (delta.abs() <= physics.high_straight_budget+1e-6).all():
+                    raise RuntimeError('High straight residual bound violated')
+                record['high_straight_samples'] = int((gate > 0).sum())
+                record['high_straight_residual_abs_max'] = delta.abs().amax(0).tolist()
             if hasattr(physics, 'reverse_network'):
                 with torch.no_grad():
                     gate = physics.reverse_gate(obs)

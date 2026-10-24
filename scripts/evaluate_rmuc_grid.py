@@ -19,6 +19,10 @@ from rmuc_eval_commands import ramp_straight_commands
 from rmuc_hardware_profile import apply_hardware_profile
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--leg-transport-delay-ms', type=float, default=0.0)
+parser.add_argument('--leg-transport-delay-probability', type=float, default=.5)
+parser.add_argument('--gravity-direction-dr-strength', type=float, default=0.0)
+parser.add_argument('--gravity-direction-dr-probability', type=float, default=.5)
 parser.add_argument('--checkpoint', type=Path, required=True)
 parser.add_argument('--command-sequence', type=Path, default=None, help='Episode-time [seconds,vx,yaw] steps; requires world/leg traces; fixed-grid acceptance invalid.')
 parser.add_argument('--distilled-student', type=Path, default=None, help='Student weights; checkpoint remains explicit teacher physical/observation contract source.')
@@ -362,6 +366,10 @@ def main() -> int:
     cfg.wheel_yaw_feedback_low_speed_action_clip = .3
     cfg.domain_randomization_enabled = args.dr_strength > 0
     cfg.domain_randomization_apply_in_play = True
+    cfg.leg_transport_delay_s = args.leg_transport_delay_ms/1000.
+    cfg.leg_transport_delay_probability = args.leg_transport_delay_probability
+    cfg.gravity_direction_dr_strength = args.gravity_direction_dr_strength
+    cfg.gravity_direction_dr_probability = args.gravity_direction_dr_probability
     cfg.domain_randomization_strength_override = args.dr_strength
     cfg.domain_randomization_command_consistent_noise = True
     if args.motor_response_time_constants_ms is not None:
@@ -1311,6 +1319,8 @@ def main() -> int:
                   'wheel_dr_reset_budget': None if wheel_dr_streams is None else wheel_dr_streams.scales.shape[1],
                   'wheel_dr_reset_counts': None if wheel_dr_streams is None else wheel_dr_streams.indices.tolist(),
                   'sensor_model': cfg.domain_randomization_sensor_model,
+                  'leg_transport': u._leg_transport.readback(),
+                  'gravity_direction_dr': u._gravity_direction_dr.readback(),
                   'motor_response_enabled': cfg.motor_response_enabled,
                   'motor_response_time_constants_s': {name: response.time_constant.tolist()
                       for name,response in u._motor_responses.items()},

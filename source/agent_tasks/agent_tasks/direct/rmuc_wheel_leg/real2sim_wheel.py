@@ -30,7 +30,7 @@ def validate_profile(profile):
     """Reject ambiguous side ordering, unsupported units and silent metadata."""
     if not isinstance(profile, dict) or not REQUIRED <= set(profile):
         raise ValueError("Real2sim wheel profile is missing required fields")
-    if set(profile) - REQUIRED - {"notes", "armature_override_kg_m2"}:
+    if set(profile) - REQUIRED - {"notes", "armature_override_kg_m2", "transport_delay_probability", "transport_delay_seed"}:
         raise ValueError("Unknown real2sim wheel profile fields")
     if type(profile["schema_version"]) is not int or profile["schema_version"] != 1:
         raise ValueError("Real2sim wheel profile requires schema_version=1")
@@ -61,6 +61,15 @@ def validate_profile(profile):
         raise ValueError("Friction smoothing speed must be finite positive rad/s")
     if profile["delay_mode"] not in ("none", "motor_transport", "feedback_sensor"):
         raise ValueError("Unsupported delay hypothesis")
+    if "transport_delay_probability" in profile or "transport_delay_seed" in profile:
+        probability = profile.get("transport_delay_probability", 1.)
+        seed = profile.get("transport_delay_seed", 0)
+        if profile["delay_mode"] != "motor_transport":
+            raise ValueError("Transport exposure requires motor_transport mode")
+        if type(probability) not in (int, float) or not math.isfinite(probability) or not 0 <= probability <= 1:
+            raise ValueError("Transport probability must be finite in [0,1]")
+        if type(seed) is not int or not 0 <= seed < 2**63:
+            raise ValueError("Transport seed must be a nonnegative int64")
     if any(v > .012 for v in profile["delay_s"]):
         raise ValueError("Diagnostic delay must be in [0, 12] ms; total pipeline delay requires separate verification")
     if not profile["compensation_enabled"] and any(
@@ -154,6 +163,16 @@ motor limits or mechanical drag, and does not estimate parameters online.
         self.last_feedback_torque = torch.zeros_like(template)
         self.last_motor_input = torch.zeros_like(template)
         self.last_motor_output = torch.zeros_like(template)
+        self.last_motor_effort_limit = torch.full_like(template, 5.5)
+        self.transport_probability = float(self.profile.get('transport_delay_probability', 1.))
+        self._transport_active = torch.ones(template.shape[0], device=template.device, dtype=torch.bool)
+        self._transport_rng = None
+        if self.mode == 'motor_transport' and 0 < self.transport_probability < 1:
+            self._transport_rng = torch.Generator(device=template.device)
+            self._transport_rng.manual_seed(int(self.profile.get('transport_delay_seed', 0)))
+        self._transport_delayed_calls = torch.zeros(template.shape[0], device=template.device, dtype=torch.long)
+        self._transport_total_calls = torch.zeros_like(self._transport_delayed_calls)
+        self._sample_transport(None)
         self.feedback_calls = 0
         self.motor_calls = 0
         self._motor_peak_hits = template.new_zeros(2)
@@ -163,6 +182,17 @@ motor limits or mechanical drag, and does not estimate parameters online.
         self._motor_input_abs_sum = template.new_zeros(2)
         self._motor_output_abs_sum = template.new_zeros(2)
         self._motor_samples = 0
+
+    def _sample_transport(self, env_ids):
+        """Sample once per episode using a private RNG, common to both wheels."""
+        ids = slice(None) if env_ids is None else env_ids
+        if self.mode != 'motor_transport' or self.transport_probability == 0:
+            self._transport_active[ids] = False
+        elif self.transport_probability == 1:
+            self._transport_active[ids] = True
+        else:
+            count = self._transport_active[ids].numel()
+            self._transport_active[ids] = torch.rand(count, device=self.device, generator=self._transport_rng) < self.transport_probability
 
     def _check(self, value):
         if value.shape != self.shape or value.device != self.device or value.dtype != self.dtype:
@@ -179,17 +209,28 @@ motor limits or mechanical drag, and does not estimate parameters online.
         self.feedback_calls += 1
         return result
 
-    def motor_effort(self, effort):
+    def motor_effort(self, effort, effort_limit=None):
         """Delay already-clipped motor output; never clips passive mechanics."""
         self._check(effort)
-        result = self._delay.step(effort) if self.mode == "motor_transport" else effort
+        if effort_limit is not None:
+            self._check(effort_limit)
+            self.last_motor_effort_limit.copy_(effort_limit)
+        else:
+            self.last_motor_effort_limit.fill_(5.5)
+        if self.mode == 'motor_transport':
+            delayed = self._delay.step(effort)
+            result = torch.where(self._transport_active[:, None], delayed, effort)
+        else:
+            result = effort
+        self._transport_delayed_calls.add_(self._transport_active.to(torch.long))
+        self._transport_total_calls.add_(1)
         self.last_motor_input.copy_(effort)
         self.last_motor_output.copy_(result)
         # Count contact with the peak, not asserted clipping: preclip demand is
         # intentionally unavailable here. Keep reductions on device until readback.
-        self._motor_peak_hits.add_((effort.abs() >= 5.5 - 1e-6).sum(dim=0))
+        self._motor_peak_hits.add_((effort.abs() >= self.last_motor_effort_limit - 1e-6).sum(dim=0))
         self._motor_peak_abs.copy_(torch.maximum(self._motor_peak_abs, effort.abs().amax(dim=0)))
-        self._delayed_motor_peak_hits.add_((result.abs() >= 5.5 - 1e-6).sum(dim=0))
+        self._delayed_motor_peak_hits.add_((result.abs() >= self.last_motor_effort_limit - 1e-6).sum(dim=0))
         self._delayed_motor_peak_abs.copy_(torch.maximum(self._delayed_motor_peak_abs, result.abs().amax(dim=0)))
         self._motor_input_abs_sum.add_(effort.abs().sum(dim=0))
         self._motor_output_abs_sum.add_(result.abs().sum(dim=0))
@@ -200,6 +241,7 @@ motor limits or mechanical drag, and does not estimate parameters online.
     def reset(self, env_ids):
         """Zero histories only for resetting environments; retain run statistics."""
         self._delay.reset(env_ids)
+        self._sample_transport(env_ids)
         for field in (self.last_feedback_omega, self.last_feedback_torque,
                       self.last_motor_input, self.last_motor_output):
             if env_ids is None:
@@ -212,6 +254,15 @@ motor limits or mechanical drag, and does not estimate parameters online.
             "profile": deepcopy(self.profile),
             "physics_dt_s": self.dt,
             "effective_delay_s": self.profile["delay_s"] if self.mode != "none" else [0., 0.],
+            "effective_delay_s_scope": "configured_active_pair; per-env values below when mixed",
+            "effective_delay_s_per_env": (self._transport_active[:, None].to(self.dtype)
+                * self.last_motor_input.new_tensor(self.profile['delay_s'])).cpu().tolist()
+                if self.mode == 'motor_transport' else None,
+            "transport_delay_probability": self.transport_probability if self.mode == 'motor_transport' else 0.,
+            "transport_delay_seed": int(self.profile.get('transport_delay_seed', 0)),
+            "transport_exposure_sampling": "per_reset_common_wheel_pair_private_rng",
+            "transport_delayed_calls_per_env": self._transport_delayed_calls.cpu().tolist(),
+            "transport_total_calls_per_env": self._transport_total_calls.cpu().tolist(),
             "configured_delay_cap_s": .012,
             "delay_cap_scope": "selected_hypothesis_only_total_observation_to_execution_pipeline_requires_separate_verification",
             "delay_floor_steps": list(self._delay.floors),
@@ -253,6 +304,7 @@ motor limits or mechanical drag, and does not estimate parameters online.
                 if self._motor_samples else [None, None]
             ),
             "motor_peak_statistic_is_actual_clipping_count": False,
+            "motor_peak_statistic_effort_limit_range_nm": [float(self.last_motor_effort_limit.min()),float(self.last_motor_effort_limit.max())],
             "parameter_drift_identified": False,
             "behavior_certified": False,
         }

@@ -3348,13 +3348,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             local_indices=args_cli.local_authority_train_indices,
             physics_modules=args_cli.physics_train_modules,
             router_speed_direction=args_cli.router_speed_direction)
-        sequence_gates = [validate_trainable_target_gate(
-            gate_payload['actor_state_dict'], row[1], row[2],
+        from rmuc_training_contract import validate_trainable_sequence_gates
+        sequence_gates = validate_trainable_sequence_gates(
+            gate_payload['actor_state_dict'], getattr(env_cfg, 'command_training_sequence', ()),
             physics_only=args_cli.train_physics_adaptation,
             local_indices=args_cli.local_authority_train_indices,
             physics_modules=args_cli.physics_train_modules,
             router_speed_direction=args_cli.router_speed_direction)
-            for row in getattr(env_cfg, 'command_training_sequence', ())]
         if sequence_gates:
             print(f'[RMUC_TRAINING_SEQUENCE_GATES] {sequence_gates}', flush=True)
         random_range = getattr(env_cfg, 'command_random_speed_range', ())
@@ -3856,6 +3856,29 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             readback['domain_friction_scale'] = u._domain_friction_scale.detach().cpu().tolist()
         if getattr(u.cfg, 'base_com_randomization_enabled', False):
             readback['base_com_randomization'] = u._base_com_randomizer.readback()
+        # Keep pure waiting, sampled data age and actuator response distinct.
+        # This post-reset snapshot does not certify measured end-to-end latency.
+        readback['policy_sampling_std'] = [float(v) for name, parameter in runner.alg.get_policy().distribution.named_parameters() if name in {'std_param', 'log_std_param'} for v in (torch.exp(parameter) if name == 'log_std_param' else parameter).detach().cpu().flatten()]
+        readback['leg_transport'] = u._leg_transport.readback()
+        readback['gravity_direction_dr'] = u._gravity_direction_dr.readback()
+        readback['timing_readback'] = dict(
+            scope='Post-reset configuration and buffers; not hardware timing certification',
+            physics_dt_s=float(u.cfg.sim.dt),
+            policy_period_s=float(u.step_dt),
+            leg_pd_period_s=float(u.cfg.sim.dt*u._leg_pd_sample_hold.interval_steps),
+            wheel_compute_period_s=float(u.cfg.sim.dt),
+            legacy_fixed_observation_delay_steps=int(u._obs_delay_steps),
+            sensor_observation_buffer_steps_per_env=u._sensor_delay_steps.detach().cpu().tolist(),
+            domain_observation_buffer_steps_per_env=u._domain_observation_delay_steps.detach().cpu().tolist(),
+            observation_buffer_semantics='Sensor model uses max(sensor_steps,fixed_steps); otherwise max(domain_steps,fixed_steps); not a sum',
+            communication_buffer_steps_per_env=u._communication_delay_steps.detach().cpu().tolist(),
+            sensor_model=dict(u.cfg.domain_randomization_sensor_model),
+            motor_response_time_constants_s={name: response.time_constant.detach().cpu().tolist()
+                for name, response in u._motor_responses.items()},
+            motor_response_scope='First-order time constant, not pure command latency',
+            wheel_transport=(u._real2sim_wheel.readback() if u._real2sim_wheel is not None else None),
+            inference_duration_modeled=False,
+            sensor_filter_latency_identified=False)
         Path(log_dir, 'physical_runtime_readback.json').write_text(json.dumps(readback, indent=2)+'\n')
         schedule = getattr(u, '_random_speed_sequence', None)
         if schedule is not None:

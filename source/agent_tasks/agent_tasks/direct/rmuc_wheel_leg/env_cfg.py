@@ -189,6 +189,16 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     domain_randomization_apply_in_play = bool(
         _DOMAIN_RANDOMIZATION.get("apply_in_play", False)
     )
+    leg_transport_delay_s = 0.0
+    leg_transport_delay_probability = 0.5
+    leg_transport_delay_seed = 2047
+    gravity_direction_dr_strength = 0.0
+    gravity_direction_dr_probability = 0.5
+    gravity_direction_dr_noise_deg = 0.1
+    gravity_direction_dr_bias_deg = 0.2
+    gravity_direction_dr_walk_deg_sqrt_s = 0.01
+    gravity_direction_dr_drift_bound_deg = 0.1
+    gravity_direction_dr_seed = 1047
     domain_randomization_sensor_model = dict(_DOMAIN_RANDOMIZATION.get("sensor_model", {}))
     # Engineering bounds for an optional motor-current/effort response model.
     # It is not another communication FIFO or a measured RM3508 specification.
@@ -586,6 +596,7 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_dynamic_tracking_weight = 0.0
     command_dynamic_tracking_include_fixed_reverse = False
     command_dynamic_tracking_scale_mps = 0.5
+    command_sequence_overshoot_weight = 0.0
     command_dynamic_stop_posture_weight = 0.0
     command_dynamic_matched_filter_enabled = False
     command_speed_extension_sampling_box = ()
@@ -886,6 +897,7 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_contact_weight = float(_REWARD.get("command_contact_weight", 0.25))
     command_min_height_m = float(_REWARD.get("command_min_height_m", 0.15))
     command_survival_bonus = float(_REWARD.get("command_survival_bonus", 0.10))
+    command_high_straight_alive_baseline = 0.0
     command_termination_penalty_weight = float(
         _REWARD.get("command_termination_penalty_weight", 0.0)
     )
@@ -1071,6 +1083,8 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     velocity_weight = float(_REWARD.get("velocity_weight", 0.5))
     yaw_weight = float(_REWARD.get("yaw_weight", 0.25))
     stillness_weight = float(_REWARD.get("stillness_weight", 0.5))
+    settled_wheel_smoothness_weight = 0.0
+    settled_wheel_smoothness_scale = 0.02
     action_rate_weight = float(_REWARD.get("action_rate_weight", 0.01))
     energy_weight = float(_REWARD.get("energy_weight", 0.002))
     tilt_weight = float(_REWARD.get("tilt_weight", 1.0))

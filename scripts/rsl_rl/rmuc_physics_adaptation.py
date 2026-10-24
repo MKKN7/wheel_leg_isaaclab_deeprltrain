@@ -160,7 +160,7 @@ class PhysicsAdaptation(nn.Module):
         extension = getattr(self, 'straight_extension_budget', torch.zeros_like(self.budget))
         reverse = getattr(self, 'reverse_budget', torch.zeros_like(self.budget))
         # Base domains are disjoint; optional bridge is a convex combination.
-        return self.budget + torch.maximum(alignment, extension) + reverse
+        return self.budget + torch.maximum(alignment, extension) + reverse + getattr(self,'high_straight_budget',torch.zeros_like(self.budget)) + getattr(self,'timing_budget',torch.zeros_like(self.budget)) + getattr(self,'delay_local_budget',torch.zeros_like(self.budget)) + getattr(self,'stop_budget',torch.zeros_like(self.budget)) + getattr(self,'startup_budget',torch.zeros_like(self.budget))
 
     def install_reverse_network(self, budget, domain):
         """Explicit zero-output reverse-only branch; forward routing is untouched."""
@@ -208,6 +208,148 @@ class PhysicsAdaptation(nn.Module):
         self.straight_extension_network = copy.deepcopy(self.network)
         nn.init.zeros_(self.straight_extension_network[-1].weight)
         nn.init.zeros_(self.straight_extension_network[-1].bias)
+
+    def install_straight_update_scope(self, domain):
+        """Freeze the previous straight output outside an explicit speed window."""
+        if not hasattr(self,'straight_extension_network') or hasattr(self,'straight_update_anchor'):
+            raise ValueError('Scope requires one existing straight branch and no previous scope')
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if d.shape!=(4,) or not torch.isfinite(d).all() or not 0<=d[0]<d[1]<=d[2]<d[3]<=3.4:
+            raise ValueError('Invalid straight update scope')
+        self.register_buffer('straight_update_domain',d.clone())
+        self.straight_update_anchor=copy.deepcopy(self.straight_extension_network).requires_grad_(False)
+
+    def straight_update_gate(self, observation):
+        if not hasattr(self,'straight_update_domain'):return torch.ones_like(observation[...,7])
+        d=self.straight_update_domain;v=observation[...,7]/.5
+        def smooth(t):
+            t=t.clamp(0.,1.);return t*t*(3.-2.*t)
+        return smooth((v-d[0])/(d[1]-d[0]))*(1.-smooth((v-d[2])/(d[3]-d[2])))
+
+    def install_high_straight(self, budget, domain):
+        if hasattr(self,'high_straight_network') or not hasattr(self,'straight_update_anchor'):
+            raise ValueError('High straight branch requires protected existing straight source')
+        b=torch.as_tensor(budget,device=self.budget.device,dtype=self.budget.dtype)
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if b.shape!=(6,) or not torch.isfinite(b).all() or (b<0).any() or (b>.5).any():raise ValueError('Invalid high straight budget')
+        if d.shape!=(4,) or not torch.isfinite(d).all() or not 1.5<=d[0]<d[1]<=d[2]<d[3]<=3.4:raise ValueError('Invalid high straight domain')
+        self.register_buffer('high_straight_budget',b.clone())
+        self.register_buffer('high_straight_domain',d.clone())
+        self.high_straight_network=copy.deepcopy(self.network)
+        nn.init.zeros_(self.high_straight_network[-1].weight)
+        nn.init.zeros_(self.high_straight_network[-1].bias)
+
+    def high_straight_gate(self, observation):
+        d=self.high_straight_domain;v=observation[...,7]/.5
+        def smooth(t):
+            t=t.clamp(0.,1.);return t*t*(3.-2.*t)
+        yaw=observation[...,2]/.25+observation[...,8]
+        return (smooth((v-d[0])/(d[1]-d[0]))*(1.-smooth((v-d[2])/(d[3]-d[2])))
+                *((yaw.abs()<=1e-4)&(observation[...,8].abs()<1.99)).to(v.dtype))
+
+    def install_timing_network(self, budget):
+        """Zero-initialized bounded timing adaptation; no command or actuator loop."""
+        if hasattr(self,'timing_network') or not hasattr(self,'alignment_network'):
+            raise ValueError('Timing branch requires existing physical actor and no timing head')
+        b=torch.as_tensor(budget,device=self.budget.device,dtype=self.budget.dtype)
+        if b.shape!=(6,) or not torch.isfinite(b).all() or (b<0).any() or (b>.2).any():
+            raise ValueError('Invalid timing residual budget')
+        self.register_buffer('timing_budget',b.clone())
+        self.timing_network=copy.deepcopy(self.network)
+        nn.init.zeros_(self.timing_network[-1].weight)
+        nn.init.zeros_(self.timing_network[-1].bias)
+
+    def install_delay_local_network(self, budget, domain):
+        """Add a zero-output local repair without changing the existing timing actor."""
+        if not hasattr(self, 'timing_network') or hasattr(self, 'delay_local_network'):
+            raise ValueError('Local delay repair requires one existing timing branch')
+        b = torch.as_tensor(budget, device=self.budget.device, dtype=self.budget.dtype)
+        d = torch.as_tensor(domain, device=self.budget.device, dtype=self.budget.dtype)
+        if (b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any()
+                or (b > .03).any() or d.shape != (4,) or not torch.isfinite(d).all()
+                or not bool((d[1:] > d[:-1]).all()) or d[0] < 0 or d[-1] > 3.2):
+            raise ValueError('Local delay budget <=.03 and ordered forward speed bounds required')
+        self.register_buffer('delay_local_budget', b.clone())
+        self.register_buffer('delay_local_domain', d.clone())
+        self.delay_local_network = copy.deepcopy(self.network)
+        nn.init.zeros_(self.delay_local_network[-1].weight)
+        nn.init.zeros_(self.delay_local_network[-1].bias)
+
+    def delay_local_gate(self, observation):
+        d = self.delay_local_domain
+        v = observation[..., 7] / .5
+        def smooth(t):
+            t = t.clamp(0., 1.)
+            return t*t*(3.-2.*t)
+        yaw = observation[..., 2] / .25 + observation[..., 8]
+        return (smooth((v-d[0])/(d[1]-d[0]))
+                * (1.-smooth((v-d[2])/(d[3]-d[2])))
+                * ((yaw.abs() <= 1e-4) & (observation[..., 8].abs() < 1.99)).to(v.dtype))
+
+    def install_startup_network(self, budget, domain):
+        """Zero-output forward straight specialist; old controller stays frozen."""
+        if hasattr(self, 'startup_network'):
+            raise ValueError('Startup head already installed')
+        b=torch.as_tensor(budget,device=self.budget.device,dtype=self.budget.dtype)
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if (b.shape!=(6,) or not torch.isfinite(b).all() or (b<0).any() or (b>.2).any()
+                or d.shape!=(4,) or not torch.isfinite(d).all()
+                or not bool((d[1:]>d[:-1]).all()) or d[0]<0 or d[-1]>2.1):
+            raise ValueError('Startup budget<=.2, strictly ordered forward domain ending<=2.1 required')
+        self.register_buffer('startup_budget',b.clone())
+        self.register_buffer('startup_domain',d.clone())
+        self.startup_network=copy.deepcopy(self.network)
+        nn.init.zeros_(self.startup_network[-1].weight)
+        nn.init.zeros_(self.startup_network[-1].bias)
+
+    def startup_gate(self, observation):
+        d=self.startup_domain;v=observation[...,7]/.5
+        def smooth(t):
+            t=t.clamp(0.,1.);return t*t*(3.-2.*t)
+        yaw=observation[...,2]/.25+observation[...,8]
+        return (smooth((v-d[0])/(d[1]-d[0]))*(1-smooth((v-d[2])/(d[3]-d[2])))
+                *((yaw.abs()<=1e-4)&(observation[...,8].abs()<1.99)).to(v.dtype))
+
+    def install_stop_network(self, budget):
+        """Zero-initialized bounded stop repair; no change to the observation contract."""
+        if hasattr(self, 'stop_network'):
+            raise ValueError('Stop repair already installed')
+        b = torch.as_tensor(budget, device=self.budget.device, dtype=self.budget.dtype)
+        if b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any() or (b > .2).any():
+            raise ValueError('Stop residual budget must be finite, nonnegative and <=.2')
+        self.register_buffer('stop_budget', b.clone())
+        self.stop_network = copy.deepcopy(self.network)
+        nn.init.zeros_(self.stop_network[-1].weight)
+        nn.init.zeros_(self.stop_network[-1].bias)
+
+    def stop_gate(self, observation):
+        speed = observation[..., 7] / .5
+        yaw = observation[..., 2] / .25 + observation[..., 8]
+        t = (1. - speed.abs() / .05).clamp(0., 1.)
+        return t*t*(3.-2.*t) * ((yaw.abs() <= 1e-4) & (observation[..., 8].abs() < 1.99)).to(t.dtype)
+
+    def install_timing_update_scope(self, domain):
+        """Keep a frozen timing anchor outside an explicit command-speed window."""
+        if not hasattr(self, 'timing_network') or hasattr(self, 'timing_update_anchor'):
+            raise ValueError('Timing scope requires one unscoped timing head')
+        d = torch.as_tensor(domain, device=self.budget.device, dtype=self.budget.dtype)
+        if d.shape != (4,) or not torch.isfinite(d).all() or not bool((d[1:] > d[:-1]).all()):
+            raise ValueError('Timing scope requires four strictly increasing finite bounds')
+        self.register_buffer('timing_update_domain', d.clone())
+        self.timing_update_anchor = copy.deepcopy(self.timing_network).requires_grad_(False)
+
+    def timing_update_gate(self, observation):
+        if not hasattr(self, 'timing_update_domain'):
+            return torch.ones_like(observation[..., 7])
+        d = self.timing_update_domain
+        speed = observation[..., 7] / .5
+        def smooth(t):
+            t = t.clamp(0., 1.)
+            return t*t*(3.-2.*t)
+        yaw = observation[..., 2] / .25 + observation[..., 8]
+        return (smooth((speed-d[0])/(d[1]-d[0]))
+                * (1.-smooth((speed-d[2])/(d[3]-d[2])))
+                * ((yaw.abs() <= 1e-4) & (observation[..., 8].abs() < 1.99)).to(speed.dtype))
 
     def straight_extension_gate(self, observation):
         d = self.straight_extension_domain
@@ -313,6 +455,10 @@ class PhysicsAdaptation(nn.Module):
 
     def correction(self, observation):
         original = self._legacy_correction(observation)
+        if hasattr(self, 'startup_network'):
+            original = original + self.startup_gate(observation)[..., None] * self.startup_budget * torch.tanh(self.startup_network(observation))
+        if hasattr(self, 'stop_network'):
+            original = original + self.stop_gate(observation)[..., None] * self.stop_budget * torch.tanh(self.stop_network(observation))
         if hasattr(self, 'reverse_network'):
             original = original + (self.reverse_gate(observation)[..., None]
                 * self.reverse_budget * torch.tanh(self.reverse_network(observation)))
@@ -322,9 +468,24 @@ class PhysicsAdaptation(nn.Module):
                            * self.alignment_budget
                            * torch.tanh(self.alignment_network(observation)))
         if hasattr(self, 'straight_extension_network'):
+            output=torch.tanh(self.straight_extension_network(observation))
+            if hasattr(self,'straight_update_anchor'):
+                anchor=torch.tanh(self.straight_update_anchor(observation))
+                output=anchor+self.straight_update_gate(observation)[...,None]*(output-anchor)
             result = result + (self.straight_extension_gate(observation)[..., None]
-                               * self.straight_extension_budget
-                               * torch.tanh(self.straight_extension_network(observation)))
+                               * self.straight_extension_budget * output)
+        if hasattr(self,'high_straight_network'):
+            result=result+self.high_straight_gate(observation)[...,None]*self.high_straight_budget*torch.tanh(self.high_straight_network(observation))
+        if hasattr(self,'timing_network'):
+            output = torch.tanh(self.timing_network(observation))
+            if hasattr(self, 'timing_update_anchor'):
+                anchor = torch.tanh(self.timing_update_anchor(observation))
+                gate = self.timing_update_gate(observation)[..., None]
+                blended = anchor + gate * (output-anchor)
+                output = torch.where(gate <= 0, anchor, torch.where(gate >= 1, output, blended))
+            result=result+self.timing_budget*output
+        if hasattr(self, 'delay_local_network'):
+            result = result + self.delay_local_gate(observation)[..., None] * self.delay_local_budget * torch.tanh(self.delay_local_network(observation))
         return result
 
     def forward(self,observation,source_action):

@@ -207,3 +207,56 @@ def test_total_delay_disables_duplicate_buffers_without_erasing_noise():
     assert cfg.domain_randomization_sensor_model['action_delay_enabled'] is False
     assert original['action_delay_enabled'] is True
     with pytest.raises(ValueError):m.configure_total_delay(cfg,profile('feedback_sensor'))
+
+
+def test_mixed_transport_is_per_env_and_reset_does_not_change_global_rng():
+    p = profile('motor_transport')
+    p.update(delay_s=[.002,.002], transport_delay_probability=.5, transport_delay_seed=491)
+    before = torch.random.get_rng_state().clone()
+    model = m.Real2SimWheel(torch.zeros(64, 2), .002, p)
+    assert torch.equal(before, torch.random.get_rng_state())
+    delayed = model._transport_active.clone()
+    assert delayed.any() and (~delayed).any()
+    effort = torch.ones(64,2)
+    torch.testing.assert_close(model.motor_effort(effort), (~delayed)[:,None].expand(64,2).float())
+    torch.testing.assert_close(model.motor_effort(effort*2), torch.where(delayed[:,None], effort, effort*2))
+    untouched = model._transport_active[1:].clone()
+    model.reset(torch.tensor([0]))
+    assert torch.equal(before, torch.random.get_rng_state())
+    assert torch.equal(model._transport_active[1:],untouched)
+    out = model.motor_effort(effort*3)
+    torch.testing.assert_close(out[1:],torch.where(delayed[1:,None],effort[1:]*2,effort[1:]*3))
+    expected_first = torch.zeros(2) if model._transport_active[0] else torch.ones(2)*3
+    torch.testing.assert_close(out[0],expected_first)
+    rb=model.readback()
+    assert set(v for row in rb['effective_delay_s_per_env'] for v in row) <= {0., .0020000000949949026}
+    assert all(v==3 for v in rb['transport_total_calls_per_env'])
+
+
+def test_mixed_transport_zero_and_one_endpoints_match_legacy():
+    for probability in [0.,1.]:
+        p=profile('motor_transport');p.update(delay_s=[.002,.002],transport_delay_probability=probability)
+        mixed=m.Real2SimWheel(torch.zeros(3,2),.002,p)
+        fixed=profile('motor_transport' if probability else 'none');fixed['delay_s']=[.002,.002]
+        legacy=m.Real2SimWheel(torch.zeros(3,2),.002,fixed)
+        for i in range(5):
+            a=torch.full((3,2),float(i-2))
+            assert torch.equal(mixed.motor_effort(a),legacy.motor_effort(a))
+
+
+@pytest.mark.parametrize('field,value',[('transport_delay_probability',-.1),('transport_delay_probability',1.1),('transport_delay_probability',True),('transport_delay_probability',float('nan')),('transport_delay_seed',True),('transport_delay_seed',-1)])
+def test_invalid_transport_exposure_rejected(field,value):
+    p=profile('motor_transport');p[field]=value
+    with pytest.raises(ValueError):m.validate_profile(p)
+
+
+def test_peak_statistics_use_actual_limits_without_changing_torque():
+    model=runtime('none',count=1)
+    effort=torch.tensor([[4.89,-4.89]],dtype=torch.float64)
+    limit=torch.full_like(effort,4.89)
+    output=model.motor_effort(effort,limit)
+    assert output is effort
+    rb=model.readback()
+    assert rb['motor_peak_hit_fraction_by_side']==[1.,1.]
+    assert rb['motor_peak_statistic_effort_limit_range_nm']==[4.89,4.89]
+    assert rb['motor_peak_statistic_is_actual_clipping_count'] is False

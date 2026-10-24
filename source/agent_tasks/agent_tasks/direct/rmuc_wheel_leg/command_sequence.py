@@ -46,6 +46,28 @@ def dynamic_tracking_cost(command_vx, measured_vx, cohort_mask, scale_mps):
     return ((1.0 + error.square()).sqrt() - 1.0).clamp_max(4.0) * cohort_mask.to(error.dtype)
 
 
+def sequence_overshoot_cost(step_table, episode_age, command, measured_vx, cohort_mask):
+    """Penalize crossing a step target, not the braking torque needed to stop.
+
+    Fixed straight sequences only. Ten percent of step size is free; beyond
+    that the cost has a linear slope up to four. Initial phase, static cohorts
+    and nonmatching/yaw commands are exactly excluded. No controller change.
+    """
+    table = torch.as_tensor(step_table, device=episode_age.device, dtype=measured_vx.dtype)
+    ids = torch.searchsorted(table[:, 0].contiguous(), episode_age.to(table.dtype).contiguous(), right=True) - 1
+    ids = ids.clamp(0, len(step_table) - 1)
+    target = table[ids, 1]
+    previous = table[(ids - 1).clamp_min(0), 1]
+    delta = target - previous
+    active = (cohort_mask & (ids > 0) & (delta.abs() > 1.e-6)
+              & (table[ids, 2].abs() <= 1.e-6)
+              & (table[(ids - 1).clamp_min(0), 2].abs() <= 1.e-6)
+              & ((command[:, 0] - target).abs() <= 1.e-5)
+              & (command[:, 2].abs() <= 1.e-6))
+    crossing = delta.sign() * (measured_vx - target) / delta.abs().clamp_min(.05)
+    return torch.where(active, (crossing - .1).clamp(0., 4.), torch.zeros_like(measured_vx))
+
+
 def tracking_cohort_mask(command, dynamic_mask, include_fixed_reverse=False):
     """Opt-in dense tracking for fixed reverse without double-counting dynamics."""
     if not include_fixed_reverse:

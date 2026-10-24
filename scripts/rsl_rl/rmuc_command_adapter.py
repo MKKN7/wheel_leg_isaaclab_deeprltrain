@@ -97,6 +97,20 @@ def install_rmuc_physics_adaptation(actor, state=None):
             if depth:
                 raise ValueError('Straight extension is supported only at outer physics stage')
             module.install_straight_extension(state[prefix+'straight_extension_budget'], state[prefix+'straight_extension_domain'])
+        if prefix+'straight_update_domain' in state:
+            module.install_straight_update_scope(state[prefix+'straight_update_domain'])
+        if prefix+'high_straight_domain' in state:
+            module.install_high_straight(state[prefix+'high_straight_budget'],state[prefix+'high_straight_domain'])
+        if prefix+'timing_budget' in state:
+            module.install_timing_network(state[prefix+'timing_budget'])
+        if prefix+'timing_update_domain' in state:
+            module.install_timing_update_scope(state[prefix+'timing_update_domain'])
+        if prefix+'startup_budget' in state:
+            module.install_startup_network(state[prefix+'startup_budget'], state[prefix+'startup_domain'])
+        if prefix+'stop_budget' in state:
+            module.install_stop_network(state[prefix+'stop_budget'])
+        if prefix+'delay_local_budget' in state:
+            module.install_delay_local_network(state[prefix+'delay_local_budget'], state[prefix+'delay_local_domain'])
         if prefix+'straight_bridge_enabled' in state:
             if float(state[prefix+'straight_bridge_enabled']) != 1.:
                 raise ValueError('Explicit straight bridge flag must be one')

@@ -237,3 +237,34 @@ class RolloutCoverage:
         if self.updates >= self.grace and missing:
             raise RuntimeError(f'Required commands missing from actual rollouts: {missing}')
         return report
+
+
+def validate_trainable_sequence_gates(state, sequence, **selection):
+    """Permit explicit frozen approach phases only for the bounded stop-only head.
+
+    Approach uses the unchanged teacher; zero-command settling is the trainable
+    phase. Other module selections retain the all-targets-active requirement.
+    """
+    stop_only = (selection.get('physics_only') is True and
+                 selection.get('physics_modules') == ['rmuc_physics_adaptation.stop_network'])
+    if not stop_only:
+        return [validate_trainable_target_gate(state, row[1], row[2], **selection) for row in sequence]
+    if not sequence:
+        return []
+    if not any(row[1] == 0 and row[2] == 0 for row in sequence):
+        raise ValueError('Stop sequence requires trainable zero-command settling')
+    if any(not math.isfinite(row[1]) or not math.isfinite(row[2]) or
+           row[2] != 0 or not 0 <= row[1] <= 1.5 or
+           (row[1] != 0 and row[1] < .05) for row in sequence):
+        raise ValueError('Frozen stop approaches must be straight, .05 to1.5 m/s')
+    rows=[]
+    # Always validate that the stop head actually exists and is reachable.
+    zero=validate_trainable_target_gate(state, 0., 0., **selection)
+    for row in sequence:
+        if row[1] == 0:
+            rows.append(dict(**zero, phase='trainable_stop'))
+        else:
+            rows.append(dict(commands=[(row[1], row[2])], gates=[0.],
+                             passed=True, phase='frozen_teacher_approach',
+                             scope='Explicit setup phase; no claim of trainable gate'))
+    return rows
