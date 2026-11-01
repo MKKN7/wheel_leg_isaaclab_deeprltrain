@@ -161,3 +161,17 @@ def test_dynamic_commands_enter_coverage_and_require_live_cohort():
     c.command_continuous_sampling_fraction=.1
     pairs=required_training_commands(c)
     assert (.5,0.) in pairs and (0.,0.) in pairs
+
+def test_sequence_coverage_waits_for_late_new_command():
+    from rmuc_training_contract import sequence_coverage_grace
+    assert sequence_coverage_grace([], .008, 128)==3
+    assert sequence_coverage_grace([[0,0,0],[1,.25,0],[5,.5,0],[9,.35,0],[11,.45,0],[18,0,0]],.008,128)==11
+    assert sequence_coverage_grace([[0,0,0],[2,.5,0],[17,0,0]],.008,128)==3
+
+
+def test_sequence_coverage_grace_excludes_independently_sampled_commands():
+ from rmuc_training_contract import sequence_coverage_grace
+ seq=[[0,0,0],[5,-.4,0],[8,-.8,0],[17,-.25,0]]
+ assert sequence_coverage_grace(seq,.008,256)==9
+ assert sequence_coverage_grace(seq,.008,256,[(0,0),(-.4,0),(-.8,0),(-.25,0)])==3
+ assert sequence_coverage_grace(seq,.008,256,[(0,0),(-.4,0),(-.8,0)])==9

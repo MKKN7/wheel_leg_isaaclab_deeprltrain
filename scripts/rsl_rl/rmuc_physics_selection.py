@@ -4,7 +4,7 @@ from types import SimpleNamespace
 import torch
 from rmuc_physics_adaptation import PhysicsAdaptation
 
-_PATTERN = re.compile(r'rmuc_physics_adaptation\.(?:frozen_source\.){0,3}(?:network|reference_network|frozen_reference_network|scoped_network|alignment_network|straight_extension_network|high_straight_network|timing_network|delay_local_network|stop_network|startup_network|reverse_network)\Z')
+_PATTERN = re.compile(r'rmuc_physics_adaptation\.(?:frozen_source\.){0,3}(?:network|reference_network|frozen_reference_network|scoped_network|alignment_network|straight_extension_network|high_straight_network|timing_network|delay_local_network|stop_network|startup_network|reverse_network|reverse_update_anchor|reverse_reserve_network|joint_delay_network)\Z')
 
 
 def validate_paths(paths, state):
@@ -22,6 +22,7 @@ def network_gate(owner, leaf, obs):
     An inherited correction remains active even when its parent's update gate is
     zero. Real rollout gradients must additionally check clamp saturation.
     """
+    if leaf == 'joint_delay_network':return owner.joint_delay_gate(obs)
     if leaf == 'alignment_network':
         return owner.alignment_gate(obs)
     if leaf == 'straight_extension_network':
@@ -31,8 +32,16 @@ def network_gate(owner, leaf, obs):
     if leaf == 'startup_network':return owner.startup_gate(obs)
     if leaf == 'stop_network':return owner.stop_gate(obs)
     if leaf == 'delay_local_network':return owner.delay_local_gate(obs)
-    if leaf == 'reverse_network':
-        return owner.reverse_gate(obs)
+    if leaf == 'reverse_reserve_network':return owner.reverse_reserve_gate(obs)
+    if leaf in ('reverse_network','reverse_update_anchor'):
+        gate=owner.reverse_gate(obs)
+        if hasattr(owner,'reverse_update_domain'):
+            d=owner.reverse_update_domain;t=((d[1]-obs[...,7]/.5)/(d[1]-d[0])).clamp(0,1);scope=t*t*(3-2*t)
+            gate=gate*((1-scope) if leaf=='reverse_update_anchor' else scope)
+        elif leaf=='reverse_update_anchor':raise ValueError('Missing reverse anchor scope')
+        if leaf=='reverse_network' and hasattr(owner,'reverse_extension_domain'):
+            d=owner.reverse_extension_domain;t=((d[1]-obs[...,7]/.5)/(d[1]-d[0])).clamp(0,1);gate=gate*t*t*(3-2*t)
+        return gate
     gate = owner.update_gate(obs)
     scoped = owner.scoped_gate(obs) if hasattr(owner, 'scoped_network_domain') else torch.zeros_like(gate)
     positive = owner.positive_gate(obs) if hasattr(owner, 'positive_update_domain') else torch.ones_like(gate)
@@ -56,7 +65,7 @@ def state_network_gate(state, path, obs):
             if k.startswith(prefix) and '.' not in k[len(prefix):]}
     owner=SimpleNamespace(**values)
     owner.gate=PhysicsAdaptation.gate
-    for name in ['update_gate','positive_gate','reference_gate','scoped_gate','frozen_reference_gate','network_update_gate','alignment_gate','straight_extension_gate','straight_update_gate','high_straight_gate','timing_update_gate','delay_local_gate','stop_gate','startup_gate','reverse_gate']:
+    for name in ['update_gate','positive_gate','reference_gate','scoped_gate','frozen_reference_gate','network_update_gate','alignment_gate','straight_extension_gate','straight_update_gate','high_straight_gate','timing_update_gate','delay_local_gate','stop_gate','startup_gate','reverse_gate','reverse_reserve_gate','joint_delay_gate']:
         setattr(owner,name,lambda x,method=getattr(PhysicsAdaptation,name):method(owner,x))
     return network_gate(owner,leaf,obs)
 

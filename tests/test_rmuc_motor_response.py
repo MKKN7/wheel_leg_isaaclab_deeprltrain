@@ -66,17 +66,34 @@ def test_motor_diagnostic_cannot_become_a_policy_certificate():
     tree=ast.parse((ROOT/'scripts/evaluate_rmuc_grid.py').read_text())
     node=next(n for n in ast.walk(tree) if isinstance(n,ast.Dict) and any(isinstance(k,ast.Constant) and k.value=='diagnostic_dr_ablation' for k in n.keys))
     expr=next(v for k,v in zip(node.keys,node.values) if isinstance(k,ast.Constant) and k.value=='passed')
-    args=SimpleNamespace(diagnostic_plane_terrain=False,diagnostic_total_residual_budget=None,
+    args=SimpleNamespace(world_model_action_noise_std=0.,diagnostic_wheel_peak_nm=None,diagnostic_plane_terrain=False,diagnostic_total_residual_budget=None,
         disable_high_speed_feedback=False,disable_stage_head=None,base_wheel_clip=None,radial_spring_force=None,
         gas_spring_torque=None,dr_ablation='none',audit_critic=False,action_bias_sweep=None,pitch_rate_feedback=None,
         motor_response_time_constants_ms=[2.,30.], diagnostic_disable_outer_feedback=False,
         collect_wheel_teacher=False, diagnostic_hardware_profile=None)
-    ns={'args':args,'rows':[{'passed':True}]}
+    ns={'args':args,'rows':[{'passed':True}],'sequence_table':None}
     assert not eval(compile(ast.Expression(expr),'<actual report>','eval'),ns)
     args.motor_response_time_constants_ms=None
     assert eval(compile(ast.Expression(expr),'<actual report>','eval'),ns)
 
 
-@pytest.mark.parametrize('dt,low,high',[(0,.01,.02),(.002,0,.02),(.002,.03,.02),(.002,.01,float('nan'))])
+@pytest.mark.parametrize('dt,low,high',[(0,.01,.02),(.002,-.001,.02),(.002,.03,.02),(.002,.01,float('nan'))])
 def test_invalid_response_parameters_rejected(dt,low,high):
     with pytest.raises(ValueError):m.EffortResponse(torch.zeros(1,2),dt,low,high)
+
+
+def test_zero_endpoint_and_independent_response_strength():
+ r=m.EffortResponse(torch.zeros(4096,2),.002,0.,.005)
+ r.sample(torch.arange(4096),m.response_strength(.1,1.))
+ assert r.time_constant.max()>.0049 and r.time_constant.min()>=0
+ assert m.response_strength(.1)==.1
+ z=m.EffortResponse(torch.zeros(2,2),.002,0.,0.);z.sample(torch.arange(2),1.)
+ x=torch.tensor([[1.,-2.],[4.,-4.]])
+ assert torch.equal(z.step(x,torch.full_like(x,4.89)),x)
+ with pytest.raises(ValueError):m.response_strength(.1,2.)
+
+
+def test_explicit_response_override_follows_joint_profile():
+ text=(ROOT/'scripts/evaluate_rmuc_grid.py').read_text()
+ assert text.index('cfg.motor_response_strength_override=args.motor_response_strength')>text.index('apply_joint_dr_profile(cfg,')
+ assert text.index('cfg.motor_response_time_constant_max_s = args.motor_response_time_constants_ms[1]/1000.')<text.index('env = RslRlVecEnvWrapper(gym.make')

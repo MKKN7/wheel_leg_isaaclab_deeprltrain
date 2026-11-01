@@ -35,7 +35,7 @@ def test_action_fifo_real_prephysics_tail():
     tree=ast.parse((ROOT/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg/env.py').read_text())
     cls=next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='RmucWheelLegEnv')
     fn=next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='_pre_physics_step')
-    node=next(n for n in fn.body if isinstance(n,ast.If) and ast.unparse(n.test)=='self._sensor_model_enabled')
+    node=next(n for n in ast.walk(fn) if isinstance(n,ast.If) and ast.unparse(n.test)=='self._sensor_model_enabled')
     env=SimpleNamespace(_sensor_model_enabled=True,_command_action_history=torch.zeros(3,4,6),num_envs=3,device='cpu',_communication_delay_steps=torch.tensor([1,2,3]))
     for step in range(1,6):
         env._policy_actions=torch.full((3,6),float(step))
@@ -52,7 +52,7 @@ def test_sensor_reset_sampling_bounds_and_partial_reset_isolation(monkeypatch):
     package = ModuleType('_sensor_sampling_fixture')
     package.__path__ = [str(ROOT/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg')]
     monkeypatch.setitem(sys.modules, package.__name__, package)
-    env=SimpleNamespace(device='cpu',_sensor_cfg=c,_sensor_model_enabled=True,
+    env=SimpleNamespace(device='cpu',_sensor_cfg=c,_sensor_model_enabled=True,_joint_delay_dr=None,
         cfg=SimpleNamespace(recovery_communication_delay_probability_override=-1.),
         _sensor_delay_steps=torch.full((1025,),9,dtype=torch.long),
         _communication_delay_steps=torch.full((1025,),9,dtype=torch.long),

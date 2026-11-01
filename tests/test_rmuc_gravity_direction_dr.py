@@ -23,3 +23,19 @@ def test_rotation_norm_clean_channels_and_repeatability():
 def test_actual_tilt_retained_without_measurement_error():
     d=DR(2,'cpu',strength=1,probability=1,noise_deg=0,bias_deg=0,walk_deg_sqrt_s=0);d.reset(torch.arange(2));x=torch.zeros(2,25);x[:,3:6]=torch.tensor([[0,0,-1],[.5,0,-.8660254]]);assert torch.equal(d.apply(x,.008),x)
     with pytest.raises(ValueError):DR(2,'cpu',strength=2)
+
+def test_current_prior_preserves_dynamic_pitch_information():
+    """Current small angular DR must not suppress or low-pass a real tilt signal."""
+    d=DR(32,'cpu',strength=.25,probability=1,seed=1047)
+    d.reset(torch.arange(32));inputs=[];outputs=[]
+    for step in range(250):
+        angle=.15*torch.sin(torch.tensor(2*torch.pi*2*step*.008))
+        x=torch.zeros(32,25);x[:,3]=angle.sin();x[:,5]=-angle.cos()
+        y=d.apply(x,.008);inputs.append(x[:,3]);outputs.append(y[:,3])
+        assert torch.allclose(y[:,3:6].norm(dim=-1),torch.ones(32),atol=3e-7)
+    a=torch.stack(inputs);b=torch.stack(outputs)
+    assert (a-b).abs().max()<.005
+    gain=b.std(0)/a.std(0)
+    assert bool(((gain>.98)&(gain<1.02)).all())
+    corr=((a-a.mean(0))*(b-b.mean(0))).sum(0)/(((a-a.mean(0)).square().sum(0)*(b-b.mean(0)).square().sum(0)).sqrt())
+    assert bool((corr>.999).all())

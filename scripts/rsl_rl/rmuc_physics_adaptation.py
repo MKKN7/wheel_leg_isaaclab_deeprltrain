@@ -160,7 +160,7 @@ class PhysicsAdaptation(nn.Module):
         extension = getattr(self, 'straight_extension_budget', torch.zeros_like(self.budget))
         reverse = getattr(self, 'reverse_budget', torch.zeros_like(self.budget))
         # Base domains are disjoint; optional bridge is a convex combination.
-        return self.budget + torch.maximum(alignment, extension) + reverse + getattr(self,'high_straight_budget',torch.zeros_like(self.budget)) + getattr(self,'timing_budget',torch.zeros_like(self.budget)) + getattr(self,'delay_local_budget',torch.zeros_like(self.budget)) + getattr(self,'stop_budget',torch.zeros_like(self.budget)) + getattr(self,'startup_budget',torch.zeros_like(self.budget))
+        return self.budget + torch.maximum(alignment, extension) + reverse + getattr(self,'high_straight_budget',torch.zeros_like(self.budget)) + getattr(self,'timing_budget',torch.zeros_like(self.budget)) + getattr(self,'delay_local_budget',torch.zeros_like(self.budget)) + getattr(self,'stop_budget',torch.zeros_like(self.budget)) + getattr(self,'startup_budget',torch.zeros_like(self.budget)) + getattr(self,'reverse_reserve_budget',torch.zeros_like(self.budget)) + getattr(self,'joint_delay_budget',torch.zeros_like(self.budget))
 
     def install_reverse_network(self, budget, domain):
         """Explicit zero-output reverse-only branch; forward routing is untouched."""
@@ -170,13 +170,103 @@ class PhysicsAdaptation(nn.Module):
         d = torch.as_tensor(domain, dtype=self.budget.dtype, device=self.budget.device)
         if (b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any()
                 or (b > .5).any() or d.shape != (4,) or not torch.isfinite(d).all()
-                or not -1.5 <= d[0] < d[1] <= d[2] < d[3] <= 0):
+                or not -1.7 <= d[0] < d[1] <= d[2] < d[3] <= 0):
             raise ValueError('Bounded reverse budget and ordered negative speed domain required')
         self.register_buffer('reverse_budget', b.clone())
         self.register_buffer('reverse_domain', d.clone())
         self.reverse_network = copy.deepcopy(self.network)
         nn.init.zeros_(self.reverse_network[-1].weight)
         nn.init.zeros_(self.reverse_network[-1].bias)
+
+    def install_joint_delay_network(self, budget):
+        """Zero-output25D residual for all commands, with explicit action bounds."""
+        if hasattr(self,'joint_delay_network'):raise ValueError('Joint delay head already installed')
+        b=torch.as_tensor(budget,device=self.budget.device,dtype=self.budget.dtype)
+        if b.shape!=(6,) or not torch.isfinite(b).all() or (b<=0).any() or (b>.15).any():
+            raise ValueError('Six positive joint-delay action budgets<=.15 required')
+        self.register_buffer('joint_delay_budget',b.clone())
+        self.joint_delay_network=copy.deepcopy(self.network)
+        nn.init.zeros_(self.joint_delay_network[-1].weight)
+        nn.init.zeros_(self.joint_delay_network[-1].bias)
+
+    def install_joint_delay_scope(self, domain):
+        """Optional command-local scope; old checkpoints retain all-command behavior."""
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if (not hasattr(self,'joint_delay_network') or hasattr(self,'joint_delay_domain')
+                or d.shape!=(6,) or not torch.isfinite(d).all()
+                or not -1.5<=d[0]<d[1]<=d[2]<d[3]<=3.5 or not 0<=d[4]<d[5]<=.5):
+            raise ValueError('Joint-delay scope requires ordered vx fades and absolute yaw fades')
+        self.register_buffer('joint_delay_domain',d.clone())
+
+    def joint_delay_gate(self, observation):
+        if not hasattr(self,'joint_delay_domain'):return torch.ones_like(observation[...,0])
+        d=self.joint_delay_domain
+        vx=observation[...,7]/.5
+        yaw=(observation[...,8]+observation[...,2]/.25).abs()
+        smooth=lambda x: x.clamp(0.,1.).square()*(3.-2.*x.clamp(0.,1.))
+        gate=smooth((vx-d[0])/(d[1]-d[0]))*smooth((d[3]-vx)/(d[3]-d[2]))*smooth((d[5]-yaw)/(d[5]-d[4]))
+        # A clipped yaw-error slot cannot establish a straight command reliably.
+        return gate*(observation[...,8].abs()<1.999).to(gate.dtype)
+
+    def install_reverse_reserve(self, budget, domain):
+        """Optional common-wheel authority; zero init and old-speed isolation."""
+        if not hasattr(self, 'reverse_network') or hasattr(self, 'reverse_reserve_network'):
+            raise ValueError('Existing reverse branch and no reserve required')
+        b=torch.as_tensor(budget,device=self.budget.device,dtype=self.budget.dtype)
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if (b.shape!=(6,) or not torch.isfinite(b).all() or b[[0,1,3,4]].abs().max()!=0
+                or not 0 < b[2] <= .15 or b[2]!=b[5]
+                or d.shape!=(2,) or not torch.isfinite(d).all() or not -1.5<=d[0]<d[1]<=-.6):
+            raise ValueError('Common-wheel budget<=.15 and reverse reserve below-.6 required')
+        self.register_buffer('reverse_reserve_budget',b.clone())
+        self.register_buffer('reverse_reserve_domain',d.clone())
+        self.reverse_reserve_network=copy.deepcopy(self.network)
+        nn.init.zeros_(self.reverse_reserve_network[-1].weight)
+        nn.init.zeros_(self.reverse_reserve_network[-1].bias)
+
+    def reverse_reserve_gate(self, observation):
+        d=self.reverse_reserve_domain
+        t=((d[1]-observation[...,7]/.5)/(d[1]-d[0])).clamp(0.,1.)
+        return self.reverse_gate(observation)*t*t*(3.-2.*t)
+
+    def reverse_reserve_output(self, observation):
+        logits=self.reverse_reserve_network(observation)
+        common=torch.tanh((logits[...,2]+logits[...,5])*.5)
+        return self.reverse_reserve_gate(observation)[...,None]*self.reverse_reserve_budget*common[...,None]
+
+    def install_reverse_update_scope(self, domain):
+        if not hasattr(self, 'reverse_network') or hasattr(self, 'reverse_update_anchor'):
+            raise ValueError('Existing unscoped reverse network required')
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if d.shape!=(2,) or not torch.isfinite(d).all() or not -1.5<=d[0]<d[1]<0:
+            raise ValueError('Ordered negative command-speed bounds required')
+        self.register_buffer('reverse_update_domain',d.clone())
+        self.reverse_update_anchor=copy.deepcopy(self.reverse_network).requires_grad_(False)
+
+    def install_reverse_extension_scope(self, domain):
+        if not hasattr(self, 'reverse_update_anchor') or hasattr(self, 'reverse_extension_anchor'):
+            raise ValueError('Existing first reverse scope required; extension already installed or missing source')
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if d.shape!=(2,) or not torch.isfinite(d).all() or not -1.5<=d[0]<d[1]<=self.reverse_update_domain[0]:
+            raise ValueError('Extension must preserve the original full-active speed boundary')
+        self.register_buffer('reverse_extension_domain',d.clone())
+        self.reverse_extension_anchor=copy.deepcopy(self.reverse_network).requires_grad_(False)
+
+    def reverse_output(self, observation):
+        value=torch.tanh(self.reverse_network(observation))
+        if hasattr(self,'reverse_extension_anchor'):
+            reference=torch.tanh(self.reverse_extension_anchor(observation))
+            d=self.reverse_extension_domain
+            t=((d[1]-observation[...,7]/.5)/(d[1]-d[0])).clamp(0.,1.)
+            gate=t*t*(3.-2.*t)
+            value=reference+gate[...,None]*(value-reference)
+        if hasattr(self,'reverse_update_anchor'):
+            anchor=torch.tanh(self.reverse_update_anchor(observation))
+            d=self.reverse_update_domain
+            t=((d[1]-observation[...,7]/.5)/(d[1]-d[0])).clamp(0.,1.)
+            gate=t*t*(3.-2.*t)
+            value=anchor+gate[...,None]*(value-anchor)
+        return value
 
     def reverse_gate(self, observation):
         d = self.reverse_domain
@@ -322,6 +412,87 @@ class PhysicsAdaptation(nn.Module):
         nn.init.zeros_(self.stop_network[-1].weight)
         nn.init.zeros_(self.stop_network[-1].bias)
 
+    def install_stop_budget_anchor(self, anchor_budget):
+        """Preserve source outputs while allowing bounded changes in a larger box."""
+        if not hasattr(self, 'stop_network') or hasattr(self, 'stop_budget_anchor'):
+            raise ValueError('One existing unanchored stop head required')
+        b = torch.as_tensor(anchor_budget, device=self.budget.device, dtype=self.budget.dtype)
+        if b.shape != (6,) or not torch.isfinite(b).all() or (b < 0).any() or (b > self.stop_budget).any():
+            raise ValueError('Anchor budget must lie within new stop budget')
+        self.register_buffer('stop_anchor_budget', b.clone())
+        self.stop_budget_anchor = copy.deepcopy(self.stop_network).requires_grad_(False)
+
+    def install_stop_update_scope(self, domain):
+        """Freeze low-speed stopping while learning bounded high-speed corrections."""
+        if not hasattr(self, 'stop_network') or hasattr(self, 'stop_update_anchor'):
+            raise ValueError('One existing unscoped stop head required')
+        d = torch.as_tensor(domain, device=self.budget.device, dtype=self.budget.dtype)
+        # obs6 clips at +/-2 and its scale is2.1: do not pretend to distinguish
+        # high measured speeds beyond the available observation resolution.
+        if d.shape != (2,) or not torch.isfinite(d).all() or not 0 < d[0] < d[1] < 2./2.1:
+            raise ValueError('Stop scope needs ordered positive observable speed bounds')
+        self.register_buffer('stop_update_domain', d.clone())
+        self.stop_update_anchor = copy.deepcopy(self.stop_network).requires_grad_(False)
+
+    def stop_update_gate(self, observation):
+        velocity = observation[..., 7] / .5 - observation[..., 6] / 2.1
+        d = self.stop_update_domain
+        t = ((velocity-d[0])/(d[1]-d[0])).clamp(0., 1.)
+        return t*t*(3.-2.*t)
+
+    def install_stop_rebound(self, domain):
+        """Zero-initialized correction inside the existing stop residual envelope."""
+        if not hasattr(self, 'stop_network') or hasattr(self, 'stop_rebound_network'):
+            raise ValueError('One existing stop head without rebound correction required')
+        d = torch.as_tensor(domain, device=self.budget.device, dtype=self.budget.dtype)
+        if (d.shape != (4,) or not torch.isfinite(d).all()
+                or not 0 < d[0] < d[1] < 1. or not 0 < d[2] < d[3] < 2./2.1):
+            raise ValueError('Expected pitch-radian and reverse-speed fade bounds')
+        self.register_buffer('stop_rebound_domain', d.clone())
+        self.stop_rebound_network = copy.deepcopy(self.network)
+        nn.init.zeros_(self.stop_rebound_network[-1].weight)
+        nn.init.zeros_(self.stop_rebound_network[-1].bias)
+
+    def stop_rebound_gate(self, observation):
+        d = self.stop_rebound_domain
+        pitch = torch.atan2(observation[..., 3], -observation[..., 5]).abs()
+        reverse = observation[..., 6]/2.1 - observation[..., 7]/.5
+        def smooth(x):
+            t=x.clamp(0., 1.)
+            return t*t*(3.-2.*t)
+        p=smooth((pitch-d[0])/(d[1]-d[0]))
+        v=smooth((reverse-d[2])/(d[3]-d[2]))
+        return 1.-(1.-p)*(1.-v)
+
+    def _stop_bounded_value(self, observation, logits):
+        value = torch.tanh(logits)
+        if hasattr(self, 'stop_budget_anchor'):
+            anchor_logits = self.stop_budget_anchor(observation)
+            reference = torch.tanh(anchor_logits)
+            ratio = self.stop_anchor_budget / self.stop_budget.clamp_min(1.e-12)
+            center = torch.atanh((ratio * reference).clamp(-1.+1.e-6, 1.-1.e-6))
+            expanded = self.stop_budget * torch.tanh((logits - anchor_logits) + center)
+            # Unexpanded slots retain their exact original computation.
+            value = torch.where(self.stop_budget > self.stop_anchor_budget,
+                                expanded, self.stop_budget * value)
+        else:
+            value = self.stop_budget * value
+        return value
+
+    def stop_residual(self, observation, logits=None):
+        if logits is None:
+            logits = self.stop_network(observation)
+        value = self._stop_bounded_value(observation, logits)
+        if hasattr(self, 'stop_update_anchor'):
+            anchor = self._stop_bounded_value(observation, self.stop_update_anchor(observation))
+            value = anchor + self.stop_update_gate(observation)[..., None] * (value-anchor)
+        if hasattr(self, 'stop_rebound_network'):
+            delta = self.stop_budget * torch.tanh(self.stop_rebound_network(observation))
+            delta = self.stop_rebound_gate(observation)[..., None] * delta
+            delta = torch.maximum(torch.minimum(delta, self.stop_budget-value), -self.stop_budget-value)
+            value = value + delta
+        return self.stop_gate(observation)[..., None] * value
+
     def stop_gate(self, observation):
         speed = observation[..., 7] / .5
         yaw = observation[..., 2] / .25 + observation[..., 8]
@@ -455,13 +626,17 @@ class PhysicsAdaptation(nn.Module):
 
     def correction(self, observation):
         original = self._legacy_correction(observation)
+        if hasattr(self,'joint_delay_network'):
+            original=original+self.joint_delay_gate(observation)[...,None]*self.joint_delay_budget*torch.tanh(self.joint_delay_network(observation))
         if hasattr(self, 'startup_network'):
             original = original + self.startup_gate(observation)[..., None] * self.startup_budget * torch.tanh(self.startup_network(observation))
         if hasattr(self, 'stop_network'):
-            original = original + self.stop_gate(observation)[..., None] * self.stop_budget * torch.tanh(self.stop_network(observation))
+            original = original + self.stop_residual(observation)
         if hasattr(self, 'reverse_network'):
             original = original + (self.reverse_gate(observation)[..., None]
-                * self.reverse_budget * torch.tanh(self.reverse_network(observation)))
+                * self.reverse_budget * self.reverse_output(observation))
+        if hasattr(self, 'reverse_reserve_network'):
+            original = original + self.reverse_reserve_output(observation)
         if not hasattr(self, 'alignment_network'):
             return original
         result = original + (self.alignment_gate(observation)[..., None]

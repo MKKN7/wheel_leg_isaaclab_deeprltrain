@@ -5,8 +5,8 @@ import torch
 
 class EffortResponse:
     def __init__(self, template, dt, minimum_s, maximum_s):
-        if not all(math.isfinite(v) for v in [dt,minimum_s,maximum_s]) or not (dt>0 and 0<minimum_s<=maximum_s):
-            raise ValueError('Finite positive physicsdt and ordered motor time constants required')
+        if not all(math.isfinite(v) for v in [dt,minimum_s,maximum_s]) or not (dt>0 and 0<=minimum_s<=maximum_s):
+            raise ValueError('Finite positive physicsdt and ordered nonnegative motor time constants required')
         self.dt=dt;self.minimum_s=minimum_s;self.maximum_s=maximum_s
         self.time_constant=torch.zeros_like(template)
         self.effort=torch.zeros_like(template)
@@ -51,3 +51,10 @@ def install_effort_response(actuator, dt, minimum_s, maximum_s):
     actuator.compute=compute;actuator.reset=reset
     actuator._rmuc_effort_response=response
     return response
+
+
+def response_strength(global_strength, override=-1.):
+    """Explicit independent response DR, -1 preserves historical coupling."""
+    if not math.isfinite(override) or not (override == -1 or 0<=override<=1):
+        raise ValueError('Motor response strength override must be-1 or within[0,1]')
+    return global_strength if override == -1 else override

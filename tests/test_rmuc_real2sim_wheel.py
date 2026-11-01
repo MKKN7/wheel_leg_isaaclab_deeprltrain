@@ -260,3 +260,30 @@ def test_peak_statistics_use_actual_limits_without_changing_torque():
     assert rb['motor_peak_hit_fraction_by_side']==[1.,1.]
     assert rb['motor_peak_statistic_effort_limit_range_nm']==[4.89,4.89]
     assert rb['motor_peak_statistic_is_actual_clipping_count'] is False
+
+@pytest.mark.parametrize('sensor,action', [(0,0),(1,0),(0,1),(1,1)])
+def test_explicit_separated_delay_ownership(sensor, action):
+    from types import SimpleNamespace
+    cfg=SimpleNamespace(domain_randomization_sensor_model={'enabled':True,'gyro_noise_std_rad_s':.005},
+        diagnostic_separated_observation_delay_cycles=sensor,
+        diagnostic_separated_action_delay_cycles=action)
+    m.configure_total_delay(cfg, profile())
+    c=cfg.domain_randomization_sensor_model
+    assert c['observation_delay_probability']==sensor
+    assert c['communication_delay_probability']==action
+    assert c['action_delay_enabled']==bool(action)
+    assert c['gyro_noise_std_rad_s']==.005
+    assert cfg.observation_delay_steps==cfg.domain_randomization_max_observation_delay_steps==0
+
+@pytest.mark.parametrize('observation,action',[(.125,.125),(0,.25),(.25,0)])
+def test_sampled_policy_delay_curriculum_retains_other_sensor_config(observation,action):
+    from types import SimpleNamespace
+    cfg=SimpleNamespace(domain_randomization_sensor_model={'enabled':True,'gyro_noise_std_rad_s':.005},
+        real2sim_observation_delay_probability=observation,real2sim_action_delay_probability=action)
+    m.configure_total_delay(cfg,profile())
+    c=cfg.domain_randomization_sensor_model
+    assert c['observation_delay_probability']==observation
+    assert c['communication_delay_probability']==action
+    assert c['delay_min_steps']==c['delay_max_steps']==1
+    assert c['gyro_noise_std_rad_s']==.005
+    assert c['action_delay_enabled']==bool(action)

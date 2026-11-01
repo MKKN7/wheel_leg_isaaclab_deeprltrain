@@ -31,3 +31,21 @@ def test_reverse_scale_improves_near_gate_angle_gradient_without_changing_deadba
  for scale in [-1.,float('nan'),float('inf')]:
   with pytest.raises(ValueError):f(q,yaw,yaw,command_vx=vx,reverse_scale_deg=scale)
  with pytest.raises(ValueError):f(q,yaw,yaw,reverse_scale_deg=3.)
+
+def test_optional_yaw_floor_retains_alignment_gradient_without_penalizing_turns():
+ q=torch.zeros(4,6);q[:,0]=math.radians(5);q.requires_grad_()
+ cmd=torch.tensor([0.,0.,.001,-.1]);actual=torch.tensor([0.,.4,.4,-.4])
+ cost,_,gate=f(q,cmd,actual,yaw_gate_floor=.5)
+ torch.testing.assert_close(gate,torch.tensor([1.,.5,0.,0.]))
+ assert cost[1]>0 and cost[2]==0 and cost[3]==0
+ cost.sum().backward();assert q.grad[1,0]>0
+ for floor in [-.1,1.1,float('nan')]:
+  with pytest.raises(ValueError):f(q.detach(),cmd,actual,yaw_gate_floor=floor)
+
+def test_alignment_rate_spares_synchronous_motion_and_turns():
+ rate=runpy.run_path(str(Path(__file__).resolve().parents[1]/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg/straight_alignment.py'))['alignment_rate_cost']
+ dq=torch.tensor([[3.,2.,10.,3.,-2.,-10.],[.3,.3,0.,-.3,.3,0.],[.3,.3,0.,-.3,.3,0.]],requires_grad=True)
+ cost=rate(dq,torch.tensor([0.,0.,.001]))
+ assert cost[0]==0 and 0<cost[1]<1 and cost[2]==0
+ cost.sum().backward();assert dq.grad[1,0]>0 and dq.grad[1,3]<0 and dq.grad[:,[2,5]].abs().sum()==0
+ with pytest.raises(ValueError):rate(dq,torch.zeros(3),0.)

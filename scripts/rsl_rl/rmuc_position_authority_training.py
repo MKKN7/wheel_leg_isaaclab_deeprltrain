@@ -116,7 +116,7 @@ def prepare_authority_optimizer(runner, state, learning_rate=1e-4, critic_rate=1
          'rmuc_group':'router_speed_extension' if router_speed_direction else ('physics_adaptation' if physics_only else ('local_authority' if local_only else 'position_authority'))},
         {'params':list(runner.alg.critic.parameters()),'lr':critic_rate,'rmuc_group':'critic'}])
 
-def configure_authority_audit(runner, required_commands=None):
+def configure_authority_audit(runner, required_commands=None, coverage_grace_updates=3):
     actor=runner.alg.get_policy();head=actor.rmuc_position_authority
     physics=getattr(actor,'rmuc_physics_adaptation',None)
     physics_training=physics is not None and any(p.requires_grad for p in physics.parameters())
@@ -161,7 +161,7 @@ def configure_authority_audit(runner, required_commands=None):
     original=runner.alg.update
     path=Path(runner.logger.log_dir)/'position_authority_training.jsonl'
     from rmuc_training_contract import RolloutCoverage
-    coverage = (RolloutCoverage(required_commands, path.with_name('command_coverage.json'))
+    coverage = (RolloutCoverage(required_commands, path.with_name('command_coverage.json'), grace_updates=coverage_grace_updates)
                 if required_commands else None)
     start=int(runner.current_learning_iteration);count=0
     capture_update=int(os.environ.get('RMUC_CAPTURE_PPO_ROLLOUT_UPDATE','1'))
@@ -299,6 +299,8 @@ def configure_authority_audit(runner, required_commands=None):
                 'positive_samples':int((pos>0).sum()),'negative_samples':int((neg>0).sum()),
                 'delivered_command_counts':delivered_command_counts(runner.alg.storage.observations['policy']),
                 'residual_abs_max':correction.abs().amax(0).tolist()}
+        if hasattr(runner, '_rmuc_stop_exploration'):
+            record['stop_exploration'] = runner._rmuc_stop_exploration.readback()
         if advantage_audit is not None:
             record['wheel_advantage_audit']=advantage_audit
         if speed_direction:

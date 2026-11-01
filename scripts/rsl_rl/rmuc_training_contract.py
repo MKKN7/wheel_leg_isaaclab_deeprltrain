@@ -214,6 +214,31 @@ def validate_trainable_target_gate(state, vx, yaw, *, physics_only=False, local_
                 scope='Target command gate only; rollout coverage and behavior still required')
 
 
+def sequence_coverage_grace(sequence, policy_dt, rollout_steps, already_sampled_commands=()):
+    """Allow every distinct scheduled command to occur before coverage fails."""
+    if not sequence:
+        return 3
+    first = {}
+    covered={tuple(map(float,row)) for row in already_sampled_commands}
+    for seconds, vx, yaw in sequence:
+        if (float(vx),float(yaw)) not in covered:
+            first.setdefault((float(vx), float(yaw)), float(seconds))
+    return max(3, math.ceil((max(first.values(),default=0.) + policy_dt) / (policy_dt * rollout_steps)))
+
+
+def stratified_static_commands(cfg):
+    """Commands also explicitly sampled in fixed/stratified rehearsal cohorts.
+
+    This only shortens command-presence warmup; actual RolloutCoverage still
+    rejects missing commands. It does not certify dynamic transition coverage.
+    """
+    if not getattr(cfg,'command_rehearsal_stratified_coverage',False):return []
+    clone=copy.copy(cfg)
+    clone.command_training_sequence=[]
+    clone.command_random_speed_range=[]
+    return required_training_commands(clone)
+
+
 class RolloutCoverage:
     """Check delivered observations during critic warmup, before wasting actor updates."""
     def __init__(self, commands, path, grace_updates=3):
@@ -245,6 +270,31 @@ def validate_trainable_sequence_gates(state, sequence, **selection):
     Approach uses the unchanged teacher; zero-command settling is the trainable
     phase. Other module selections retain the all-targets-active requirement.
     """
+    reserve_path='rmuc_physics_adaptation.reverse_reserve_network'
+    if (selection.get('physics_only') and set(selection.get('physics_modules') or []) in ({reserve_path}, {reserve_path,'rmuc_physics_adaptation.reverse_network'})
+            and sequence):
+        domain=state.get('rmuc_physics_adaptation.reverse_reserve_domain')
+        if domain is None:raise ValueError('Missing explicit reserve domain')
+        if 'rmuc_physics_adaptation.reverse_network' in selection.get('physics_modules',[]):
+            extension=state.get('rmuc_physics_adaptation.reverse_extension_domain')
+            if extension is None or not bool((extension==domain).all()):
+                raise ValueError('Joint reverse/reserve training requires identical frozen old-domain boundary')
+        if any(row[2]!=0 or not -1.5<=row[1]<=0 for row in sequence):
+            raise ValueError('Reserve sequence must stay straight in[-1.5,0]')
+        if not any(row[1]<float(domain[1]) for row in sequence):
+            raise ValueError('Reserve sequence has no active reserve phase')
+        return [dict(commands=[(row[1],row[2])],gates=[0.],passed=True,
+                     phase='frozen_old_reverse_approach') if row[1]>=float(domain[1]) else
+                validate_trainable_target_gate(state,row[1],row[2],**selection)
+                for row in sequence]
+    reverse_modules={'rmuc_physics_adaptation.reverse_network','rmuc_physics_adaptation.reverse_update_anchor'}
+    chosen=set(selection.get('physics_modules') or [])
+    if selection.get('physics_only') and chosen and chosen<=reverse_modules and sequence:
+        if any(row[2]!=0 or not -1.5<=row[1]<=0 for row in sequence):
+            raise ValueError('Reverse sequence must stay straight in[-1.5,0]')
+        if not any(row[1]<0 for row in sequence):raise ValueError('Reverse sequence lacks active reverse commands')
+        return [dict(commands=[(0.,0.)],gates=[0.],passed=True,phase='frozen_teacher_idle')
+                if row[1]==0 else validate_trainable_target_gate(state,row[1],row[2],**selection) for row in sequence]
     stop_only = (selection.get('physics_only') is True and
                  selection.get('physics_modules') == ['rmuc_physics_adaptation.stop_network'])
     if not stop_only:

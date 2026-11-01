@@ -34,15 +34,23 @@ class HeldLegReference:
         return out
 
 
-def diagnostic_bias_fraction(episode_age, dt, start_s, ramp_s):
-    """Per-episode smoothstep; reset returns to zero when a delay is requested."""
+def diagnostic_bias_fraction(episode_age, dt, start_s, ramp_s, end_s=None):
+    """Optional finite pulse; end is exclusive and falls smoothly over ramp_s."""
     if not all(math.isfinite(x) for x in (dt, start_s, ramp_s)) or dt <= 0 or min(start_s, ramp_s) < 0:
         raise ValueError('Finite nonnegative diagnostic times and positive dt required')
-    elapsed = episode_age.to(torch.float32) * dt - start_s
+    if end_s is not None and (not math.isfinite(end_s) or end_s <= start_s or end_s-start_s + 1e-9 < 2*ramp_s):
+        raise ValueError('Pulse end must follow start and allow both ramps')
+    age = episode_age.to(torch.float32) * dt
+    elapsed = age - start_s
     if ramp_s == 0:
-        return (elapsed >= 0).to(torch.float32)
+        out = (elapsed >= 0).to(torch.float32)
+        return out if end_s is None else out * (age < end_s)
     t = (elapsed / ramp_s).clamp(0., 1.)
-    return t.square() * (3. - 2. * t)
+    out = t.square() * (3. - 2. * t)
+    if end_s is not None:
+        fall = ((end_s - age) / ramp_s).clamp(0., 1.)
+        out = out * fall.square() * (3. - 2. * fall)
+    return out
 
 
 def ramp_straight_commands(target, episode_age, dt, duration_s):
@@ -56,3 +64,9 @@ def ramp_straight_commands(target, episode_age, dt, duration_s):
     command=target.clone()
     command[:,0]=1.+fraction*(target[:,0]-1.)
     return command
+
+
+def bounded_residual_probe(residual, budget, delta, gate):
+    """Project diagnostic delta into a gated residual box, preserving zero probes."""
+    bound = gate[..., None] * budget
+    return torch.maximum(torch.minimum(residual + delta, bound), -bound) - residual

@@ -419,6 +419,8 @@ parser.add_argument(
         "starting the next harder stage."
     ),
 )
+parser.add_argument('--stop_wheel_exploration_std', type=float, default=None,
+                    help='Opt-in correctly modeled moving-stop wheel Gaussian std; deterministic actor unchanged.')
 parser.add_argument(
     "--action_std_override",
     type=str,
@@ -2701,6 +2703,7 @@ def _attach_checkpoint_metadata(env_cfg, agent_cfg, checkpoint_path: str | None)
         "freeze_action_std": bool(args_cli.freeze_action_std),
         "freeze_leg_action_std": bool(args_cli.freeze_leg_action_std),
         "action_std_override": args_cli.action_std_override,
+        "stop_wheel_exploration_std": args_cli.stop_wheel_exploration_std,
         "min_wheel_action_std": args_cli.min_wheel_action_std,
         "start_command_at_target": bool(args_cli.start_command_at_target),
         "stop_at_command_level": args_cli.stop_at_command_level,
@@ -3324,6 +3327,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             raise ValueError('Coverage guard requires authority training and at least3 critic warmup updates')
         from rmuc_training_contract import required_training_commands
         required_commands = required_training_commands(env_cfg)
+        from rmuc_training_contract import sequence_coverage_grace, stratified_static_commands
+        coverage_grace_updates = sequence_coverage_grace(
+            getattr(env_cfg, 'command_training_sequence', ()),
+            float(env_cfg.sim.dt) * int(env_cfg.decimation), int(agent_cfg.num_steps_per_env),
+            already_sampled_commands=stratified_static_commands(env_cfg))
+        if args_cli.critic_warmup_iterations < coverage_grace_updates:
+            raise ValueError(f'Command sequence coverage needs at least {coverage_grace_updates} critic warmup updates before actor training')
         print(f'[RMUC_REQUIRED_COMMANDS] {required_commands}', flush=True)
     if args_cli.train_position_authority:
         from rmuc_training_contract import observation_contract, checkpoint_observation_contract
@@ -3749,12 +3759,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         configure_router_training(runner, args_cli.state_router_balance_coef)
     if args_cli.train_position_authority:
         from rmuc_position_authority_training import configure_authority_audit
-        configure_authority_audit(runner, required_commands=required_commands)
+        configure_authority_audit(runner, required_commands=required_commands,
+                                  coverage_grace_updates=coverage_grace_updates if required_commands else 3)
         from rmuc_training_contract import configure_checkpoint_observation_contract
         configure_checkpoint_observation_contract(runner, env_cfg)
     if not args_cli.freeze_turn_residual_bank_during_bridge and not args_cli.isolated_state_router and not args_cli.train_position_authority:
         _configure_turn_residual_bank_schedule(runner)
     _configure_temporally_correlated_wheel_noise(runner, args_cli.wheel_noise_hold_steps)
+    if args_cli.stop_wheel_exploration_std is not None:
+        if args_cli.wheel_noise_hold_steps != 1 or not args_cli.freeze_action_std:
+            raise ValueError('Stop exploration requires frozen std and no correlated-noise hook')
+        if not args_cli.train_physics_adaptation:
+            raise ValueError('Stop exploration requires isolated physical residual training')
+        from rmuc_stop_exploration import install_stop_exploration
+        runner._rmuc_stop_exploration = install_stop_exploration(
+            runner.alg.get_policy(), args_cli.stop_wheel_exploration_std)
     if args_cli.protect_nominal_straight_anchor:
         from rmuc_anchor_guard import configure_nominal_straight_guard
         configure_nominal_straight_guard(runner)
@@ -3859,6 +3878,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         # Keep pure waiting, sampled data age and actuator response distinct.
         # This post-reset snapshot does not certify measured end-to-end latency.
         readback['policy_sampling_std'] = [float(v) for name, parameter in runner.alg.get_policy().distribution.named_parameters() if name in {'std_param', 'log_std_param'} for v in (torch.exp(parameter) if name == 'log_std_param' else parameter).detach().cpu().flatten()]
+        if hasattr(runner, '_rmuc_stop_exploration'):
+            readback['stop_exploration'] = runner._rmuc_stop_exploration.readback()
         readback['leg_transport'] = u._leg_transport.readback()
         readback['gravity_direction_dr'] = u._gravity_direction_dr.readback()
         readback['timing_readback'] = dict(
@@ -3875,6 +3896,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             sensor_model=dict(u.cfg.domain_randomization_sensor_model),
             motor_response_time_constants_s={name: response.time_constant.detach().cpu().tolist()
                 for name, response in u._motor_responses.items()},
+            wheel_feedback_age=(u._wheel_feedback_age.readback() if getattr(u,'_wheel_feedback_age',None) is not None else None),
+            joint_delay_dr=(u._joint_delay_dr.readback() if getattr(u,'_joint_delay_dr',None) is not None else None),
             motor_response_scope='First-order time constant, not pure command latency',
             wheel_transport=(u._real2sim_wheel.readback() if u._real2sim_wheel is not None else None),
             inference_duration_modeled=False,

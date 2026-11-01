@@ -9,6 +9,11 @@ _spec.loader.exec_module(_module)
 validate_sequence = _module.validate_sequence
 sequence_commands = _module.sequence_commands
 dynamic_tracking_cost = _module.dynamic_tracking_cost
+stop_tracking_scale_adjustment = _module.stop_tracking_scale_adjustment
 sequence_overshoot_cost = _module.sequence_overshoot_cost
 tracking_cohort_mask = _module.tracking_cohort_mask
 dynamic_stop_posture_cost = _module.dynamic_stop_posture_cost
+
+reverse_runaway_cost = _module.reverse_runaway_cost
+
+reverse_settled_tracking_cost = _module.reverse_settled_tracking_cost

@@ -98,6 +98,30 @@ def configure_total_delay(cfg, profile):
     cfg.domain_randomization_sensor_model = dict(cfg.domain_randomization_sensor_model,
         observation_delay_probability=0., communication_delay_probability=0.,
         action_delay_enabled=False)
+    # Explicit evaluation-only factorial diagnostics. Default retains the
+    # established wheel-owned timing contract without adding latency twice.
+    sensor_cycles = getattr(cfg, 'diagnostic_separated_observation_delay_cycles', 0)
+    action_cycles = getattr(cfg, 'diagnostic_separated_action_delay_cycles', 0)
+    if sensor_cycles not in (0, 1) or action_cycles not in (0, 1):
+        raise ValueError('Separated diagnostic delays must be zero or one policy cycle')
+    if sensor_cycles or action_cycles:
+        cfg.domain_randomization_sensor_model = dict(cfg.domain_randomization_sensor_model,
+            enabled=True, delay_min_steps=1, delay_max_steps=1,
+            observation_delay_probability=float(sensor_cycles),
+            communication_delay_probability=float(action_cycles),
+            action_delay_enabled=bool(action_cycles))
+    sensor_probability = getattr(cfg, 'real2sim_observation_delay_probability', 0.)
+    action_probability = getattr(cfg, 'real2sim_action_delay_probability', 0.)
+    if any(not math.isfinite(v) or not 0 <= v <= 1 for v in (sensor_probability, action_probability)):
+        raise ValueError('Separated delay curriculum probabilities must be within [0,1]')
+    if sensor_probability or action_probability:
+        if sensor_cycles or action_cycles:
+            raise ValueError('Do not combine forced diagnostic and sampled curriculum delays')
+        cfg.domain_randomization_sensor_model = dict(cfg.domain_randomization_sensor_model,
+            enabled=True, delay_min_steps=1, delay_max_steps=1,
+            observation_delay_probability=sensor_probability,
+            communication_delay_probability=action_probability,
+            action_delay_enabled=bool(action_probability))
 
 
 class _FractionalDelay:

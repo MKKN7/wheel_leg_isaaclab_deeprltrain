@@ -109,6 +109,12 @@ def install_rmuc_physics_adaptation(actor, state=None):
             module.install_startup_network(state[prefix+'startup_budget'], state[prefix+'startup_domain'])
         if prefix+'stop_budget' in state:
             module.install_stop_network(state[prefix+'stop_budget'])
+            if prefix+'stop_anchor_budget' in state:
+                module.install_stop_budget_anchor(state[prefix+'stop_anchor_budget'])
+            if prefix+'stop_update_domain' in state:
+                module.install_stop_update_scope(state[prefix+'stop_update_domain'])
+            if prefix+'stop_rebound_domain' in state:
+                module.install_stop_rebound(state[prefix+'stop_rebound_domain'])
         if prefix+'delay_local_budget' in state:
             module.install_delay_local_network(state[prefix+'delay_local_budget'], state[prefix+'delay_local_domain'])
         if prefix+'straight_bridge_enabled' in state:
@@ -119,6 +125,16 @@ def install_rmuc_physics_adaptation(actor, state=None):
             if depth:
                 raise ValueError('Reverse branch is supported only at outer physics stage')
             module.install_reverse_network(state[prefix+'reverse_budget'], state[prefix+'reverse_domain'])
+            if prefix+'reverse_update_domain' in state:
+                module.install_reverse_update_scope(state[prefix+'reverse_update_domain'])
+            if prefix+'reverse_extension_domain' in state:
+                module.install_reverse_extension_scope(state[prefix+'reverse_extension_domain'])
+            if prefix+'reverse_reserve_budget' in state:
+                module.install_reverse_reserve(state[prefix+'reverse_reserve_budget'],state[prefix+'reverse_reserve_domain'])
+        if prefix+'joint_delay_budget' in state:
+            module.install_joint_delay_network(state[prefix+'joint_delay_budget'])
+            if prefix+'joint_delay_domain' in state:
+                module.install_joint_delay_scope(state[prefix+'joint_delay_domain'])
         return module
     if head is None:
         head = (reconstruct('rmuc_physics_adaptation.') if state is not None else PhysicsAdaptation()).to(actor.mlp[0].weight.device)

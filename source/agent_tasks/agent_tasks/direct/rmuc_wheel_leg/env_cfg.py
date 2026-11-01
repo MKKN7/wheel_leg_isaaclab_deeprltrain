@@ -189,6 +189,16 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     domain_randomization_apply_in_play = bool(
         _DOMAIN_RANDOMIZATION.get("apply_in_play", False)
     )
+    joint_delay_dr_enabled = False
+    wheel_feedback_age_enabled = False
+    wheel_feedback_transport_range_s = [0.0, 0.006]
+    wheel_feedback_refresh_range_s = [0.002, 0.004]
+    wheel_feedback_age_seed = 9173
+    joint_delay_dr_seed = 8107
+    joint_delay_dr_wheel_range_s = [0.002, 0.010]
+    joint_delay_dr_leg_range_s = [0.002, 0.010]
+    joint_delay_dr_observation_range_s = [0.0, 0.008]
+    joint_delay_dr_action_range_s = [0.0, 0.010]
     leg_transport_delay_s = 0.0
     leg_transport_delay_probability = 0.5
     leg_transport_delay_seed = 2047
@@ -202,12 +212,13 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     domain_randomization_sensor_model = dict(_DOMAIN_RANDOMIZATION.get("sensor_model", {}))
     # Engineering bounds for an optional motor-current/effort response model.
     # It is not another communication FIFO or a measured RM3508 specification.
+    motor_response_strength_override = -1.0
     motor_response_enabled = bool(_CONTROL.get("motor_response_enabled", False))
     motor_response_time_constant_min_s = float(_CONTROL.get("motor_response_time_constant_min_s", 0.002))
     motor_response_time_constant_max_s = float(_CONTROL.get("motor_response_time_constant_max_s", 0.030))
     if not (math.isfinite(motor_response_time_constant_min_s) and math.isfinite(motor_response_time_constant_max_s)
-            and 0 < motor_response_time_constant_min_s <= motor_response_time_constant_max_s):
-        raise ValueError("Motor response time constants must be finite, positive and ordered")
+            and 0 <= motor_response_time_constant_min_s <= motor_response_time_constant_max_s):
+        raise ValueError("Motor response time constants must be finite, nonnegative and ordered")
     if domain_randomization_sensor_model.get("enabled", False):
         for key, value in domain_randomization_sensor_model.items():
             if key != "enabled" and (not math.isfinite(float(value)) or float(value) < 0):
@@ -307,6 +318,11 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     # Explicit diagnostic overlay; empty preserves every legacy wheel path.
     real2sim_wheel_profile: str = ""
     real2sim_end_to_end_delay: bool = False
+    # Opt-in independent sensor/action latency curriculum. One cycle is 8ms;
+    # mutual exclusion prevents accidentally stacking two whole-policy cycles.
+    real2sim_observation_delay_probability: float = 0.0
+    real2sim_action_delay_probability: float = 0.0
+    real2sim_policy_delay_mutually_exclusive: bool = True
     wheel_torque_contract = str(_CONTROL.get("wheel_torque_contract", "legacy_idealpd"))
     wheel_mechanical_viscous_nm_s_rad = float(_CONTROL.get("wheel_mechanical_viscous_nm_s_rad", 0.002))
     wheel_coulomb_friction_nm = float(_CONTROL.get("wheel_coulomb_friction_nm", 0.001))
@@ -347,6 +363,9 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     leg_actuator_armature_dr_range = tuple(_DOMAIN_RANDOMIZATION.get("leg_armature_range_kg_m2", (0.008, 0.024)))
     command_low_speed_turn_yaw_tracking_enabled = False
     command_small_turn_dense_yaw_weight = 0.0
+    command_straight_alignment_rate_weight = 0.0
+    command_straight_alignment_rate_scale_rad_s = 0.3
+    command_straight_alignment_yaw_gate_floor = 0.0
     command_straight_alignment_weight = 0.0
     command_straight_alignment_tolerance_deg = 2.0
     command_straight_alignment_scale_deg = 6.0
@@ -596,6 +615,7 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_dynamic_tracking_weight = 0.0
     command_dynamic_tracking_include_fixed_reverse = False
     command_dynamic_tracking_scale_mps = 0.5
+    command_dynamic_stop_tracking_scale_mps = 0.0  # disabled: preserve existing reward
     command_sequence_overshoot_weight = 0.0
     command_dynamic_stop_posture_weight = 0.0
     command_dynamic_matched_filter_enabled = False
@@ -848,6 +868,9 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
         raise ValueError("reward.command_overspeed_margin_mps must be non-negative")
     if command_overspeed_scale_mps <= 0.0:
         raise ValueError("reward.command_overspeed_scale_mps must be positive")
+    # Opt-in reverse-only behavior shaping. Existing checkpoint rewards default unchanged.
+    command_reverse_runaway_weight = 0.0
+    command_reverse_settled_tracking_weight = 0.0
     command_yaw_weight = float(_REWARD.get("command_yaw_weight", 2.00))
     command_yaw_tracking_penalty_weight = float(
         _REWARD.get("command_yaw_tracking_penalty_weight", 1.50)

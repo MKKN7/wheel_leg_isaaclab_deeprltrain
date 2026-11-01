@@ -19,8 +19,19 @@ from rmuc_eval_commands import ramp_straight_commands
 from rmuc_hardware_profile import apply_hardware_profile
 
 parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--diagnostic-video', type=Path, default=None)
+parser.add_argument('--diagnostic-video-env', type=int, default=24)
+parser.add_argument('--motor-response-strength',type=float,default=-1.,help='Independent response DR strength;-1 retains overall DR coupling')
+parser.add_argument('--wheel-feedback-age-profile', type=Path, default=None, help='Explicit feedback transport and refresh ranges; replaces wheel observation slots')
+parser.add_argument('--joint-delay-dr-profile', type=Path, default=None, help='Independent2ms queue ranges JSON; replaces legacy fixed queues')
 parser.add_argument('--leg-transport-delay-ms', type=float, default=0.0)
 parser.add_argument('--leg-transport-delay-probability', type=float, default=.5)
+parser.add_argument('--sampled-observation-delay-probability', type=float, default=0.)
+parser.add_argument('--sampled-action-delay-probability', type=float, default=0.)
+parser.add_argument('--diagnostic-separated-observation-delay-cycles', type=int, choices=[0, 1], default=0,
+                    help='Diagnostic sensor history delay (8ms/cycle), independent of wheel transport; commands/history actions remain current.')
+parser.add_argument('--diagnostic-separated-action-delay-cycles', type=int, choices=[0, 1], default=0,
+                    help='Diagnostic whole six-action command delay (8ms/cycle), independent of wheel transport.')
 parser.add_argument('--gravity-direction-dr-strength', type=float, default=0.0)
 parser.add_argument('--gravity-direction-dr-probability', type=float, default=.5)
 parser.add_argument('--checkpoint', type=Path, required=True)
@@ -124,6 +135,10 @@ parser.add_argument('--base-com-dr-strength', type=float, default=None,
                     help='Root COM engineering prior: strength1 means FLU +/-10/10/5mm.')
 parser.add_argument('--action-bias-start-seconds', type=float, default=0.)
 parser.add_argument('--action-bias-ramp-seconds', type=float, default=0.)
+parser.add_argument('--action-bias-end-seconds', type=float, default=None)
+parser.add_argument('--world-model-replay-dir', type=Path, default=None)
+parser.add_argument('--world-model-action-noise-std',type=float,default=0.,help='Dedicated simulator model-identification excitation, capped at3sigma; never acceptance.')
+parser.add_argument('--diagnostic-bias-stop-budget', action='store_true')
 parser.add_argument('--diagnostic-hold-legs-after-seconds', type=float, default=None)
 parser.add_argument('--audit-leg-actuator', action='store_true')
 parser.add_argument('--diagnostic-leg-velocity-limit', type=float, default=None)
@@ -147,6 +162,8 @@ parser.add_argument('--capture-observation-stride', type=int, default=1,
 parser.add_argument('--diagnostic-tgs-external-forces-every-iteration', action='store_true')
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
+from rmuc_world_model.exploration import validate_exploration
+validate_exploration(args.world_model_action_noise_std,args.world_model_replay_dir is not None,args.distill_dataset_dir is not None,args.audit_critic)
 if args.capture_observation_stride < 1:
     parser.error('Capture observation stride must be positive')
 if not 0 <= args.capture_startup_steps <= 500:
@@ -203,8 +220,8 @@ if args.diagnostic_wheel_velocity_equivalence and (args.dr_strength!=0 or args.d
     parser.error('Velocity equivalence requires DR0 and the unchanged legacy actuator profile')
 if args.motor_response_time_constants_ms is not None:
     low,high=args.motor_response_time_constants_ms
-    if not (math.isfinite(low) and math.isfinite(high) and 0 < low <= high):
-        parser.error('Motor response time constants must be finite, positive and ordered')
+    if not (math.isfinite(low) and math.isfinite(high) and 0 <= low <= high):
+        parser.error('Motor response time constants must be finite, nonnegative and ordered')
 if not 0 <= args.diagnostic_mesh_subdivisions <= 6 or (args.diagnostic_plane_terrain and args.diagnostic_mesh_subdivisions):
     parser.error('Mesh subdivisions must be 0..6 and cannot be combined with the plane diagnostic')
 speeds = [float(v) for v in args.speeds.split(',')]
@@ -225,10 +242,12 @@ if not math.isfinite(args.diagnostic_speed_ramp_seconds) or not 0<=args.diagnost
 if args.diagnostic_speed_ramp_seconds and any(v<1 or yaw!=0 for v,yaw in commands_list):
     parser.error('Diagnostic ramp requires forward straight final targets >=1m/s')
 bias_cases = [{'name': 'unmodified', 'action': [0.] * 6}]
-if any(not math.isfinite(x) or not 0 <= x <= 5 for x in
+if any(not math.isfinite(x) or not 0 <= x <= 60 for x in
        (args.action_bias_start_seconds, args.action_bias_ramp_seconds)):
-    parser.error('Diagnostic bias start/ramp times must be finite and within [0,5] seconds')
-if (args.action_bias_start_seconds or args.action_bias_ramp_seconds) and not args.action_bias_sweep:
+    parser.error('Diagnostic bias start/ramp times must be finite and within [0,60] seconds')
+if args.action_bias_end_seconds is not None and (not math.isfinite(args.action_bias_end_seconds) or not args.action_bias_start_seconds < args.action_bias_end_seconds <= 60 or args.action_bias_end_seconds - args.action_bias_start_seconds + 1e-9 < 2 * args.action_bias_ramp_seconds):
+    parser.error('Bias end must follow start, be <=60s and allow both ramps')
+if (args.action_bias_start_seconds or args.action_bias_ramp_seconds or args.action_bias_end_seconds is not None) and not args.action_bias_sweep:
     parser.error('Diagnostic bias timing requires an action bias sweep')
 if args.action_bias_sweep:
     bias_cases = json.loads(args.action_bias_sweep.read_text())
@@ -236,6 +255,8 @@ if args.action_bias_sweep:
                             any(not -0.3 <= float(v) <= 0.3 for v in case['action'])
                             for case in bias_cases):
         parser.error('Diagnostic action offsets must be six values within [-0.3,0.3]')
+if args.diagnostic_bias_stop_budget and (not args.action_bias_sweep or args.distilled_student or args.diagnostic_leg_target_offsets):
+    parser.error('Stop-budget probes require teacher raw-action bias sweep')
 bias_labels = [case for command in commands_list for case in bias_cases]
 if args.diagnostic_leg_target_offsets:
     if not args.action_bias_sweep or not args.diagnostic_disable_outer_feedback:
@@ -372,10 +393,6 @@ def main() -> int:
     cfg.gravity_direction_dr_probability = args.gravity_direction_dr_probability
     cfg.domain_randomization_strength_override = args.dr_strength
     cfg.domain_randomization_command_consistent_noise = True
-    if args.motor_response_time_constants_ms is not None:
-        cfg.motor_response_enabled = True
-        cfg.motor_response_time_constant_min_s = args.motor_response_time_constants_ms[0]/1000.
-        cfg.motor_response_time_constant_max_s = args.motor_response_time_constants_ms[1]/1000.
     if args.radial_spring_force is not None:
         cfg.gas_spring_radial_force_n = args.radial_spring_force
         cfg.gas_spring_radial_dr_fraction = args.radial_spring_dr_fraction
@@ -441,6 +458,12 @@ def main() -> int:
         import yaml
         from rmuc_joint_dr_profile import apply_joint_dr_profile
         apply_joint_dr_profile(cfg, yaml.safe_load(args.diagnostic_joint_dr_profile.read_text()))
+    # Explicit CLI response hypothesis overrides legacy joint profile defaults.
+    cfg.motor_response_strength_override=args.motor_response_strength
+    if args.motor_response_time_constants_ms is not None:
+        cfg.motor_response_enabled = True
+        cfg.motor_response_time_constant_min_s = args.motor_response_time_constants_ms[0]/1000.
+        cfg.motor_response_time_constant_max_s = args.motor_response_time_constants_ms[1]/1000.
     if args.real2sim_wheel_profile:
         if separated_wheel_profile is None or not args.diagnostic_disable_outer_feedback:
             raise ValueError('real2sim overlay requires separated wheel profile and disabled outer feedback')
@@ -449,6 +472,35 @@ def main() -> int:
         if not args.real2sim_wheel_profile:
             raise ValueError('End-to-end timing requires real2sim wheel profile')
         cfg.real2sim_end_to_end_delay = True
+    cfg.diagnostic_separated_observation_delay_cycles = args.diagnostic_separated_observation_delay_cycles
+    cfg.diagnostic_separated_action_delay_cycles = args.diagnostic_separated_action_delay_cycles
+    cfg.real2sim_observation_delay_probability = args.sampled_observation_delay_probability
+    cfg.real2sim_action_delay_probability = args.sampled_action_delay_probability
+    if (args.sampled_observation_delay_probability or args.sampled_action_delay_probability) and not args.real2sim_end_to_end_delay:
+        raise ValueError('Sampled separate delay evaluation requires explicit timing ownership')
+    if (args.diagnostic_separated_observation_delay_cycles or args.diagnostic_separated_action_delay_cycles) and not args.real2sim_end_to_end_delay:
+        raise ValueError('Separated delay diagnostics require explicit wheel timing ownership')
+    if args.joint_delay_dr_profile is not None:
+        profile=json.loads(args.joint_delay_dr_profile.read_text())
+        if set(profile)!={'seed','wheel','leg','observation','action'}:
+            raise ValueError('Joint delay profile requires seed plus four range_s channels')
+        if (args.leg_transport_delay_ms or args.diagnostic_separated_observation_delay_cycles
+                or args.diagnostic_separated_action_delay_cycles or args.sampled_observation_delay_probability
+                or args.sampled_action_delay_probability or args.world_model_replay_dir):
+            raise ValueError('Disable legacy delays/replay schema before joint delay DR evaluation')
+        cfg.joint_delay_dr_enabled=True
+        cfg.joint_delay_dr_seed=int(profile['seed'])
+        for channel in ['wheel','leg','observation','action']:
+            setattr(cfg,'joint_delay_dr_'+channel+'_range_s',profile[channel])
+        cfg.real2sim_policy_delay_mutually_exclusive=False
+    if args.wheel_feedback_age_profile is not None:
+        feedback_profile=json.loads(args.wheel_feedback_age_profile.read_text())
+        if set(feedback_profile)!={'seed','transport_s','refresh_s'} or not cfg.joint_delay_dr_enabled:
+            raise ValueError('Feedback age requires joint delay profile and seed/transport_s/refresh_s')
+        cfg.wheel_feedback_age_enabled=True
+        cfg.wheel_feedback_age_seed=int(feedback_profile['seed'])
+        cfg.wheel_feedback_transport_range_s=feedback_profile['transport_s']
+        cfg.wheel_feedback_refresh_range_s=feedback_profile['refresh_s']
     from rmuc_training_contract import checkpoint_observation_contract, observation_contract
     checkpoint_observation = checkpoint_observation_contract(
         torch.load(args.checkpoint, map_location='cpu', weights_only=False))
@@ -482,7 +534,7 @@ def main() -> int:
         source_paths.append(task_root/'com_randomization.py')
     if args.real2sim_wheel_profile:
         source_paths.extend([args.real2sim_wheel_profile, task_root/'real2sim_wheel.py'])
-    source_paths += [task_root / name for name in ('env.py', 'env_cfg.py', 'flat_terrain.py', 'observation_noise.py', 'motor_response.py', 'gas_spring.py', 'command_contract.py', 'bank_geometry.py', 'wheel_velocity_control.py')]
+    source_paths += [task_root / name for name in ('env.py', 'env_cfg.py', 'flat_terrain.py', 'observation_noise.py', 'motor_response.py', 'wheel_feedback_age.py', 'joint_delay_dr.py', 'leg_transport_delay.py', 'real2sim_wheel.py', 'gas_spring.py', 'command_contract.py', 'bank_geometry.py', 'wheel_velocity_control.py')]
     source_paths += [Path(cfg.robot_cfg.spawn.usd_path)]
     if args.diagnostic_separated_wheel_profile is not None:
         source_paths.extend([args.diagnostic_separated_wheel_profile,
@@ -548,7 +600,18 @@ def main() -> int:
         cfg.diagnostic_wheel_peak_nm=peak
         cfg.robot_cfg.actuators['wheel_motors'].effort_limit=peak
         cfg.robot_cfg.actuators['wheel_motors'].effort_limit_sim=peak
-    env = RslRlVecEnvWrapper(gym.make('Robotics-Wheelbipe-V14-RMUC-Command-v0', cfg=cfg),
+    if args.diagnostic_video:
+        from isaaclab.envs.utils.video_recorder_cfg import VideoRecorderCfg
+        if args.diagnostic_video.exists():
+            raise ValueError('Refusing to overwrite diagnostic video')
+        cfg.video_recorder = VideoRecorderCfg(window_width=1280, window_height=720)
+        cfg.viewer.origin_type = 'asset_root'
+        cfg.viewer.asset_name = 'robot'
+        cfg.viewer.env_index = args.diagnostic_video_env
+        cfg.viewer.eye = (1.7, .4, .65)
+        cfg.viewer.lookat = (0., 0., 0.)
+    env = RslRlVecEnvWrapper(gym.make('Robotics-Wheelbipe-V14-RMUC-Command-v0', cfg=cfg,
+                            render_mode='rgb_array' if args.diagnostic_video else None),
                             clip_actions=None if args.position_authority_consumer else 1.0)
     u = env.unwrapped
     device = u.device
@@ -689,6 +752,18 @@ def main() -> int:
         u._apply_action = apply_action_with_spring_audit
     torch.manual_seed(args.seed)
     actor = restore_actor(args.checkpoint).to(device).eval()
+    excitation_rng=torch.Generator(device=device).manual_seed(args.seed+17011) if args.world_model_action_noise_std else None
+    stop_probe_state = {}
+    if args.diagnostic_bias_stop_budget:
+        head = getattr(actor, 'rmuc_physics_adaptation', None)
+        if head is None or not hasattr(head, 'stop_network'):
+            raise ValueError('Stop-budget probe requires top-level trained stop head')
+        def capture_stop_probe(module, inputs, output):
+            gate = head.stop_gate(inputs[0])
+            stop_probe_state['gate'] = gate
+            stop_probe_state['residual'] = head.stop_residual(inputs[0], output)
+        head.stop_network.register_forward_hook(capture_stop_probe)
+
     if hasattr(actor, 'rmuc_position_authority') != args.position_authority_consumer:
         raise ValueError('Position authority checkpoint and consumer must be enabled together')
     if args.position_authority_consumer:
@@ -743,7 +818,7 @@ def main() -> int:
                     raise RuntimeError('Diagnostic leg targets expect full environment batch')
                 limits = u.robot.data.joint_pos_limits.torch[:, u._leg_control_ids]
                 fraction = diagnostic_bias_fraction(u._curriculum_step_counter, u.step_dt,
-                    args.action_bias_start_seconds, args.action_bias_ramp_seconds)
+                    args.action_bias_start_seconds, args.action_bias_ramp_seconds, args.action_bias_end_seconds)
                 target = offset_leg_targets(target, leg_offsets, fraction, limits,
                                             cfg.leg_joint_limit_margin_rad)
             return original_position_target(target, joint_ids=joint_ids, env_ids=env_ids)
@@ -754,8 +829,8 @@ def main() -> int:
         from rmuc_command_sequence import validate_sequence, sequence_commands
         if args.diagnostic_turn_entry or args.diagnostic_speed_ramp_seconds or not args.record_world_trajectory or not args.record_leg_tracking:
             raise ValueError('Sequence requires world/leg traces and no other command schedule')
-        if len(commands_list)!=1:
-            raise ValueError('Sequence uses one bucket with replicas, not a fixed multi-command grid')
+        if len(commands_list)!=1 and not (args.action_bias_sweep and len(set(commands_list))==1):
+            raise ValueError('Sequence requires one command, optionally repeated for diagnostic bias cases')
         sequence_table=validate_sequence(json.loads(args.command_sequence.read_text()),u.step_dt,cfg.episode_length_s)
         original_sequence_observations=u._get_observations
         def observations_with_sequence():
@@ -942,9 +1017,23 @@ def main() -> int:
     tracking_probe_counts = torch.zeros(count, dtype=torch.long, device=device)
     wheel_teacher_samples = []
 
+    wm_capture = None
+    if args.world_model_replay_dir is not None:
+        from rmuc_world_model.capture import ReplayCapture, snapshot as wm_snapshot
+        wm_capture = ReplayCapture(args.world_model_replay_dir, dict(
+            schema_version=1, policy_observation_dim=25, policy_action_dim=6,
+            policy_dt=float(u.step_dt), physics_dt=float(cfg.sim.dt), seed=args.seed,
+            checkpoint_sha256=hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
+            initial_material_readback=initial_material_readback,
+            initial_mass_inertia_readback=initial_mass_inertia_readback,
+            deployment='STM32H723 + CubeAI; world model is training-only',
+            control_joint_ids=[int(v) for v in u._control_dof_ids]))
+
     def observe_terminal_physics():
         nonlocal index, observed_steps, trace_cursor
         terminated, truncated = original_get_dones()
+        if wm_capture is not None:
+            wm_capture.terminal(wm_snapshot(u), terminated, truncated)
         last_terminated.copy_(terminated)
         last_truncated.copy_(truncated)
         done = terminated | truncated
@@ -1084,6 +1173,14 @@ def main() -> int:
 
     u._get_dones = observe_terminal_physics
     held_legs = None
+    video_writer = None
+    video_frames = 0
+    if args.diagnostic_video:
+        import imageio.v2 as imageio
+        if not 0 <= args.diagnostic_video_env < count:
+            raise ValueError('Video environment out of range')
+        args.diagnostic_video.parent.mkdir(parents=True, exist_ok=True)
+        video_writer = imageio.get_writer(str(args.diagnostic_video), fps=31.25, codec='libx264', quality=8)
     startup_samples = []
     leg_tracking_samples = []
     # Opt-in short trace piggybacks on startup capture. Sample immediately
@@ -1113,6 +1210,8 @@ def main() -> int:
     # Per-control-step exposure, rather than the fresh post-reset final snapshot.
     delay_exposure = torch.zeros((count, 2), dtype=torch.long, device=device)
     delay_maximum = torch.zeros_like(delay_exposure)
+    delay_trace_frames = []
+    joint_delay_trace_frames = []
     try:
         distill_buffer = []
         distill_shard = 0
@@ -1125,16 +1224,26 @@ def main() -> int:
                     predicted_value = critic(obs).squeeze(-1).detach().clone()
                 if trace_ring is not None or args.collect_wheel_teacher:
                     action_input_observation.copy_(obs['policy'])
+                if args.diagnostic_bias_stop_budget:
+                    stop_probe_state.clear()
                 action = actor(obs, stochastic_output=args.audit_critic)
                 if held_legs is not None:
                     action = held_legs.apply(action, u._curriculum_step_counter, u.step_dt)
-                if args.action_bias_start_seconds or args.action_bias_ramp_seconds:
+                if args.action_bias_start_seconds or args.action_bias_ramp_seconds or args.action_bias_end_seconds is not None:
                     from rmuc_eval_commands import diagnostic_bias_fraction
                     fraction = diagnostic_bias_fraction(u._curriculum_step_counter, u.step_dt,
-                        args.action_bias_start_seconds, args.action_bias_ramp_seconds)
-                    action = action + action_bias * fraction[:, None]
+                        args.action_bias_start_seconds, args.action_bias_ramp_seconds, args.action_bias_end_seconds)
+                    probe_delta = action_bias * fraction[:, None]
                 else:
-                    action = action + action_bias
+                    probe_delta = action_bias
+                if args.diagnostic_bias_stop_budget:
+                    from rmuc_eval_commands import bounded_residual_probe
+                    probe_delta = bounded_residual_probe(stop_probe_state['residual'], head.stop_budget,
+                                                         probe_delta, stop_probe_state['gate'])
+                action = action + probe_delta
+                if args.world_model_action_noise_std:
+                    from rmuc_world_model.exploration import excite
+                    action=excite(action,args.world_model_action_noise_std,excitation_rng)
                 if args.distill_dataset_dir:
                     if args.audit_critic or args.action_bias_sweep:
                         raise ValueError('Distillation requires deterministic unbiased teacher')
@@ -1157,13 +1266,37 @@ def main() -> int:
                         and step % args.capture_observation_stride == 0):
                     startup_closure.append(closure_audit.sample())
                     startup_samples.append((obs['policy'].clone(), action.clone(), u._curriculum_step_counter.clone()))
+                if u._joint_delay_dr is not None:
+                    q=u._joint_delay_dr
+                    joint_delay_trace_frames.append(torch.stack((u._curriculum_step_counter.long(),q.observation.steps,q.action.steps,q.wheel.steps,q.leg.steps),-1).detach().cpu())
                 if u._sensor_model_enabled:
                     active_delays = torch.stack((u._sensor_delay_steps, u._communication_delay_steps), -1)
                     delay_exposure.add_((active_delays > 0).long())
                     delay_maximum.copy_(torch.maximum(delay_maximum, active_delays))
+                if args.record_policy_trace:
+                    sensor = u._sensor_delay_steps if u._sensor_model_enabled else torch.zeros(count, device=device, dtype=torch.long)
+                    communication = u._communication_delay_steps if u._sensor_model_enabled else torch.zeros_like(sensor)
+                    leg_steps = u._leg_transport.active.long() * u._leg_transport.steps
+                    delay_trace_frames.append(torch.stack((u._curriculum_step_counter.long(), sensor.long(),
+                                                           communication.long(), leg_steps), -1).detach().clone())
                 if args.record_world_trajectory:
                     world_pre = world_state()
+                if wm_capture is not None:
+                    wm_capture.begin(wm_snapshot(u), obs['policy'], action)
                 obs, reward, _, _ = env.step(action)
+                if wm_capture is not None:
+                    wm_capture.finish(reward, obs['policy'])
+                if video_writer is not None and step % 4 == 0:
+                    center = u.robot.data.root_pos_w.torch[args.diagnostic_video_env].detach().cpu().numpy()
+                    u.sim.set_camera_view(eye=center + __import__('numpy').array([1.7, .4, .65]), target=center)
+                    from isaacsim.core.rendering_manager import ViewportManager
+                    ViewportManager.set_camera_view('/OmniverseKit_Persp',
+                        eye=(center + __import__('numpy').array([1.7, .4, .65])).tolist(), target=center.tolist())
+                    frame = u.render()
+                    if frame is None:
+                        raise RuntimeError('Isaac recorder returned no image')
+                    video_writer.append_data(frame)
+                    video_frames += 1
                 if critic is not None:
                     critic_samples.append((saved_observation, predicted_value, reward.clone(),
                                            last_terminated.clone(), last_truncated.clone()))
@@ -1298,10 +1431,16 @@ def main() -> int:
                   'diagnostic_disabled_stage_head': args.disable_stage_head,
                   'diagnostic_stage_head_output_scale': args.stage_head_output_scale if args.disable_stage_head is not None else None,
                   'control_contract': 'command-based', 'rows': rows,
+                  'world_model_action_noise_std': args.world_model_action_noise_std,
+                  'world_model_action_noise_clip_sigma': 3.,
+                  'world_model_exploration_seed': args.seed+17011 if args.world_model_action_noise_std else None,
+                  'acceptance_eligible': args.world_model_action_noise_std==0.,
                   'diagnostic_action_bias': args.action_bias_sweep is not None,
                   'position_authority_consumer': args.position_authority_consumer,
                   'diagnostic_leg_target_offsets': args.diagnostic_leg_target_offsets,
                   'diagnostic_action_bias_start_seconds': args.action_bias_start_seconds,
+                  'diagnostic_action_bias_end_seconds': args.action_bias_end_seconds,
+                  'diagnostic_bias_stop_budget': args.diagnostic_bias_stop_budget,
                   'diagnostic_hold_legs_after_seconds': args.diagnostic_hold_legs_after_seconds,
                   'diagnostic_action_bias_ramp_seconds': args.action_bias_ramp_seconds,
                   'gas_spring_assist_torque_nm': cfg.gas_spring_assist_torque_nm,
@@ -1320,10 +1459,10 @@ def main() -> int:
                   'wheel_dr_reset_counts': None if wheel_dr_streams is None else wheel_dr_streams.indices.tolist(),
                   'sensor_model': cfg.domain_randomization_sensor_model,
                   'leg_transport': u._leg_transport.readback(),
+                  'joint_delay_dr': (u._joint_delay_dr.readback() if u._joint_delay_dr is not None else None),
+                  'wheel_feedback_age': (u._wheel_feedback_age.readback() if u._wheel_feedback_age is not None else None),
                   'gravity_direction_dr': u._gravity_direction_dr.readback(),
                   'motor_response_enabled': cfg.motor_response_enabled,
-                  'motor_response_time_constants_s': {name: response.time_constant.tolist()
-                      for name,response in u._motor_responses.items()},
                   'motor_response_effort_audit': {name: {
                       'state_matches_applied_effort': bool(torch.equal(response.effort, u.robot.actuators[name].applied_effort)),
                       'applied_within_current_limit': bool((response.effort.abs() <= u.robot.actuators[name].effort_limit+1e-6).all()),
@@ -1332,6 +1471,8 @@ def main() -> int:
                           -u.robot.actuators[name].effort_limit)).abs().max())}
                       for name,response in u._motor_responses.items()},
                   'diagnostic_motor_response_override': args.motor_response_time_constants_ms is not None,
+                  'motor_response_strength_override': cfg.motor_response_strength_override,
+                  'motor_response_time_constants_s': {name:response.time_constant.detach().cpu().tolist() for name,response in u._motor_responses.items()},
                   'observation_delay_steps_per_env': u._sensor_delay_steps.tolist(),
                   'communication_delay_steps_per_env': u._communication_delay_steps.tolist(),
                   'sensor_delay_exposure': {
@@ -1368,8 +1509,10 @@ def main() -> int:
                       'joint_ids': list(u._leg_control_ids),
                       'velocity_limit_rad_s': u.robot.data.joint_vel_limits.torch[:, u._leg_control_ids].tolist(),
                       'armature_kg_m2': u.robot.data.joint_armature.torch[:, u._leg_control_ids].tolist()},
-                  'passed': sequence_table is None and args.diagnostic_wheel_peak_nm is None and getattr(args,'diagnostic_wheel_velocity_profile',None) is None and not getattr(args,'diagnostic_wheel_velocity_equivalence',False) and not args.diagnostic_plane_terrain and args.diagnostic_total_residual_budget is None and not args.disable_high_speed_feedback and args.disable_stage_head is None and args.base_wheel_clip is None and args.radial_spring_force is None and args.gas_spring_torque is None and args.dr_ablation == 'none' and not args.audit_critic and args.action_bias_sweep is None and args.pitch_rate_feedback is None
+                  'passed': args.world_model_action_noise_std==0. and sequence_table is None and args.diagnostic_wheel_peak_nm is None and getattr(args,'diagnostic_wheel_velocity_profile',None) is None and not getattr(args,'diagnostic_wheel_velocity_equivalence',False) and not args.diagnostic_plane_terrain and args.diagnostic_total_residual_budget is None and not args.disable_high_speed_feedback and args.disable_stage_head is None and args.base_wheel_clip is None and args.radial_spring_force is None and args.gas_spring_torque is None and args.dr_ablation == 'none' and not args.audit_critic and args.action_bias_sweep is None and args.pitch_rate_feedback is None
                             and getattr(args, 'motor_response_time_constants_ms', None) is None
+                            and getattr(args,'motor_response_strength',-1.) == -1.
+                            and getattr(args,'joint_delay_dr_profile',None) is None
                             and not getattr(args, 'diagnostic_disable_outer_feedback', False)
                             and not getattr(args, 'collect_wheel_teacher', False)
                             and not getattr(args, 'diagnostic_speed_ramp_seconds', 0.)
@@ -1512,7 +1655,20 @@ def main() -> int:
             trace_path=args.output.with_suffix('.policy_trace.npz')
             with trace_path.open('xb') as trace_file:
                 np.savez_compressed(trace_file,frames=torch.stack(full_policy_frames).numpy(),columns=np.asarray(trace_columns),bucket_ids=bucket_ids.cpu().numpy(),dt=float(u.step_dt))
+            delay_path = args.output.with_suffix('.delay_trace.npz')
+            with delay_path.open('xb') as delay_file:
+                np.savez_compressed(delay_file, frames=torch.stack(delay_trace_frames).cpu().numpy(),
+                    columns=np.asarray(['pre_episode_step','sensor_policy_cycles','action_policy_cycles','leg_physics_steps']),
+                    policy_dt=float(u.step_dt), physics_dt=float(cfg.sim.dt))
+            report['delay_trace'] = dict(path=str(delay_path),sha256=hashlib.sha256(delay_path.read_bytes()).hexdigest(),
+                scope='Per-env pre-action delay settings every policy step, before reset; sensor/action units policy cycles, leg units physics steps; motor response is separate')
             report['policy_trace']=dict(path=str(trace_path),sha256=hashlib.sha256(trace_path.read_bytes()).hexdigest(),scope='Input/raw action pre-step; physical state sampled post-step before reset, every policy step; not physics-substep trace')
+        if joint_delay_trace_frames:
+            import numpy as np
+            joint_path=args.output.with_suffix('.joint_delay_trace.npz')
+            with joint_path.open('xb') as stream:
+                np.savez_compressed(stream,frames=torch.stack(joint_delay_trace_frames).numpy(),columns=np.asarray(['pre_episode_step','observation_physics_steps','action_physics_steps','wheel_physics_steps','leg_physics_steps']),physics_dt=float(cfg.sim.dt),policy_dt=float(u.step_dt))
+            report['joint_delay_trace']=dict(path=str(joint_path),sha256=hashlib.sha256(joint_path.read_bytes()).hexdigest(),scope='Authoritative joint DR sampled queues; all channel units physics steps. Legacy delay_trace is inactive when this exists.')
         if args.failure_traces:
             report.update(failure_trace_columns=trace_columns, failure_traces=failure_traces,
                           failure_trace_motor_scope='Policy slot order; post-step final physics substep motor output, excludes passive spring/constraint reactions and intermediate substep peaks',
@@ -1585,10 +1741,14 @@ def main() -> int:
         report['strict_acceptance'] = strict_acceptance_audit(report)
         report['passed'] = report['strict_acceptance']['passed']
         report['row_passed_semantics'] = 'Legacy stage diagnostic only; strict_acceptance controls qualification'
+        if wm_capture is not None:
+            report['world_model_replay'] = wm_capture.close()
         args.output.write_text(json.dumps(report, indent=2) + '\n')
         print('[RMUC_GRID_RESULT] ' + json.dumps(report), flush=True)
         return 0 if report['passed'] else 2
     finally:
+        if video_writer is not None:
+            video_writer.close()
         env.close()
 
 
