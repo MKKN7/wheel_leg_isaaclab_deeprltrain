@@ -3,6 +3,19 @@ import torch
 from rmuc_command_sequence import validate_sequence,sequence_commands
 
 
+def test_reverse_oscillation_acquisition_does_not_suppress_runaway_or_other_domains():
+    from rmuc_command_sequence import reverse_oscillation_ready, reverse_runaway_cost
+    cmd=torch.tensor([[-.6,0.,0.],[-.6,0.,0.],[-.6,0.,0.],[-.6,0.,0.],[.6,0.,0.],[0.,0.,0.],[-.6,0.,.2]])
+    age=torch.tensor([150,374,375,150,150,150,150]);dynamic=torch.tensor([False,False,False,True,False,False,False])
+    assert reverse_oscillation_ready(cmd,age,dynamic,.008,0).all()
+    assert reverse_oscillation_ready(cmd,age,dynamic,.008,3).tolist()==[False,False,True,True,True,True,True]
+    # Large initial overspeed remains penalized even while oscillation is gated.
+    cost=reverse_runaway_cost(cmd,torch.full((7,),-.9),torch.full((7,),-.91),torch.full((7,),-.1),torch.ones(7,dtype=torch.bool),.008)
+    assert cost[0]>0 and cost[1]>0
+    for invalid in [-1,float('nan'),6]:
+        with pytest.raises(ValueError):reverse_oscillation_ready(cmd,age,dynamic,.008,invalid)
+
+
 def test_boundary_reset_and_reverse_preserve_existing_command_slots():
     table=validate_sequence([[0,0,0],[2,.5,0],[4,1.,0],[6,0,0],[8,-.5,0]],.008,20)
     ages=torch.tensor([0,249,250,499,500,750,1000,0])
@@ -64,3 +77,20 @@ def test_stop_posture_symmetric_bounded_and_near_stop_emphasis():
     torch.testing.assert_close(value,dynamic_stop_posture_cost(cmd,-vx,-angle,-rate,mask))
     assert not dynamic_stop_posture_cost(cmd,vx,torch.ones(3)*.01,torch.zeros(3),mask).any()
     assert dynamic_stop_posture_cost(cmd,torch.zeros(3),angle*100,rate*100,mask).max()<=4
+
+
+def test_alternate_timing_preserves_commands_but_changes_phase_and_reward():
+ import runpy
+ from pathlib import Path
+ m=runpy.run_path(str(Path(__file__).resolve().parents[1]/'source/agent_tasks/agent_tasks/direct/rmuc_wheel_leg/command_sequence.py'))
+ short=[[0,0,0],[2,-.25,0],[4,-.6,0],[6,-.8,0],[9,-.4,0],[11,0,0]]
+ long=[[0,0,0],[2,-.25,0],[6,-.6,0],[10,-.8,0],[14,-.4,0],[17,0,0]]
+ a=validate_sequence(short,.008,20);b=m['alternate_sequence'](short,long,.008,20)
+ ages=torch.tensor([625,625]);ca=sequence_commands(a,ages);cb=sequence_commands(b,ages)
+ assert ca[0,0]==-.6 and cb[0,0]==-.25
+ cost=m['sequence_overshoot_cost'];mask=torch.ones(2,dtype=torch.bool);speed=torch.tensor([-.3,-.3])
+ assert not cost(a,ages,ca,speed,mask).any()
+ assert (cost(b,ages,cb,speed,mask)>0).all()
+ for table in [a,b]:assert sequence_commands(table,torch.zeros(2,dtype=torch.long)).abs().max()==0
+ with pytest.raises(ValueError):m['alternate_sequence'](short,[[0,0,0],[2,.25,0]],.008,20)
+ assert m['alternate_sequence'](short,[],.008,20) is None

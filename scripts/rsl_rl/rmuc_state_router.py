@@ -122,6 +122,28 @@ class IsolatedTurnStateRouter(nn.Module):
         self.requires_grad_(False)
         self.speed_extensions = nn.ModuleDict(copies)
 
+    def install_forward_turn_support(self, domain):
+        """Checkpoint-opt-in routing probe; does not widen actuator limits."""
+        if not hasattr(self,'turn_speed_plateau_end') or hasattr(self,'forward_turn_support'):
+            raise ValueError('One existing explicit turn support required')
+        d=torch.as_tensor(domain,device=self.budget.device,dtype=self.budget.dtype)
+        if (d.shape!=(2,) or not torch.isfinite(d).all()
+                or float(self.turn_speed_plateau_end)!=1.5 or not 1.5<=d[0]<d[1]<=2.5):
+            raise ValueError('Extension requires1.5 legacy plateau and ordered new bounds')
+        self.register_buffer('forward_turn_support',d.clone())
+
+    def extended_speed_support(self, observation):
+        speed=observation[...,7]/.5
+        end=getattr(self,'turn_speed_plateau_end',1.)
+        original=self.smooth(speed,.8,1.)*(1.-self.smooth(speed,end,end+.2))
+        if not hasattr(self,'forward_turn_support'):return original
+        d=self.forward_turn_support;yaw=(observation[...,2]/.25+observation[...,8]).abs()
+        extended=self.smooth(speed,.8,1.)*(1.-self.smooth(speed,d[0],d[1]))
+        blend=self.smooth(yaw,.02,.05)*(1.-self.smooth(yaw,1.8,1.9))
+        blend=blend*((speed>1.5)&(observation[...,8].abs()<1.999)).to(speed.dtype)
+        mixed=original+blend*(extended-original)
+        return torch.where(blend==0,original,torch.where(blend==1,extended,mixed))
+
     def speed_extension_gate(self, observation):
         bounds=getattr(self, 'speed_extension_blend_bounds', (1.,1.05))
         speed=observation[..., 7] / .5
@@ -253,14 +275,14 @@ class IsolatedTurnStateRouter(nn.Module):
         speed=observation[...,7]/.5
         yaw=observation[...,2]/.25+observation[...,8]
         end=getattr(self, 'turn_speed_plateau_end', 1.0)
-        support=self.smooth(speed,.8,1.)*(1.-self.smooth(speed,end,end+.2))
+        support=self.extended_speed_support(observation)
         return support*self.smooth(yaw,.8001,1.)
 
     def extended_turn_0p8_eligibility(self, observation):
         speed=observation[...,7]/.5
         yaw=observation[...,2]/.25+observation[...,8]
         end=getattr(self, 'turn_speed_plateau_end', 1.0)
-        support=self.smooth(speed,.8,1.)*(1.-self.smooth(speed,end,end+.2))
+        support=self.extended_speed_support(observation)
         # Preserve all previous <=0.6 commands, including float reconstruction.
         return support*self.smooth(yaw,.6001,.8), support*self.smooth(-yaw,.6001,.8)
 
@@ -270,7 +292,7 @@ class IsolatedTurnStateRouter(nn.Module):
         # Disjoint from all previous state-router supports. Preserve mastered
         # +/-0.45 anchors with a small reconstruction-roundoff guard.
         end=getattr(self, 'turn_speed_plateau_end', 1.0)
-        support=self.smooth(speed,.8,1.)*(1.-self.smooth(speed,end,end+.2))
+        support=self.extended_speed_support(observation)
         return support*self.smooth(yaw,.4501,.6), support*self.smooth(-yaw,.4501,.6)
 
     def straight_recovery_eligibility(self, observation):

@@ -121,6 +121,19 @@ def reverse_runaway_cost(command, measured_vx, previous_vx, filtered_backward_ac
     return torch.where(active, severity + escalation, torch.zeros_like(severity))
 
 
+def reverse_oscillation_ready(command, episode_age_steps, continuous_mask, dt, grace_s):
+    """Separate fixed reverse acquisition from steady oscillation shaping.
+
+    This masks only the high-pass speed cost. Runaway, posture and termination
+    costs remain active throughout acquisition. Zero preserves old rewards.
+    Dynamic command cohorts retain their existing shaping.
+    """
+    if not math.isfinite(grace_s) or not 0 <= grace_s <= 5 or not math.isfinite(dt) or dt <= 0:
+        raise ValueError('Finite reverse oscillation grace0..5s and positive dt required')
+    fixed_reverse=(command[...,0]<-1.e-6)&(command[...,2].abs()<=1.e-6)&~continuous_mask
+    return ~fixed_reverse | (episode_age_steps.to(command.dtype)*dt>=grace_s)
+
+
 def reverse_settled_tracking_cost(command, measured_vx, episode_age_steps,
                                   step_table, sequence_mask, policy_dt):
     """Opt-in reverse steady precision after2s; no extra entry acceleration reward.
@@ -141,3 +154,13 @@ def reverse_settled_tracking_cost(command, measured_vx, episode_age_steps,
     error=(measured_vx-command[:,0])/scale
     cost=error.square()/(1.+error.square())
     return torch.where(active,cost*ramp,torch.zeros_like(cost))
+
+
+def alternate_sequence(primary, alternate, dt, episode_seconds):
+    """Timing-only alternate: preserve ordered command coverage and interfaces."""
+    if not alternate:return None
+    a=validate_sequence([list(x) for x in primary],dt,episode_seconds)
+    b=validate_sequence([list(x) for x in alternate],dt,episode_seconds)
+    if [x[1:] for x in a] != [x[1:] for x in b]:
+        raise ValueError('Alternate sequence must preserve identical ordered vx/yaw commands')
+    return b

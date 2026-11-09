@@ -2,6 +2,18 @@
 import torch
 
 
+def boundary_censored_returns(rewards, terminated, truncated, boundary_only, gamma, reward_abs_bound):
+    """Sensitivity labels: unknown continuation at pure spatial-boundary resets.
+
+    This is a censoring diagnostic, not a change to the environment's MDP.
+    Retain the ordinary episodic labels alongside it.
+    """
+    if boundary_only.shape != terminated.shape or (boundary_only & ~terminated).any():
+        raise ValueError('Boundary censor mask must be a subset of terminations')
+    return returns_and_tail_bounds(rewards, terminated & ~boundary_only,
+                                   truncated | boundary_only, gamma, reward_abs_bound)
+
+
 def returns_and_tail_bounds(rewards, terminated, truncated, gamma, reward_abs_bound):
     if not 0 < gamma < 1 or reward_abs_bound <= 0:
         raise ValueError('Invalid discount or reward bound')

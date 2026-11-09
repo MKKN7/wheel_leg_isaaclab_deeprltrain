@@ -22,3 +22,16 @@ def tracking_targets(command_vx, margin_mps, exact_low_speed=False):
         torch.minimum(torch.full_like(command_vx,margin_mps),(.04*magnitude).clamp_min(.002)),
         torch.full_like(command_vx,margin_mps))
     return magnitude,normalizer,direction,margin
+
+
+def low_forward_overspeed_cost(command_vx, measured_speed):
+    """Reward-only low-forward/idle excess; excludes reverse and speeds above.75.
+
+    Idle penalizes drift in either direction. Moving commands penalize only
+    overspeed, leaving acceleration from below target unpenalized.
+    """
+    active = (command_vx >= 0) & (command_vx <= .75)
+    margin = torch.minimum(torch.full_like(command_vx, .01),
+                           (.04 * command_vx).clamp_min(.002))
+    speed = torch.where(command_vx <= 1e-6, measured_speed.abs(), measured_speed)
+    return ((speed-command_vx-margin)/.05).clamp(0, 1) * active

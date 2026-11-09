@@ -52,6 +52,10 @@ parser.add_argument('--episode-length-seconds', type=float, default=None,
 parser.add_argument('--min-episodes', type=int, default=64)
 parser.add_argument('--diagnostic-speed-ramp-seconds', type=float, default=0.,
                     help='Diagnostic per-episode ramp from1m/s to final straight target; never a fixed-command certificate.')
+parser.add_argument('--diagnostic-reverse-ramp-seconds', type=float, default=0.,
+                    help='Diagnostic zero-to-target ramp for negative straight commands only; not step-command acceptance.')
+parser.add_argument('--reverse-entry-ramp-seconds', type=float, default=0.,
+                    help='Shared training/evaluation zero-to-target reverse entry; not direct-step acceptance.')
 parser.add_argument('--seed', type=int, default=42)
 parser.add_argument('--layout-seed', type=int, default=None,
                     help='Shuffle command placement across environments with a separate, reproducible RNG.')
@@ -103,7 +107,11 @@ parser.add_argument('--gas-spring-torque', type=float, default=None,
                     help='Diagnostic passive spring magnitude in [0,10.775]Nm; not a policy certificate.')
 parser.add_argument('--firmware-spring-equivalent', action='store_true',
                     help='Use the read-only RMUC firmware leg spring compensation law as an explicit diagnostic actuator mode.')
+parser.add_argument('--record-signal-chain-audit', action='store_true', help='Read-only per-physics-tick queue/PD/response verification.')
 parser.add_argument('--record-policy-trace', action='store_true', help='Read-only full per-step action/input/post-state trace for branch diagnosis.')
+parser.add_argument('--diagnostic-policy-speed-source', choices=['root_heading', 'desktop2_proxy', 'desktop2_kinematic'], default='root_heading',
+                    help='Change only the speed used in obs6 before existing delay/noise; reward and evaluation retain root-COM truth. Not full firmware emulation.')
+parser.add_argument('--observation-noise-seed', type=int, default=-1, help='Independent sensor-noise RNG; -1 preserves legacy shared RNG.')
 parser.add_argument('--failure-traces', action='store_true',
                     help='Record up to 16 unsafe episodes with pre-reset state/action histories and DR parameters.')
 parser.add_argument('--diagnostic-wheel-velocity-fraction',type=float,default=1.,
@@ -120,9 +128,16 @@ parser.add_argument('--audit-reward-contract', action='store_true',
                     help='Compare active/rehearsal rewards at the final identical physical state, without stepping.')
 parser.add_argument('--audit-training-env-config', type=Path, default=None,
                     help='Read reward-only bank/yaw/clip overrides from the training params/env.yaml for an audit.')
+parser.add_argument('--audit-critic-joint-dr', action='store_true', help='Explicit current-DR critic return audit; reward scalar parity required, no behavior certificate.')
 parser.add_argument('--audit-critic', action='store_true',
                     help='Diagnostic stochastic-policy rollout and critic/Monte Carlo comparison; requires training reward config and DR=0.')
 parser.add_argument('--critic-gamma', type=float, default=.99)
+parser.add_argument('--audit-fixed-reverse-reward', action='store_true',
+                    help='Critic-only fixed reverse collection retaining training dynamic tracking cost.')
+parser.add_argument('--audit-critic-xy-radius', type=float, default=None,
+                    help='Critic-only continuing flat rollout boundary radius; never behavior acceptance.')
+parser.add_argument('--audit-critic-context', choices=['queues_v1','reward_state_v2'], default='queues_v1',
+                    help='Read-only saved critic context; actor remains25D.')
 parser.add_argument('--action-bias-sweep', type=Path, default=None,
                     help='Diagnostic JSON list of {name, action:[six bounded offsets]}; never a policy certificate.')
 parser.add_argument('--real2sim-wheel-profile', type=Path, default=None,
@@ -241,6 +256,10 @@ if not math.isfinite(args.diagnostic_speed_ramp_seconds) or not 0<=args.diagnost
     parser.error('Diagnostic ramp duration must be within0..4seconds')
 if args.diagnostic_speed_ramp_seconds and any(v<1 or yaw!=0 for v,yaw in commands_list):
     parser.error('Diagnostic ramp requires forward straight final targets >=1m/s')
+if not math.isfinite(args.diagnostic_reverse_ramp_seconds) or not 0<=args.diagnostic_reverse_ramp_seconds<=4:
+    parser.error('Diagnostic reverse ramp duration must be within0..4seconds')
+if args.diagnostic_reverse_ramp_seconds and (args.diagnostic_speed_ramp_seconds or not any(v<0 and yaw==0 for v,yaw in commands_list)):
+    parser.error('Reverse ramp needs a negative straight target and no forward ramp')
 bias_cases = [{'name': 'unmodified', 'action': [0.] * 6}]
 if any(not math.isfinite(x) or not 0 <= x <= 60 for x in
        (args.action_bias_start_seconds, args.action_bias_ramp_seconds)):
@@ -293,9 +312,20 @@ if not 0 <= args.radial_spring_dr_fraction <= 1 or (args.radial_spring_dr_fracti
     parser.error('Radial DR requires a force and fraction in [0,1]')
 if args.output.exists():
     parser.error(f'Refusing to overwrite {args.output}')
-if args.audit_critic and (not args.audit_training_env_config or args.dr_strength != 0
+if args.audit_critic_joint_dr and not args.audit_critic:
+    parser.error('Joint DR critic audit requires --audit-critic')
+if (args.audit_fixed_reverse_reward or args.audit_critic_xy_radius is not None) and not args.audit_critic_joint_dr:
+    parser.error('Fixed reverse/radius audit requires explicit joint-DR critic audit')
+if args.audit_critic_xy_radius is not None and not 40 <= args.audit_critic_xy_radius <= 200:
+    parser.error('Critic boundary radius must be within40..200m')
+if args.audit_critic and (not args.audit_training_env_config or (args.dr_strength != 0 and not args.audit_critic_joint_dr)
                           or not 0 < args.critic_gamma < 1):
     parser.error('Critic audit requires training reward config, DR=0 and gamma in (0,1)')
+if not math.isfinite(args.reverse_entry_ramp_seconds) or not 0 <= args.reverse_entry_ramp_seconds <= 4:
+    parser.error('Shared reverse entry duration must be within0..4 seconds')
+if args.reverse_entry_ramp_seconds and (args.diagnostic_reverse_ramp_seconds or args.command_sequence
+                                      or args.diagnostic_speed_ramp_seconds or args.diagnostic_turn_entry):
+    parser.error('Shared reverse entry cannot be combined with another command schedule')
 app = AppLauncher(args).app
 
 import gymnasium as gym  # noqa: E402
@@ -314,6 +344,7 @@ def main() -> int:
     cfg = parse_env_cfg('Robotics-Wheelbipe-V14-RMUC-Command-v0',
                         device=args.device, num_envs=count, use_fabric=True)
     cfg.seed = args.seed
+    cfg.diagnostic_policy_speed_source = args.diagnostic_policy_speed_source
     leg_scale_profile_record = None
     stored_leg_profile = (torch.load(args.checkpoint, map_location='cpu', weights_only=False).get('infos') or {}).get('rmuc_action_leg_scale_profile')
     if args.command_leg_scale_profile is not None or stored_leg_profile is not None:
@@ -376,6 +407,14 @@ def main() -> int:
         cfg.terrain.terrain_generator = None
         cfg.terrain.env_spacing = cfg.scene.env_spacing
     cfg.play = True
+    if args.audit_critic_xy_radius is not None:
+        cfg.max_xy_distance_m = args.audit_critic_xy_radius
+        if cfg.terrain.terrain_generator is None:
+            raise ValueError('Extended critic boundary requires explicit flat generator')
+        extent=max(cfg.terrain.terrain_generator.size[0],2*args.audit_critic_xy_radius+80)
+        cfg.terrain.terrain_generator.size=(extent,extent)
+    if args.audit_critic:
+        cfg.training_privileged_critic_context=args.audit_critic_context
     cfg.command_require_analytic_bank = args.require_analytic_bank
     cfg.command_start_level = 46
     cfg.command_start_at_target = True
@@ -440,6 +479,10 @@ def main() -> int:
             audit_reward_overrides[name]=value
         if args.audit_critic:
             cfg.command_reward_contract_by_command = values['command_reward_contract_by_command'].lower() == 'true'
+            if args.audit_critic_joint_dr:
+                from rmuc_reward_audit_config import apply_reward_audit_config
+                audit_reward_overrides.update(apply_reward_audit_config(
+                    cfg,values,commands_list,fixed_reverse_equivalent=args.audit_fixed_reverse_reward))
     if args.pitch_rate_feedback is not None:
         cfg.wheel_pitch_rate_feedback_action_per_rad_s = args.pitch_rate_feedback
     if args.disable_high_speed_feedback:
@@ -482,7 +525,7 @@ def main() -> int:
         raise ValueError('Separated delay diagnostics require explicit wheel timing ownership')
     if args.joint_delay_dr_profile is not None:
         profile=json.loads(args.joint_delay_dr_profile.read_text())
-        if set(profile)!={'seed','wheel','leg','observation','action'}:
+        if set(profile)-{'seed','wheel','leg','observation','action','combinations'} or not {'seed','wheel','leg','observation','action'}<=set(profile):
             raise ValueError('Joint delay profile requires seed plus four range_s channels')
         if (args.leg_transport_delay_ms or args.diagnostic_separated_observation_delay_cycles
                 or args.diagnostic_separated_action_delay_cycles or args.sampled_observation_delay_probability
@@ -490,9 +533,11 @@ def main() -> int:
             raise ValueError('Disable legacy delays/replay schema before joint delay DR evaluation')
         cfg.joint_delay_dr_enabled=True
         cfg.joint_delay_dr_seed=int(profile['seed'])
+        cfg.joint_delay_combinations=profile.get('combinations',())
         for channel in ['wheel','leg','observation','action']:
             setattr(cfg,'joint_delay_dr_'+channel+'_range_s',profile[channel])
         cfg.real2sim_policy_delay_mutually_exclusive=False
+    cfg.observation_noise_seed = args.observation_noise_seed
     if args.wheel_feedback_age_profile is not None:
         feedback_profile=json.loads(args.wheel_feedback_age_profile.read_text())
         if set(feedback_profile)!={'seed','transport_s','refresh_s'} or not cfg.joint_delay_dr_enabled:
@@ -534,7 +579,7 @@ def main() -> int:
         source_paths.append(task_root/'com_randomization.py')
     if args.real2sim_wheel_profile:
         source_paths.extend([args.real2sim_wheel_profile, task_root/'real2sim_wheel.py'])
-    source_paths += [task_root / name for name in ('env.py', 'env_cfg.py', 'flat_terrain.py', 'observation_noise.py', 'motor_response.py', 'wheel_feedback_age.py', 'joint_delay_dr.py', 'leg_transport_delay.py', 'real2sim_wheel.py', 'gas_spring.py', 'command_contract.py', 'bank_geometry.py', 'wheel_velocity_control.py')]
+    source_paths += [task_root / name for name in ('env.py', 'env_cfg.py', 'flat_terrain.py', 'observation_noise.py', 'policy_speed_source.py', 'root_speed_kinematics.py', 'motor_response.py', 'wheel_feedback_age.py', 'joint_delay_dr.py', 'leg_transport_delay.py', 'real2sim_wheel.py', 'gas_spring.py', 'command_contract.py', 'bank_geometry.py', 'wheel_velocity_control.py')]
     source_paths += [Path(cfg.robot_cfg.spawn.usd_path)]
     if args.diagnostic_separated_wheel_profile is not None:
         source_paths.extend([args.diagnostic_separated_wheel_profile,
@@ -547,6 +592,9 @@ def main() -> int:
         return value is None or isinstance(value, (bool, int, float, str)) or (
             isinstance(value, (tuple, list)) and all(primitive(item) for item in value)) or (
             isinstance(value, dict) and all(isinstance(key, str) and primitive(item) for key, item in value.items()))
+    cfg.command_reverse_entry_ramp_s = args.reverse_entry_ramp_seconds
+    if args.reverse_entry_ramp_seconds > 0:
+        cfg.command_reward_contract_by_command = True
     runtime_contract = {name: getattr(cfg, name) for name in dir(cfg)
         if name.startswith(('command_', 'domain_', 'wheel_', 'motor_response_', 'gas_spring_', 'observation_', 'asset_frame_', 'torque_limit_'))
         and primitive(getattr(cfg, name))}
@@ -827,7 +875,7 @@ def main() -> int:
     sequence_table = None
     if args.command_sequence is not None:
         from rmuc_command_sequence import validate_sequence, sequence_commands
-        if args.diagnostic_turn_entry or args.diagnostic_speed_ramp_seconds or not args.record_world_trajectory or not args.record_leg_tracking:
+        if args.diagnostic_turn_entry or args.diagnostic_speed_ramp_seconds or args.diagnostic_reverse_ramp_seconds or not args.record_world_trajectory or not args.record_leg_tracking:
             raise ValueError('Sequence requires world/leg traces and no other command schedule')
         if len(commands_list)!=1 and not (args.action_bias_sweep and len(set(commands_list))==1):
             raise ValueError('Sequence requires one command, optionally repeated for diagnostic bias cases')
@@ -839,6 +887,8 @@ def main() -> int:
             return original_sequence_observations()
         u._get_observations=observations_with_sequence
     if args.diagnostic_turn_entry and args.diagnostic_speed_ramp_seconds:
+        raise ValueError('Use only one diagnostic command entry schedule')
+    if args.diagnostic_turn_entry and args.diagnostic_reverse_ramp_seconds:
         raise ValueError('Use only one diagnostic command entry schedule')
     if args.diagnostic_turn_entry:
         final_turn_command = command.clone()
@@ -863,6 +913,16 @@ def main() -> int:
         # Changes command BEFORE creating the next observation, including resets.
         # No second observation call: sensor histories advance exactly once.
         u._get_observations = observations_with_command_ramp
+    if args.diagnostic_reverse_ramp_seconds:
+        from rmuc_eval_commands import ramp_reverse_commands
+        reverse_final_command = command.clone()
+        original_reverse_observations = u._get_observations
+        def observations_with_reverse_ramp():
+            command.copy_(ramp_reverse_commands(reverse_final_command,
+                u._curriculum_step_counter, u.step_dt, args.diagnostic_reverse_ramp_seconds))
+            u.set_manual_command(command)
+            return original_reverse_observations()
+        u._get_observations = observations_with_reverse_ramp
     velocity_bridge = None
     velocity_bridge_audit = None
     if args.diagnostic_wheel_velocity_equivalence:
@@ -913,10 +973,21 @@ def main() -> int:
         'total_inertia_scale': u._domain_base_inertia_scale.tolist(),
         'scope': 'Snapshot after initial reset, before rollout; later resets may resample DR',
     }
+    if args.audit_critic_joint_dr:
+        for name,value in audit_reward_overrides.items():
+            actual=getattr(u.cfg,name)
+            if name=='command_reward_stage_speed_lookup':actual=list(actual)
+            if actual!=value:raise ValueError(f'Reward audit readback mismatch:{name}')
     critic = None
     critic_samples = []
+    critic_reward_components = []
+    critic_context_samples = []
+    critic_age_samples = []
     last_terminated = torch.zeros(count, dtype=torch.bool, device=device)
     last_truncated = torch.zeros_like(last_terminated)
+    last_boundary_only = torch.zeros_like(last_terminated)
+    critic_boundary_samples = []
+    critic_action_samples = []
     if args.audit_critic:
         from rsl_rl.models import MLPModel
         critic = MLPModel(obs, {'critic': ['policy']}, 'critic', 1,
@@ -986,6 +1057,10 @@ def main() -> int:
         speed = u._heading_forward_velocity(u.robot.data.root_lin_vel_w.torch)
         return torch.cat((u.robot.data.root_pos_w.torch[:, :2], heading[:, None],
                           speed[:, None], u._curriculum_step_counter[:, None]), -1).clone()
+    signal_audit = None
+    if args.record_signal_chain_audit:
+        from rmuc_signal_chain_audit import SignalChainAudit
+        signal_audit = SignalChainAudit(u)
     original_get_dones = u._get_dones
     index = 0
     observed_steps = 0
@@ -1036,6 +1111,13 @@ def main() -> int:
             wm_capture.terminal(wm_snapshot(u), terminated, truncated)
         last_terminated.copy_(terminated)
         last_truncated.copy_(truncated)
+        if critic is not None:
+            reasons = u.get_termination_reasons()
+            physical_failure = torch.zeros_like(terminated)
+            for reason, flags in reasons.items():
+                if reason != 'xy_distance':
+                    physical_failure |= flags
+            last_boundary_only.copy_(terminated & reasons['xy_distance'] & ~physical_failure)
         done = terminated | truncated
         if args.record_world_trajectory:
             world_frames.append(torch.cat((world_pre, world_state(),
@@ -1221,7 +1303,12 @@ def main() -> int:
             with torch.inference_mode():
                 if critic is not None:
                     saved_observation = obs['policy'].detach().clone()
+                    critic_age_samples.append(u._curriculum_step_counter.detach().cpu().clone())
                     predicted_value = critic(obs).squeeze(-1).detach().clone()
+                    if args.audit_critic_joint_dr:
+                        from agent_tasks.direct.rmuc_wheel_leg.privileged_critic import critic_observation
+                        clean,_=u._instant_policy_observation()
+                        critic_context_samples.append(critic_observation(u,obs['policy'],clean).detach().cpu())
                 if trace_ring is not None or args.collect_wheel_teacher:
                     action_input_observation.copy_(obs['policy'])
                 if args.diagnostic_bias_stop_budget:
@@ -1283,7 +1370,7 @@ def main() -> int:
                     world_pre = world_state()
                 if wm_capture is not None:
                     wm_capture.begin(wm_snapshot(u), obs['policy'], action)
-                obs, reward, _, _ = env.step(action)
+                obs, reward, _, step_extras = env.step(action)
                 if wm_capture is not None:
                     wm_capture.finish(reward, obs['policy'])
                 if video_writer is not None and step % 4 == 0:
@@ -1298,14 +1385,25 @@ def main() -> int:
                     video_writer.append_data(frame)
                     video_frames += 1
                 if critic is not None:
+                    metrics = step_extras['episode']
+                    raw_reward = metrics['reward_unclipped']
+                    if not torch.allclose(raw_reward.clamp(cfg.reward_clip_min, cfg.reward_clip_max),
+                                          reward, atol=2e-5, rtol=1e-6):
+                        raise RuntimeError('MC reward components are not aligned with the recorded reward')
+                    critic_reward_components.append(torch.stack((raw_reward,
+                        metrics['penalty_reverse_runaway'] * cfg.command_reverse_runaway_weight,
+                        metrics['penalty_command_speed_oscillation'] * cfg.command_speed_oscillation_penalty_weight,
+                        metrics['penalty_unsafe_termination']), -1).detach().cpu().clone())
                     critic_samples.append((saved_observation, predicted_value, reward.clone(),
                                            last_terminated.clone(), last_truncated.clone()))
+                    critic_boundary_samples.append(last_boundary_only.detach().cpu().clone())
+                    critic_action_samples.append(current_raw_action.detach().cpu().clone())
             if (step + 1) % 1000 == 0:
                 counts = torch.zeros(len(commands_list), dtype=torch.long, device=device).scatter_add_(0, bucket_ids, completed)
                 print(f'[RMUC_GRID] steps={step + 1} minimum_completed={int(counts.min())}', flush=True)
             if (step + 1) % 100 == 0:
                 counts = torch.zeros(len(commands_list), dtype=torch.long, device=device).scatter_add_(0, bucket_ids, completed)
-                if bool(torch.all(counts >= args.min_episodes)):
+                if bool(torch.all(counts >= args.min_episodes)) and not args.audit_critic:
                     break
         rows = []
         # A min-episode early break must not discard the final partial shard.
@@ -1368,6 +1466,8 @@ def main() -> int:
                     (turn_dynamics_sum[selection].sum(0)/denom).tolist())) if sample_count>0 else None
             rows.append(row)
         report = {'checkpoint': str(args.checkpoint.resolve()), 'seed': args.seed,
+                  'diagnostic_policy_speed_source': cfg.diagnostic_policy_speed_source,
+                  'policy_speed_source_scope': 'obs6 only, before unchanged observation delay/noise; instantaneous joint rates; reward/termination/evaluation retain root-COM truth; not asynchronous firmware replay',
                   'distilled_student': str(args.distilled_student) if args.distilled_student else None,
                   'student_sha256': student_sha256,
                   'diagnostic_wheel_velocity_profile': applied_velocity_profile,
@@ -1415,6 +1515,7 @@ def main() -> int:
                   'checkpoint_sha256': hashlib.sha256(args.checkpoint.read_bytes()).hexdigest(),
                   'dr_strength': args.dr_strength, 'steps': observed_steps, 'replicas': args.replicas,
                   'diagnostic_speed_ramp_seconds': args.diagnostic_speed_ramp_seconds,
+                  'diagnostic_reverse_ramp_seconds': args.diagnostic_reverse_ramp_seconds,
                   'steady_warmup_control_steps': warmup,
                   'min_episodes_required': args.min_episodes,
                   'min_operating_root_height_m': cfg.command_min_operating_root_height_m,
@@ -1458,6 +1559,7 @@ def main() -> int:
                   'wheel_dr_reset_budget': None if wheel_dr_streams is None else wheel_dr_streams.scales.shape[1],
                   'wheel_dr_reset_counts': None if wheel_dr_streams is None else wheel_dr_streams.indices.tolist(),
                   'sensor_model': cfg.domain_randomization_sensor_model,
+                  'observation_noise_seed': cfg.observation_noise_seed,
                   'leg_transport': u._leg_transport.readback(),
                   'joint_delay_dr': (u._joint_delay_dr.readback() if u._joint_delay_dr is not None else None),
                   'wheel_feedback_age': (u._wheel_feedback_age.readback() if u._wheel_feedback_age is not None else None),
@@ -1516,6 +1618,8 @@ def main() -> int:
                             and not getattr(args, 'diagnostic_disable_outer_feedback', False)
                             and not getattr(args, 'collect_wheel_teacher', False)
                             and not getattr(args, 'diagnostic_speed_ramp_seconds', 0.)
+                            and not getattr(args, 'diagnostic_reverse_ramp_seconds', 0.)
+                            and args.diagnostic_policy_speed_source == 'root_heading'
                             and getattr(args, 'diagnostic_hardware_profile', None) is None
                             and all(row['passed'] for row in rows)}
         if args.diagnostic_turn_entry:
@@ -1627,6 +1731,11 @@ def main() -> int:
                 for items in zip(*critic_samples)]
             targets, tail_bounds = returns_and_tail_bounds(rewards, terminated, truncated,
                 args.critic_gamma, max(abs(cfg.reward_clip_min), abs(cfg.reward_clip_max)))
+            from rmuc_critic_audit import boundary_censored_returns
+            boundary_only = torch.stack(critic_boundary_samples)
+            censored_targets, censored_bounds = boundary_censored_returns(
+                rewards, terminated, truncated, boundary_only, args.critic_gamma,
+                max(abs(cfg.reward_clip_min), abs(cfg.reward_clip_max)))
             eligible = tail_bounds <= 5.
             rows_critic = []
             for bucket, (vx, yaw) in enumerate(commands_list):
@@ -1638,18 +1747,48 @@ def main() -> int:
             dataset.parent.mkdir(parents=True, exist_ok=True)
             torch.save({'observations': observations[eligible], 'predicted_values': values[eligible],
                         'returns': targets[eligible], 'tail_error_bounds': tail_bounds[eligible],
-                        'checkpoint': str(args.checkpoint), 'gamma': args.critic_gamma}, dataset)
+                        'raw_actions': torch.stack(critic_action_samples)[eligible],
+                        'boundary_censored_returns': censored_targets[eligible],
+                        'boundary_censored_tail_bounds': censored_bounds[eligible],
+                        'checkpoint': str(args.checkpoint), 'gamma': args.critic_gamma,
+                        'env_ids':torch.arange(count)[None,:].expand_as(eligible)[eligible],
+                        'bucket_ids':bucket_ids.cpu()[None,:].expand_as(eligible)[eligible],
+                        'sample_policy_step':torch.arange(len(eligible))[:,None].expand_as(eligible)[eligible],
+                        'episode_step':torch.stack(critic_age_samples)[eligible],
+                        'privileged_observations':torch.stack(critic_context_samples)[eligible] if critic_context_samples else None}, dataset)
             report['critic_audit'] = {'diagnostic_only': True, 'stochastic_policy': True,
+                'xy_boundary_radius_m': cfg.max_xy_distance_m,
+                'fixed_reverse_reward_equivalent': args.audit_fixed_reverse_reward,
+                'saved_critic_context': args.audit_critic_context,
                 'gamma': args.critic_gamma, 'max_unobserved_tail_error': 5., 'rows': rows_critic,
                 'reward_overrides': audit_reward_overrides,
                 'command_reward_contract_by_command': cfg.command_reward_contract_by_command,
                 'dataset': str(dataset), 'overall': value_metrics(values[eligible], targets[eligible])}
+            raw_return_path = args.output.with_suffix('.critic_reward_trace.pt')
+            if raw_return_path.exists():
+                raise RuntimeError(f'Refusing to overwrite {raw_return_path}')
+            torch.save({'rewards': rewards, 'terminated': terminated, 'truncated': truncated,
+                        'boundary_only': boundary_only, 'gamma': args.critic_gamma,
+                        'reward_components': torch.stack(critic_reward_components),
+                        'reward_component_columns': ['unclipped_reward', 'weighted_reverse_runaway',
+                                                     'weighted_speed_oscillation', 'unsafe_termination'],
+                        'reward_component_weights': {'reverse_runaway': cfg.command_reverse_runaway_weight,
+                                                     'speed_oscillation': cfg.command_speed_oscillation_penalty_weight},
+                        'reward_clip': [cfg.reward_clip_min, cfg.reward_clip_max],
+                        'bucket_ids': bucket_ids.cpu()}, raw_return_path)
+            report['critic_audit']['reward_trace'] = str(raw_return_path)
+            report['critic_audit']['pure_boundary_terminations'] = int(boundary_only.sum())
+            report['critic_audit']['boundary_censor_scope'] = (
+                'Original episodic targets retained. Alternative tail bounds censor pure xy boundary resets '
+                'without changing simulation or treating physical falls as timeouts.')
         if sequence_table is not None:
             for row in report['rows']:
                 row['fixed_command_checks_diagnostic_only']=row['checks']
                 row['checks']={'fixed_command_not_applicable':False}
                 row['passed']=False
             report['passed']=False
+        if signal_audit is not None:
+            report['signal_chain_audit'] = signal_audit.save(args.output.with_suffix('.signal_chain.json'))
         if args.record_policy_trace:
             import numpy as np
             trace_path=args.output.with_suffix('.policy_trace.npz')

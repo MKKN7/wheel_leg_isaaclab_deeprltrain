@@ -138,6 +138,8 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     observation_space = spaces.Box(low=-1.0e6, high=1.0e6, shape=(OBSERVATION_DIM,), dtype=float)
     action_space = spaces.Box(low=-1.0, high=1.0, shape=(ACTION_DIM,), dtype=float)
     state_space = spaces.Box(low=-1.0e6, high=1.0e6, shape=(OBSERVATION_DIM,), dtype=float)
+    training_privileged_critic_enabled = False
+    training_privileged_critic_context = "queues_v1"
 
     # Explicit V14-style semantic bookkeeping. This task is custom because
     # the RMUC topology is not name/count compatible with Wheelbipe V14.
@@ -209,6 +211,8 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     gravity_direction_dr_walk_deg_sqrt_s = 0.01
     gravity_direction_dr_drift_bound_deg = 0.1
     gravity_direction_dr_seed = 1047
+    # Opt-in independent observation-noise stream for paired evaluations.
+    observation_noise_seed = -1
     domain_randomization_sensor_model = dict(_DOMAIN_RANDOMIZATION.get("sensor_model", {}))
     # Engineering bounds for an optional motor-current/effort response model.
     # It is not another communication FIFO or a measured RM3508 specification.
@@ -350,6 +354,8 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     rehearsal_feedback_straight_only = bool(_CONTROL.get("rehearsal_feedback_straight_only", False))
     feedback_contract_by_command = bool(_CONTROL.get("feedback_contract_by_command", False))
     command_reward_contract_by_command = False
+    # Audit-only reward threshold lookup; never changes commands or action scaling.
+    command_reward_stage_speed_lookup = ()
     command_bank_contract = BANK_CONTRACT
     # User: operator-command tracking; no prescribed analytic body lean.
     command_require_analytic_bank = False
@@ -558,6 +564,7 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_turn_entry_hold_s = 0.0
     command_turn_entry_ramp_s = 0.0
     command_turn_entry_abrupt_fraction = 0.0
+    command_reverse_entry_ramp_s = 0.0
     if not math.isfinite(command_reset_acquisition_ramp_s) or not 0 <= command_reset_acquisition_ramp_s <= 4:
         raise ValueError("Reset acquisition ramp must be within0..4seconds")
     command_observation_scale = tuple(
@@ -604,7 +611,11 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     # Optional training-only straight cohort; does not change the 25D/6D interface.
     command_continuous_straight_speed_range = ()
     # Opt-in episode-time [seconds, vx, yaw] for the existing continuous cohort.
+    command_tracking_variation_weight = 0.0
+    command_tracking_variation_tolerance_mps = 0.005
+    command_tracking_variation_scale_mps = 0.05
     command_training_sequence = ()
+    command_training_sequence_alternate = ()
     command_random_speed_range = ()
     command_random_hold_s = (2.0, 4.0)
     command_random_ramp_s = (0.4, 0.8)
@@ -654,6 +665,10 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
         )
     )
     command_rehearsal_stratified_coverage = False
+    command_active_straight_speeds = ()
+    command_active_targets = ()
+    joint_delay_action_sampling_weights = ()
+    joint_delay_combinations = ()
     command_rehearsal_priority_fraction = float(
         _COMMAND.get("rehearsal_priority_fraction", 0.75)
     )
@@ -857,6 +872,7 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     if command_speed_error_scale_mps <= 0.0:
         raise ValueError("reward.command_speed_error_scale_mps must be positive")
     command_reverse_penalty_weight = float(_REWARD.get("command_reverse_penalty_weight", 2.00))
+    command_low_forward_overspeed_shaping_enabled = False
     command_overspeed_margin_mps = float(
         _REWARD.get("command_overspeed_margin_mps", 0.05)
     )
@@ -870,6 +886,10 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
         raise ValueError("reward.command_overspeed_scale_mps must be positive")
     # Opt-in reverse-only behavior shaping. Existing checkpoint rewards default unchanged.
     command_reverse_runaway_weight = 0.0
+    command_reverse_alive_baseline = 0.0
+    command_reverse_pitch_oscillation_weight = 0.0
+    # Diagnostic only: retain fixed-reverse tracking reward without a schedule.
+    critic_audit_fixed_reverse_reward_enabled = False
     command_reverse_settled_tracking_weight = 0.0
     command_yaw_weight = float(_REWARD.get("command_yaw_weight", 2.00))
     command_yaw_tracking_penalty_weight = float(
@@ -986,6 +1006,8 @@ class RmucWheelLegCourseEnvCfg(DirectRLEnvCfg):
     command_speed_oscillation_penalty_weight = float(
         _REWARD.get("command_speed_oscillation_penalty_weight", 2.00)
     )
+    # Opt-in acquisition/steady separation; does not change runaway cost.
+    command_reverse_oscillation_grace_s = 0.0
     command_pitch_excess_tolerance_deg = float(
         _REWARD.get("command_pitch_excess_tolerance_deg", 6.0)
     )

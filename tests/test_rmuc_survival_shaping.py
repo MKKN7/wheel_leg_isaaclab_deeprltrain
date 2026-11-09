@@ -27,3 +27,19 @@ def test_recorded_negative_step_regime_no_longer_rewards_early_exit():
 @pytest.mark.parametrize('amount',[-1,26,float('nan'),float('inf')])
 def test_invalid_amount(amount):
     with pytest.raises(ValueError):module.high_straight_alive_baseline(torch.zeros(1,3),torch.zeros(1,dtype=torch.bool),amount)
+
+
+def test_fast_reverse_alive_is_scoped_and_never_rewards_termination():
+ c=torch.tensor([[-.95,0,0],[-1.,0,0],[-1.8,0,0],[-.925,0,0],[-1.,0,.2],[1.,0,0],[-1.,0,0]])
+ dead=torch.tensor([False,False,False,False,False,False,True])
+ assert torch.equal(module.fast_reverse_alive_baseline(c,dead,10),torch.tensor([10.,10.,10.,0.,0.,0.,0.]))
+ assert not module.fast_reverse_alive_baseline(c,dead,0).any()
+ # Uniform living increment does not change ranking of equally long safe paths.
+ raw=torch.tensor([-8.,-4.]);bonus=module.fast_reverse_alive_baseline(c[:2],dead[:2],10)
+ assert torch.equal((raw+bonus).diff(),raw.diff())
+ assert float(raw[0]+bonus[0])>0
+
+
+@pytest.mark.parametrize('amount',[-1,26,float('nan'),float('inf')])
+def test_fast_reverse_alive_invalid(amount):
+ with pytest.raises(ValueError):module.fast_reverse_alive_baseline(torch.zeros(1,3),torch.zeros(1,dtype=torch.bool),amount)

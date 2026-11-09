@@ -82,15 +82,49 @@ def sample_opened_commands(count, stage_speeds, stage_yaws, level, *, device='cp
                 bound = torch.maximum(bound, torch.minimum(opened, target))
     yaw=(2*torch.rand(count,device=device,generator=generator)-1)*bound
     return torch.stack((vx,torch.zeros_like(vx),yaw),dim=-1)
-def ensure_priority_sign_coverage(sampled_stages, positive_mask, priority_stages):
-    """Reserve each priority once per fixed sign on sufficiently large resets.
+def ensure_priority_sign_coverage(sampled_stages, positive_mask, priority_stages,
+                                  *, stage_speeds=None, stage_yaws=None,
+                                  require_complete=False):
+    """Reserve signed commands on sufficiently large resets.
 
     Keep the weighted random remainder and leave small asynchronous reset batches
     unchanged, so repeated single-env resets cannot collapse to the first stage.
+    With stage metadata, straight commands need only one slot regardless of sign.
+    Full resets may require complete coverage; insufficient capacity then fails.
     Does not draw randomness or mutate the caller's sampled assignments.
     """
+    if (stage_speeds is None) != (stage_yaws is None):
+        raise ValueError('Both stage speeds and yaws are required for command coverage')
     positive = positive_mask.nonzero(as_tuple=True)[0]
     negative = (~positive_mask).nonzero(as_tuple=True)[0]
+    if stage_speeds is not None:
+        # Sign cohorts only matter for turns. Reserving both signs of every
+        # straight stage wastes capacity and used to silently disable coverage.
+        unique = {}
+        for stage in priority_stages.tolist():
+            key = (float(stage_speeds[stage]), abs(float(stage_yaws[stage])))
+            unique.setdefault(key, stage)
+        turns = [stage for (_, yaw), stage in unique.items() if yaw != 0.]
+        straights = [stage for (_, yaw), stage in unique.items() if yaw == 0.]
+        count = len(turns)
+        needed = 2 * count + len(straights)
+        enough = (min(positive.numel(), negative.numel()) >= count
+                  and sampled_stages.numel() >= needed)
+        if not enough:
+            if require_complete:
+                raise ValueError(f'Stratified rehearsal needs {needed} slots and {count} per turn sign; '
+                                 f'got {sampled_stages.numel()} slots, '
+                                 f'{positive.numel()} positive/{negative.numel()} negative')
+            return sampled_stages
+        result = sampled_stages.clone()
+        reserved = torch.zeros_like(positive_mask)
+        for ids in (positive[:count], negative[:count]):
+            result[ids] = torch.as_tensor(turns, device=result.device, dtype=result.dtype)
+            reserved[ids] = True
+        remaining = (~reserved).nonzero(as_tuple=True)[0]
+        result[remaining[:len(straights)]] = torch.as_tensor(
+            straights, device=result.device, dtype=result.dtype)
+        return result
     count = priority_stages.numel()
     if not count or min(positive.numel(), negative.numel()) < count:
         return sampled_stages
@@ -98,4 +132,3 @@ def ensure_priority_sign_coverage(sampled_stages, positive_mask, priority_stages
     result[positive[:count]] = priority_stages
     result[negative[:count]] = priority_stages
     return result
-

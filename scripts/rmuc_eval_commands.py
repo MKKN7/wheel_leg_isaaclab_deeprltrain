@@ -66,6 +66,20 @@ def ramp_straight_commands(target, episode_age, dt, duration_s):
     return command
 
 
+def ramp_reverse_commands(target, episode_age, dt, duration_s):
+    """Diagnostic zero-to-target reverse ramp; leave other commands unchanged."""
+    if not math.isfinite(duration_s) or not 0<duration_s<=4 or not math.isfinite(dt) or dt<=0:
+        raise ValueError('Finite reverse ramp duration0..4s and positive dt required')
+    if target.ndim!=2 or target.shape[1]!=3 or not torch.isfinite(target).all():
+        raise ValueError('Finite [N,3] targets required')
+    if episode_age.shape!=target.shape[:1] or not torch.isfinite(episode_age).all() or (episode_age<0).any():
+        raise ValueError('Matching finite nonnegative episode ages required')
+    active=(target[:,0]<0)&(target[:,1:]==0).all(-1)
+    fraction=(episode_age.to(target.dtype)*dt/duration_s).clamp(0,1)
+    out=target.clone();out[:,0]=torch.where(active,target[:,0]*fraction,target[:,0])
+    return out
+
+
 def bounded_residual_probe(residual, budget, delta, gate):
     """Project diagnostic delta into a gated residual box, preserving zero probes."""
     bound = gate[..., None] * budget

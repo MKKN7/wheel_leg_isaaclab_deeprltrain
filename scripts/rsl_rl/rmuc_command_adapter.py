@@ -89,6 +89,20 @@ def install_rmuc_physics_adaptation(actor, state=None):
                                  reference_update_domain=state.get(prefix+'reference_update_domain'),
                                  frozen_reference_update_domain=state.get(prefix+'frozen_reference_update_domain'),
                                  network_update_domain=state.get(prefix+'network_update_domain'))
+        if prefix+'legacy_reverse_gate_extension' in state:
+            module.install_legacy_reverse_gate_extension(state[prefix+'legacy_reverse_gate_extension'])
+        if prefix+'legacy_forward_turn_extension' in state:
+            module.install_legacy_forward_turn_extension(state[prefix+'legacy_forward_turn_extension'])
+        forward_leg_keys=[prefix+'forward_base_leg_'+k for k in ['gain','center','domain','limit']]
+        if any(k in state for k in forward_leg_keys):
+            if depth or not all(k in state for k in forward_leg_keys):
+                raise ValueError('Complete outer forward leg response configuration required')
+            module.install_forward_base_leg_response(*(state[k] for k in forward_leg_keys))
+        upper_leg_keys=[prefix+'forward_base_leg_upper_'+k for k in ['gain','domain']]
+        if any(k in state for k in upper_leg_keys):
+            if not all(k in state for k in upper_leg_keys):
+                raise ValueError('Upper forward leg gain requires gain and domain')
+            module.install_forward_base_leg_upper_gain(*(state[k] for k in upper_leg_keys))
         if prefix+'alignment_network.0.weight' in state:
             if depth:
                 raise ValueError('Alignment head is supported only at the outer physics stage')
@@ -129,12 +143,100 @@ def install_rmuc_physics_adaptation(actor, state=None):
                 module.install_reverse_update_scope(state[prefix+'reverse_update_domain'])
             if prefix+'reverse_extension_domain' in state:
                 module.install_reverse_extension_scope(state[prefix+'reverse_extension_domain'])
+            if prefix+'reverse_fast_update_domain' in state:
+                module.install_reverse_fast_update_scope(state[prefix+'reverse_fast_update_domain'])
+            coordination_keys=[prefix+'reverse_coordination_domain',prefix+'reverse_coordination_anchor.0.weight']
+            if any(k in state for k in coordination_keys):
+                if not all(k in state for k in coordination_keys):
+                    raise ValueError('Coordination scope requires its explicit domain and frozen anchor')
+                module.install_reverse_coordination_scope(state[coordination_keys[0]])
+            frontier_keys=[prefix+'reverse_frontier_domain',prefix+'reverse_frontier_anchor.0.weight']
+            if any(k in state for k in frontier_keys):
+                if not all(k in state for k in frontier_keys):
+                    raise ValueError('Reverse frontier preservation requires domain and anchor')
+                module.install_reverse_frontier_preservation(state[frontier_keys[0]])
+            frontier_update_keys=[prefix+'reverse_frontier_update_domain',prefix+'reverse_frontier_update_anchor.0.weight']
+            if any(k in state for k in frontier_update_keys):
+                if not all(k in state for k in frontier_update_keys):
+                    raise ValueError('Reverse frontier update requires domain and frozen anchor')
+                module.install_reverse_frontier_update_scope(state[frontier_update_keys[0]])
+            retention_keys=[prefix+'reverse_frontier_retention_domain',prefix+'reverse_frontier_retention_anchor.0.weight']
+            if any(k in state for k in retention_keys):
+                if not all(k in state for k in retention_keys):
+                    raise ValueError('Reverse frontier retention requires domain and frozen anchor')
+                module.install_reverse_frontier_retention(state[retention_keys[0]])
+            progress_keys=[prefix+'reverse_frontier_progress_domain',prefix+'reverse_frontier_progress_anchor.0.weight']
+            if any(k in state for k in progress_keys):
+                if not all(k in state for k in progress_keys):
+                    raise ValueError('Reverse progress scope requires domain and frozen anchor')
+                module.install_reverse_frontier_progress(state[progress_keys[0]])
             if prefix+'reverse_reserve_budget' in state:
-                module.install_reverse_reserve(state[prefix+'reverse_reserve_budget'],state[prefix+'reverse_reserve_domain'])
+                module.install_reverse_reserve(state[prefix+'reverse_reserve_budget'],state[prefix+'reverse_reserve_domain'],
+                    preserved_transition=state.get(prefix+'reverse_reserve_preserved_transition'))
+                frontier_keys=[prefix+'reverse_reserve_frontier_budget',prefix+'reverse_reserve_frontier_domain']
+                if any(k in state for k in frontier_keys):
+                    if not all(k in state for k in frontier_keys):
+                        raise ValueError('Reverse reserve frontier requires both budget and domain')
+                    module.install_reverse_reserve_frontier(*(state[k] for k in frontier_keys))
+                preserved_keys=[prefix+'reverse_reserve_fast_preserved_'+k for k in ['budget','domain']]
+                if any(k in state for k in preserved_keys):
+                    if not all(k in state for k in preserved_keys):
+                        raise ValueError('Fast reserve preservation requires both metadata buffers')
+                    module.install_reverse_reserve_fast_preservation(*(state[k] for k in preserved_keys))
+            extension_keys=[prefix+'reverse_reserve_extension_'+k for k in ['budget','domain']]
+            if any(k in state for k in extension_keys):
+                if not all(k in state for k in extension_keys):
+                    raise ValueError('Reserve extension requires budget and domain')
+                module.install_reverse_reserve_extension(*(state[k] for k in extension_keys))
+            extension_retention_keys=[prefix+'reverse_reserve_extension_retained_budget',prefix+'reverse_reserve_extension_retention_domain']
+            if any(k in state for k in extension_retention_keys):
+                if not all(k in state for k in extension_retention_keys):
+                    raise ValueError('Reserve extension retention requires both budget and domain')
+                module.install_reverse_reserve_extension_retention(*(state[k] for k in extension_retention_keys))
+            leg_response_keys=[prefix+'reverse_base_leg_'+k for k in ['gain','center','domain','limit']]
+            if any(k in state for k in leg_response_keys):
+                if not all(k in state for k in leg_response_keys):
+                    raise ValueError('Reverse base leg response requires all four metadata buffers')
+                module.install_reverse_base_leg_response(*(state[k] for k in leg_response_keys))
+            fast_leg_keys=[prefix+'reverse_base_leg_fast_limit',prefix+'reverse_base_leg_fast_limit_domain']
+            if any(k in state for k in fast_leg_keys):
+                if not all(k in state for k in fast_leg_keys):
+                    raise ValueError('Fast leg response limit requires both metadata buffers')
+                module.install_reverse_base_leg_fast_limit(*(state[k] for k in fast_leg_keys))
+            fast_gain_keys=[prefix+'reverse_base_leg_fast_gain',prefix+'reverse_base_leg_fast_gain_domain']
+            if any(k in state for k in fast_gain_keys):
+                if not all(k in state for k in fast_gain_keys):
+                    raise ValueError('Fast leg response gain requires both metadata buffers')
+                module.install_reverse_base_leg_fast_gain(*(state[k] for k in fast_gain_keys))
+            extension_gain_keys=[prefix+'reverse_base_leg_extension_gain',prefix+'reverse_base_leg_extension_gain_domain']
+            if any(k in state for k in extension_gain_keys):
+                if not all(k in state for k in extension_gain_keys):
+                    raise ValueError('Extension leg response gain requires both metadata buffers')
+                module.install_reverse_base_leg_extension_gain(*(state[k] for k in extension_gain_keys))
         if prefix+'joint_delay_budget' in state:
             module.install_joint_delay_network(state[prefix+'joint_delay_budget'])
             if prefix+'joint_delay_domain' in state:
                 module.install_joint_delay_scope(state[prefix+'joint_delay_domain'])
+            if prefix+'joint_delay_reference_network.0.weight' in state:
+                module.install_joint_delay_reference()
+            if prefix+'joint_turn_domain' in state:
+                module.install_joint_turn_reference(state[prefix+'joint_turn_domain'])
+            if prefix+'joint_turn_update_domain' in state:
+                module.install_joint_turn_update_scope(state[prefix+'joint_turn_update_domain'])
+            if prefix+'joint_turn_source_update_domain' in state:
+                module.install_joint_turn_source_update_scope(state[prefix+'joint_turn_source_update_domain'])
+            diff_keys=[prefix+'joint_turn_source_difference_only',prefix+'joint_turn_source_difference_anchor.0.weight']
+            if any(k in state for k in diff_keys):
+                if not all(k in state for k in diff_keys) or float(state[diff_keys[0]])!=1.:
+                    raise ValueError('Wheel difference projection requires explicit flag and frozen anchor')
+                module.install_joint_turn_source_difference_anchor()
+            leg_diff_keys=[prefix+'joint_turn_source_leg_difference_only',prefix+'joint_turn_source_leg_difference_anchor.0.weight']
+            if any(k in state for k in leg_diff_keys):
+                if not all(k in state for k in leg_diff_keys) or float(state[leg_diff_keys[0]])!=1.:
+                    raise ValueError('Leg/difference projection requires explicit flag and frozen anchor')
+                module.install_joint_turn_source_leg_difference_anchor()
+            if prefix+'joint_turn_anchor_domain' in state:
+                module.install_joint_turn_anchor_scope(state[prefix+'joint_turn_anchor_domain'])
         return module
     if head is None:
         head = (reconstruct('rmuc_physics_adaptation.') if state is not None else PhysicsAdaptation()).to(actor.mlp[0].weight.device)
@@ -196,6 +298,8 @@ def install_rmuc_state_router(actor, state=None):
         if not 1.0 <= end <= 1.5:
             raise ValueError('Router turn speed plateau must be finite and in [1.0, 1.5]')
         router.register_buffer('turn_speed_plateau_end', router.budget.new_tensor(end))
+    if state is not None and 'rmuc_state_router.forward_turn_support' in state:
+        router.install_forward_turn_support(state['rmuc_state_router.forward_turn_support'])
     if state is not None and any(k.startswith('rmuc_state_router.speed_extensions.') for k in state):
         if not hasattr(router, 'turn_speed_plateau_end'):
             raise ValueError('Speed extensions require explicit router speed support')
@@ -461,6 +565,36 @@ class RmucTurnResidualAdapter(nn.Module):
         return RmucTurnResidualAdapter.turn_gate(observations) * (
             1.0 - base_fraction
         )
+
+    def install_expert_speed_extension(self, domain):
+        """Explicit research checkpoint option; keep original low-speed routing."""
+        if hasattr(self,'expert_speed_extension'):
+            raise ValueError('Expert extension already installed')
+        d=torch.as_tensor(domain,device=self.net[0].weight.device,dtype=self.net[0].weight.dtype)
+        if d.shape!=(2,) or not torch.isfinite(d).all() or not 1.5<=d[0]<d[1]<=2.5:
+            raise ValueError('Ordered expert plateau/fade required')
+        self.register_buffer('expert_speed_extension',d.clone())
+
+    def _load_from_state_dict(self,state_dict,prefix,local_metadata,strict,missing_keys,unexpected_keys,error_msgs):
+        key=prefix+'expert_speed_extension'
+        if key in state_dict:
+            value=state_dict[key]
+            if value.shape!=(2,) or not torch.isfinite(value).all() or not 1.5<=value[0]<value[1]<=2.5:
+                raise ValueError('Invalid saved expert extension')
+            if not hasattr(self,'expert_speed_extension'):self.install_expert_speed_extension(value)
+        super()._load_from_state_dict(state_dict,prefix,local_metadata,strict,missing_keys,unexpected_keys,error_msgs)
+
+    def effective_expert_gate(self,observations):
+        original=self.expert_gate(observations)
+        if not hasattr(self,'expert_speed_extension'):return original
+        v=observations[...,7]/.5;yaw=(observations[...,2]/.25+observations[...,8]).abs()
+        d=self.expert_speed_extension
+        smooth=lambda t:t.clamp(0,1).square()*(3-2*t.clamp(0,1))
+        extended=self.turn_gate(observations)*(1-smooth((v-d[0])/(d[1]-d[0])))
+        blend=smooth((yaw-.02)/.03)*smooth((1.9-yaw)/.1)
+        blend=blend*((v>1.5)&(observations[...,8].abs()<1.999)).to(v.dtype)
+        mixed=original+blend*(extended-original)
+        return torch.where(blend==0,original,torch.where(blend==1,extended,mixed))
 
     def forward(self, observations: torch.Tensor) -> torch.Tensor:
         if not self.enabled:
@@ -825,8 +959,12 @@ def install_rmuc_turn_adapter(
         )
         latent = self.get_latent(obs, masks, hidden_state)
         base_output = self.mlp(latent)
+        physics_adaptation = getattr(self, 'rmuc_physics_adaptation', None)
+        if physics_adaptation is not None:
+            base_output = physics_adaptation.reverse_base_leg_response(latent, base_output)
+            base_output = physics_adaptation.forward_base_leg_response(latent, base_output)
         if self._rmuc_turn_expert_enabled:
-            turn_gate = self.rmuc_turn_adapter.expert_gate(latent).unsqueeze(-1)
+            turn_gate = self.rmuc_turn_adapter.effective_expert_gate(latent).unsqueeze(-1)
             expert_output = self.rmuc_turn_expert(latent)
             mlp_output = (
                 base_output

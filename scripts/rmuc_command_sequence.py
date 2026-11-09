@@ -15,5 +15,6 @@ tracking_cohort_mask = _module.tracking_cohort_mask
 dynamic_stop_posture_cost = _module.dynamic_stop_posture_cost
 
 reverse_runaway_cost = _module.reverse_runaway_cost
+reverse_oscillation_ready = _module.reverse_oscillation_ready
 
 reverse_settled_tracking_cost = _module.reverse_settled_tracking_cost

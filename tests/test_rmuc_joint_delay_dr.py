@@ -52,3 +52,25 @@ def test_physics_clock_observation_boundary_and_action_phase():
  actual=[]
  for tick in range(12):actual.append(float(action.step(torch.tensor([[float(tick//4+1)]]))))
  assert actual==[0,0,0,0,0,1,1,1,1,2,2,2]
+
+
+def test_joint_budget_sampling_is_reproducible_and_partial_reset_safe():
+ ranges=dict(observation=[0,.008],action=[0,.008],wheel=[.002,.008],leg=[.002,.008])
+ table=[[.002,.002,.004,.006,9.],[.004,.004,.006,.008,1.]]
+ before=torch.random.get_rng_state().clone()
+ q=m.JointDelayDR(torch.zeros(8192,6),.002,ranges,777,table)
+ assert torch.equal(before,torch.random.get_rng_state())
+ clone=m.JointDelayDR(torch.zeros(8192,6),.002,ranges,777,table)
+ assert torch.equal(q.combination_indices,clone.combination_indices)
+ assert .08<float((q.combination_indices==1).float().mean())<.12
+ assert set((q.observation.steps+q.action.steps+q.wheel.steps).tolist())=={4,7}
+ assert set((q.observation.steps+q.action.steps+q.leg.steps).tolist())=={5,8}
+ old=q.wheel.steps.clone();q.reset(torch.arange(30));assert torch.equal(q.wheel.steps[30:],old[30:])
+ q.action.set_sampling_weights([1,1,1,1,1])
+ with pytest.raises(ValueError,match='independent action weights'):q.reset(torch.arange(30))
+
+
+def test_joint_budget_rejects_nonquantized_delay():
+ ranges={k:[0,.008] for k in ['observation','action','wheel','leg']}
+ with pytest.raises(ValueError,match='physics ticks'):
+  m.JointDelayDR(torch.zeros(2,6),.002,ranges,3,[[.001,0,.004,.004,1.]])

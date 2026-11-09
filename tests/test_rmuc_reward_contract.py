@@ -77,7 +77,8 @@ def make_env():
         _previous_reward_direction=torch.ones(count),
         _previous_command_aligned_speed_valid=torch.ones(count, dtype=torch.bool),
         _curriculum_step_counter=torch.full((count,), 1300),
-        _last_termination_reasons={'tilt': zeros.bool()})
+        _last_termination_reasons={'tilt': zeros.bool()},
+        _additional_reward_before_clip=lambda reward: reward)
     return env
 
 

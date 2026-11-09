@@ -53,6 +53,10 @@ def configure_checkpoint_observation_contract(runner, cfg):
     def save(path, infos=None):
         info = dict(infos or {})
         info['rmuc_observation_contract'] = copy.deepcopy(contract)
+        if getattr(cfg, 'training_privileged_critic_enabled', False):
+            info['rmuc_critic_context_contract'] = {
+                'dimension': runner.alg.critic.obs_dim,
+                'version': cfg.training_privileged_critic_context}
         if getattr(cfg, 'command_leg_scale_profile', None) is not None:
             info['rmuc_action_leg_scale_profile'] = copy.deepcopy(cfg.command_leg_scale_profile)
         return original(path, infos=info)
@@ -98,6 +102,10 @@ def required_training_commands(cfg):
         pairs.add((float(vx), float(yaw)))
         if yaw:
             pairs.add((float(vx), -float(yaw)))
+    for speed in getattr(cfg, 'command_active_straight_speeds', ()):
+        if not isinstance(speed,(int,float)) or not math.isfinite(speed) or not 1.6<=speed<=2.0:
+            raise ValueError('Invalid active straight speed')
+        pairs.add((float(speed),0.))
     sequence = getattr(cfg, 'command_training_sequence', ())
     if sequence:
         if not 0 < getattr(cfg, 'command_continuous_sampling_fraction', 0) <= .25:
@@ -144,6 +152,8 @@ def validate_trainable_target_gate(state, vx, yaw, *, physics_only=False, local_
     obs[:, 7] = float(vx) * .5
     obs[:, 8] = torch.tensor([w for _, w in commands])
     if router_speed_direction is not None:
+        if 'rmuc_state_router.forward_turn_support' in state:
+            raise ValueError('Experimental forward router support requires a separately verified training/consumer path; frozen routing probes only')
         if router_speed_direction not in ('positive','negative') or physics_only or local_indices is not None or physics_modules is not None:
             raise ValueError('Invalid or mixed router speed selection')
         prefix='rmuc_state_router.speed_extensions.'
@@ -264,12 +274,43 @@ class RolloutCoverage:
         return report
 
 
-def validate_trainable_sequence_gates(state, sequence, **selection):
+def validate_trainable_sequence_gates(state, sequence, *, target_only_commands=None, **selection):
     """Permit explicit frozen approach phases only for the bounded stop-only head.
 
     Approach uses the unchanged teacher; zero-command settling is the trainable
     phase. Other module selections retain the all-targets-active requirement.
     """
+    if target_only_commands is not None:
+        targets=[tuple(row) for row in target_only_commands]
+        if not targets or any(len(row)!=2 or any(not math.isfinite(v) for v in row) for row in targets):
+            raise ValueError('Explicit finite actor-gradient target commands required')
+        for vx,yaw in targets:
+            result=validate_trainable_target_gate(state,vx,yaw,**selection)
+            index=next(i for i,(v,w) in enumerate(result['commands'])
+                       if abs(v-vx)<1e-8 and abs(w-yaw)<1e-8)
+            if not result['gates'][index]>0:
+                raise ValueError('Actual target is inactive; its mirrored command cannot substitute')
+        results=[]
+        for row in sequence:
+            if any(max(abs(row[1]-vx),abs(row[2]-yaw))<1e-3 for vx,yaw in targets):
+                results.append(validate_trainable_target_gate(state,row[1],row[2],**selection))
+            else:
+                results.append(dict(commands=[(row[1],row[2])],gates=[0.],passed=True,
+                                    phase='frozen_target_mask_rehearsal',actor_update_enabled=False,
+                                    scope='PPO target-gradient mask excludes this command; behavior retention still required'))
+        return results
+    joint_path = 'rmuc_physics_adaptation.joint_delay_network'
+    if (selection.get('physics_only') and selection.get('physics_modules') == [joint_path]
+            and 'rmuc_physics_adaptation.joint_delay_reference_network.0.weight' in state
+            and sequence):
+        if any(row[2] != 0 or not -1.8 <= row[1] <= 0 for row in sequence):
+            raise ValueError('Reference-isolated reverse sequence must stay straight in[-1.8,0]')
+        if not any(row[1] < 0 for row in sequence):
+            raise ValueError('Reference-isolated sequence has no trainable reverse phase')
+        return [dict(commands=[[0., 0.]], gates=[0.], passed=True,
+                     scope='Explicit frozen zero-command reference; transition behavior must be evaluated')
+                if row[1] == 0 else validate_trainable_target_gate(state, row[1], row[2], **selection)
+                for row in sequence]
     reserve_path='rmuc_physics_adaptation.reverse_reserve_network'
     if (selection.get('physics_only') and set(selection.get('physics_modules') or []) in ({reserve_path}, {reserve_path,'rmuc_physics_adaptation.reverse_network'})
             and sequence):
@@ -279,8 +320,8 @@ def validate_trainable_sequence_gates(state, sequence, **selection):
             extension=state.get('rmuc_physics_adaptation.reverse_extension_domain')
             if extension is None or not bool((extension==domain).all()):
                 raise ValueError('Joint reverse/reserve training requires identical frozen old-domain boundary')
-        if any(row[2]!=0 or not -1.5<=row[1]<=0 for row in sequence):
-            raise ValueError('Reserve sequence must stay straight in[-1.5,0]')
+        if any(row[2]!=0 or not -1.8<=row[1]<=0 for row in sequence):
+            raise ValueError('Reserve sequence must stay straight in[-1.8,0]')
         if not any(row[1]<float(domain[1]) for row in sequence):
             raise ValueError('Reserve sequence has no active reserve phase')
         return [dict(commands=[(row[1],row[2])],gates=[0.],passed=True,
@@ -290,8 +331,8 @@ def validate_trainable_sequence_gates(state, sequence, **selection):
     reverse_modules={'rmuc_physics_adaptation.reverse_network','rmuc_physics_adaptation.reverse_update_anchor'}
     chosen=set(selection.get('physics_modules') or [])
     if selection.get('physics_only') and chosen and chosen<=reverse_modules and sequence:
-        if any(row[2]!=0 or not -1.5<=row[1]<=0 for row in sequence):
-            raise ValueError('Reverse sequence must stay straight in[-1.5,0]')
+        if any(row[2]!=0 or not -1.8<=row[1]<=0 for row in sequence):
+            raise ValueError('Reverse sequence must stay straight in[-1.8,0]')
         if not any(row[1]<0 for row in sequence):raise ValueError('Reverse sequence lacks active reverse commands')
         return [dict(commands=[(0.,0.)],gates=[0.],passed=True,phase='frozen_teacher_idle')
                 if row[1]==0 else validate_trainable_target_gate(state,row[1],row[2],**selection) for row in sequence]

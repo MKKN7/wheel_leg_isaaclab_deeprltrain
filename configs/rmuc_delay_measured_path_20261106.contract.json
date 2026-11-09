@@ -1,0 +1,209 @@
+{
+  "user_measured_wheel_path_ms": [
+    7,
+    11
+  ],
+  "measurement": "Observation to execution start; noteachchannel separately.",
+  "physics_tick_ms": 2,
+  "core_probability": 0.9,
+  "wheel_core_serial_queue_sum_ms": [
+    6,
+    8,
+    10,
+    12
+  ],
+  "leg_core_serial_queue_sum_ms": [
+    8,
+    10,
+    12,
+    14
+  ],
+  "leg_extra_transport_ms": 2,
+  "wheel_stress_tail_ms": [
+    14,
+    16
+  ],
+  "leg_stress_tail_ms": [
+    16,
+    18
+  ],
+  "stress_tail_probability": 0.1,
+  "rationale": "Wheel6/12bracket measured7/11 on2ms ticks. Mainweight8/10; legs+2ms as userrequestedengineeringprior, notmeasurement.",
+  "acceptance": "Main domain survival/tracking/rawsteady pitchmax-min<=3deg. Stress tailnonblocking reported separately, never falsepassed. Reverse overshoot separatelyrequired.",
+  "training_overrides": {
+    "joint_delay_action_sampling_weights": [],
+    "joint_delay_combinations": [
+      [
+        0.002,
+        0.0,
+        0.004,
+        0.006,
+        0.03
+      ],
+      [
+        0.002,
+        0.002,
+        0.002,
+        0.004,
+        0.03
+      ],
+      [
+        0.004,
+        0.0,
+        0.002,
+        0.004,
+        0.03
+      ],
+      [
+        0.002,
+        0.0,
+        0.006,
+        0.008,
+        0.0675
+      ],
+      [
+        0.002,
+        0.002,
+        0.004,
+        0.006,
+        0.0675
+      ],
+      [
+        0.004,
+        0.0,
+        0.004,
+        0.006,
+        0.0675
+      ],
+      [
+        0.004,
+        0.002,
+        0.002,
+        0.004,
+        0.0675
+      ],
+      [
+        0.002,
+        0.002,
+        0.006,
+        0.008,
+        0.135
+      ],
+      [
+        0.004,
+        0.0,
+        0.006,
+        0.008,
+        0.135
+      ],
+      [
+        0.004,
+        0.002,
+        0.004,
+        0.006,
+        0.135
+      ],
+      [
+        0.004,
+        0.002,
+        0.006,
+        0.008,
+        0.135
+      ],
+      [
+        0.004,
+        0.002,
+        0.008,
+        0.01,
+        0.01875
+      ],
+      [
+        0.004,
+        0.004,
+        0.006,
+        0.008,
+        0.01875
+      ],
+      [
+        0.006,
+        0.002,
+        0.006,
+        0.008,
+        0.01875
+      ],
+      [
+        0.006,
+        0.004,
+        0.004,
+        0.006,
+        0.01875
+      ],
+      [
+        0.004,
+        0.004,
+        0.008,
+        0.01,
+        0.008333333333333333
+      ],
+      [
+        0.006,
+        0.002,
+        0.008,
+        0.01,
+        0.008333333333333333
+      ],
+      [
+        0.006,
+        0.004,
+        0.006,
+        0.008,
+        0.008333333333333333
+      ]
+    ],
+    "joint_delay_dr_enabled": true,
+    "joint_delay_dr_seed": 8107,
+    "joint_delay_dr_wheel_range_s": [
+      0.002,
+      0.008
+    ],
+    "joint_delay_dr_leg_range_s": [
+      0.004,
+      0.01
+    ],
+    "joint_delay_dr_observation_range_s": [
+      0,
+      0.006
+    ],
+    "joint_delay_dr_action_range_s": [
+      0,
+      0.004
+    ]
+  },
+  "cpu_readback": {
+    "core_fraction_actual": 0.902099609375,
+    "wheel_mean_ms": 9.81884765625,
+    "leg_mean_ms": 11.81884765625,
+    "exact_leg_extra_ms": 2.0,
+    "wheel_hist": {
+      "6": 705,
+      "8": 2266,
+      "10": 3279,
+      "12": 1140,
+      "14": 612,
+      "16": 190
+    },
+    "leg_hist": {
+      "8": 705,
+      "10": 2266,
+      "12": 3279,
+      "14": 1140,
+      "16": 612,
+      "18": 190
+    },
+    "samples": 8192
+  },
+  "runtime_activated": false,
+  "caveat": "Serialqueued sum excludes separate response dynamics/feedbackage/policyphase. SourceMCcollectedbroaderindependentprofile; no automatic newdistributioncertification.",
+  "core_evaluation_runtime_verified": "/home/kellen/\u684c\u9762/11 (1)/11/wheeled-legged_RL/artifacts/measured_delay_core_screen_20261106/runtime_verified.json",
+  "actor_training_activated": false
+}

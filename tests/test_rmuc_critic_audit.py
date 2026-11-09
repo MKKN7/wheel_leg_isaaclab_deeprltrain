@@ -32,6 +32,17 @@ def test_metrics_reports_bias_even_when_explained_variance_is_perfect():
     assert result['mean_bias'] == result['rmse'] == 10.
 
 
+def test_pure_boundary_is_censored_without_erasing_real_fall():
+    rewards=torch.ones(4,2);terminated=torch.zeros(4,2,dtype=torch.bool)
+    terminated[1]=True;truncated=torch.zeros_like(terminated);boundary=torch.zeros_like(terminated)
+    boundary[1,0]=True
+    original,bounds=audit.returns_and_tail_bounds(rewards,terminated,truncated,.5,1.)
+    alternate,censored=audit.boundary_censored_returns(rewards,terminated,truncated,boundary,.5,1.)
+    torch.testing.assert_close(alternate,original)
+    assert censored[0,0]>.0 and bounds[0,0]==0
+    assert censored[0,1]==0 # Physical fall remains truly terminal.
+
+
 def test_installed_ppo_value_clipping_erases_large_return_correction():
     from rsl_rl.algorithms import PPO
     tree = ast.parse(textwrap.dedent(inspect.getsource(PPO.update)))

@@ -2245,3 +2245,1705 @@ leg4/leg8同源/同seed/初态质量惯量材质一致，首回合obs/action/whe
 ### 2026-11-01 按用户要求联合训练未适应域，后退保留主线
 learned_joint_delay48_20261101由原零head源4db22a449ee020f847c34610c0d3a577c2739347a1fdcca2dd1acc7b53b96ed3启动，非失败候选续训。旧actor冻结，新joint_delay_network全命令可训练，覆盖68实际命令；65%静态分层复习优先后退/低速/中速，20%动态0→-.25→-.6→-.8→-.4→0→+.5→(1,+.8)→(1,-.8)，15%固定-.8。48update/rollout128/3critic/LR2e-4/1800s，rate penalty2保持、floor0。覆盖预检通过，首次将active stage91置前导致后追加历史stage不可达被预检拒绝，已追加末尾-.8目标stage102修正，未启动错误配置。
 4.89/3/scale5.5、PD60/2、spring4.31、Dfb/b/C、DR.1及wheel/leg4–8/obs action0–8/tau0–5/feedback_age0–8不变。不是最终6–12传输stress全面认证。旧参数冻结不等于新增残差旧行为保护，源/候选低速4点各32、动态后退/起停/yaw序列32、60点各2及振荡审查自动执行，不晋升。未学过高速域暂缓，历史压弯保留；当前实机主问题是振荡，不沿用旧狂退倒地表述。command/contract/evaluation_command与launch可追溯。
+
+### 2026-11-01 联合48训练完成，低速通过率与抗振改善不一致
+learned_joint_delay48完成1120.22s/48更新，候选88319a87bfc8c42265f0002ce6324375e3d999477b09e2ac71f87f2187fec767；runtime/freeze通过、68命令coverage无missing，-.8采样572483、-.6 107939、-.25 156277、待机205140，双yaw±.8均有样本，后退未遗漏。
+源/候选低速全部128存活，通过59→57：待机11→6、+.1 2→0、-.25 14→19、-.4 32→32。-.25 pitch振幅中位.709→.790°、hip.563→.645°，仍约4.6Hz不衰减；新增通过不能称抗振改善。待机pitch.697→.757°。low_speed_partial_review.json/partial_decision.json明确不晋升，等待60点retention和32动态序列。末期曲线已保存桌面，不以reward/采样充分替代闭环成功。
+
+### 2026-11-01 用户要求停止无产出重复试训：离线优化审计
+当前无新GPU训练启动。复核leg_transport为hostPD后力矩传输，与reflection记录的MCU PD+MITkp/kd0路径一致，暂无证据改成目标位置延迟。联合批最终retention47→52/120，后退动态-.25 full1→5/32、-.6 1→6、-.8仍0，停车11→5，转弯+ .8 yaw误差改善但仍未过；低速振荡未改善，不晋升。
+learned_gradient_audit_20261101/report.json复用真实update36 snapshot，CPU全actor恢复，Gaussian clipped surrogate分域梯度。后退39.37%样本、idle5.71%，非未采样/无梯度；部分梯度余弦负但合成方向各组dot正，不能宣称梯度冲突是唯一根因。CPU均值与记录差最大.002613，初始精确对拍断言失败，后改为显式记录偏差、计算记录分布到重建均值的实际ratio，不隐瞒误差，不称原GPU精确梯度。existing_tail_inventory.json盘点中间checkpoint/随机尾部，后续候选选择需振荡与动态共同验收，不能只按reward或最后checkpoint。暂停重复改权重短训，先利用既有数据减少无效实验；长期任务保持活跃。
+
+### 2026-11-01 复用已训中间checkpoint，仅补一份低速复核
+existing_tail_inventory显示11905附近待机/后退随机尾部比末期更值得复核，但样本混合，不能称优于源。选定唯一model11905（SHA8a795110fef4282ed39dfc68dd801b63ae990955643016c101684753bcb31c05），learned_mid11905_20261101执行同源低速4点各32/12s/600s上限，初态/质量惯量/材质配对、strict/periodic/bias审计。不扫描其他snapshot，不训练新参数，不自动晋升；若振荡与跟踪未共同改善，不据随机训练图继续挑选。完整command/contract/launch保存。
+
+### 2026-11-01 中间权重复核结束，停止快照扫描并固化失败路线
+model11905低速128全存活，待机8/32（源11）、+.1 0（源2）、-.25 19（源14）、-.4 32保持；-.25 pitch振幅.709→.657°小降，但待机.697→.728、+.1 .142→.161变差，不能联合晋升。learned_mid11905/final_report reject_no_more_snapshot_sweep，不再追加中间权重试验。
+新增delay_adaptation_decisions_20261101/decision_registry.json与review.md，汇总五批实际训练时间/更新/逐域通过、固定回退源4db22...96ed3并明确源非最终认证。禁止重复小LR24更新+标量reward调参、以平均通过率/训练reward晋升、缩小延迟掩盖失败、忽略旧后退/待机域。待补动态振荡事件窗、最差幅度/配对不确定性、最终6–12与多seed；D5部署验收需独立。当前无新GPU训练或扫点，长期目标保持活跃。
+
+### 2026-11-01 动态事件振荡审查补齐，区分瞬态与持续周期
+新增audit_dynamic_periodic_motion.py复用联合批source/candidate32序列，按每段命令排除首.5s分析（不是放宽arrival gate），窗口≥1.5s，记录主频、振幅、周期数；首episode不完整或短窗invalid。实际每组9事件×32=288事件均有有效窗口；未修改原始动态gate。-0.25起步段pitch主要成分不足3周期，不能冒称持续振荡；-.6 hip候选22/32有≥3周期，振幅中位1.036→1.187°。-.8 pitch幅1.211→1.023但仅2例主频周期数足够，更多为瞬态变化。dynamic_periodic_comparison.json保留量化，不以窗口振幅替代周期稳定判定。
+新增测试验证5Hz恢复、首次reset截断、短窗invalid；与静态频谱共3测试通过。没有启动GPU实验，利用已有轨迹补证据。后退超调与恒命令持续振荡需分开优化/验收，避免惩罚正常加速前倾。
+
+### 2026-11-01 新残差输入尺度预条件准备（未训练）
+真实rollout域内尺度审计residual_input_scale_audit：idle/reverse025 gx std约.00649/.00772、腿速度槽约.007–.016，现head更新近常量。仅据此提出固定残差内部标准化假设，不称根因。residual_precondition_20261101/prepare.py按idle/reverse/lowforward/mid/turn五域等量样本计算均值方差，sigma下限.05（增益≤20）；target槽7与last_action19–24保持原尺度。标准化折入新残差第一层W/sigma、b-Wmu/sigma，旧actor及25D/6D外部契约不变，末层仍零。
+prepared SHAa6f74e034f534bd33045dd0d1a0e7983bab897c20f403a4e35bc652a54d4adf2；8192真实输入完整actor输出初始差0、显式标准化与folded线性结果一致、数值有限，首层|preactivation|>3约.4%。未在线更新normalizer、未滤gx、未启动GPU。后续可同源同seed同奖励/预算对照此初始化，不再叠加新reward变更；须行为验证，不保证改善。
+
+### 2026-11-01 残差内部预条件同配置训练启动
+residual_precondition_20261101源a6f74e034f534bd33045dd0d1a0e7983bab897c20f403a4e35bc652a54d4adf2，原完整actor初始输出一致；与learned_joint_delay48命令除checkpoint/run_name完全相同，single_variable_audit通过，只有新残差第一层初始化变化，不改外部25D/6D、不滤gx、不加执行外环。均值/尺度固定折入第一层，后续权重仍正常学习，不声称在线normalizer。
+48更新/1800s、LR2e-4、128rollout、3critic，68条命令/后退起停/yaw切换与旧域同时训练；4.89/3/5.5、4.31弹簧、Dfb/b/C、DR.1和全部桥接随机延迟/反馈年龄保持。源评估全部复用，候选低速4×32、动态32、60×2及静态/事件振荡自动审查，不晋升；训练尾图monitor开启。没有叠加新reward改动，不从失败候选继承参数。
+
+### 2026-11-01 预条件训练完成，动态输入利用改变但行为待验
+residual_precondition48更新1105.21s完成，候选e57877d4ce155e9be9a2d7d499dda24488139b44db4816e1f73c3823592c20e4；runtime/freeze/68命令coverage通过。feature_use_audit.py在同一早前真实rollout输入比较前批与新残差，-.25右轮std.001219→.003058、左轮.002600→.006407，约2.5倍；输出tanh无饱和。此仅说明动态响应不同，不证明抗振收益，更高敏感性也可能恶化。training_completion_audit保存，pipeline212265已进入配对验收，无自动晋升，不重复启动训练。
+
+### 2026-11-01 预条件出现低速后退局部抗振收益，隔离保护旧域待验
+residual_precondition全部评估结束：低速70/128（源59），-.25 30/32（源14）、-.4 32保持，待机8（源11）、+.1 0（源2）；retention48/120（源47），动态停车full5（源11）仍退化，不全局晋升。-.25 pitch振幅中位.709→.223°，vx.01257→.00510m/s，active.934→.244°，hip.563→.256°，首次速度/姿态/角差振幅同步下降，但未消除周期、未32全过。
+准备reverse_precondition_isolated候选574ba52f47825be3e262426d92bbab53c9b4f450962f4442b510833a7fe7ca99，只有joint_delay_domain[-.5,-.4,-.2,-.15,.01,.05]限制新残差；旧actor参数与原源一致。8192输入域外与原源差0、核心与新候选差0、转弯输出保护验证。启动低速4×32与完整动态32（命令跨门控边界）配对、600秒/组，不训练、不自动晋升。保留其他域适应目标，不能用结构隔离代替闭环retention；静态30/32不是最终成功。
+
+### 2026-11-01 隔离验证完成与后退门槛汇报纠正
+隔离低速待机11/32、+.1 2恢复原源，-.25 30/32、-.4 32保持；静态-.25两失败activeP95 2.153/2.359°，后者yaw.114。停车动态11/32恢复，但跨域进入-.6退化，不能称完整retention。
+发现此前dynamic_domain_report通用yaw.05，未同时列用户已授权负vx直行yaw≤.1；保留严格JSON，补source/joint/preconditioned/isolated四份reverse_practical_gate，不改speed/overshoot/arrival/angle。-.6动态source25、joint21、preconditioned14、isolated20；-.8分别10、29、29、10；返回-.4均32。此前仅引用严格报告的0/1不能代表已授权后退门槛下实际能力；现有-.8有局部训练收益，仍被停车/-.6退化阻止晋升。
+final_report.json存全部对照，未来预条件pipeline增加实用后退门槛输出避免再次遗漏。门控域外同输入不变不能消除进入域外时不同状态造成的动态损失。保留有用候选不丢弃，但不自动拼接或认证；下一步必须兼顾跨域后退过渡和抗振。无新GPU启动。
+
+### 2026-11-01 后退跨域损失细分，避免再加强错误目标
+reverse_transition_audit/report.json回算四候选动态分项（失败重叠）。-.25→-.6全部到达与授权yaw合格；source超调7/32、尾速5、角差3，isolated超调12、尾速12、角差11；preconditioned超调18、尾速16、角差13。超调中位source.1044、isolated.1690、preconditioned.2100；arrival中位.584/.572/.552s。明确更快响应不等于改善，下一步应保留低速减振同时抑制加速后反冲与收敛，不额外加yaw或arrival压力。
+next_course_requirements.json准备延长后退训练hold到4秒以暴露收敛，但原短序列仍必须验收，不放宽gate；低速/高速已掌握域及yaw序列仍retention。当前环境单sequence，未擅称多序列已支持，未启动GPU，未晋升候选。
+
+### 2026-11-01 利用已获得的预条件减振收益，接续后退收敛训练
+reverse_settle_joint_20261101源e57877d4ce155e9be9a2d7d499dda24488139b44db4816e1f73c3823592c20e4（局部收益候选，非晋升基线）。只改动态seq为0→2s-.25→6s-.6→10s-.8→14s-.4→17s0，暴露加速后收敛；保留68命令、65%复习/20%动态/15%固定-.8、48updates/1800s、LR2e-4、rate2/.3、原floor0、全部时序/4.89/4.31物理。其他历史域仍静态复习，不声称本批训练yaw动态，旧混合短序列包含yaw切换继续验收。
+预检coverage grace3、sequence gates通过，源hash核验。结束低速4×32、原短序列32、60×2及静/动态振荡，复用本批源既有eval；晋升还必须对原4db源比较，避免把前候选退化当新baseline合理化。不自动晋升、未收窄延迟。训练/验收command与contract、launch保存，桌面尾图monitor开启。
+
+### 2026-11-01 用户要求并行加速：GPU0同时执行两条独立课程
+启动前GPU0约4953/32760MiB、46%利用，原reverse_settle_joint512env继续。新增low_forward_parallel_20261101为256env/48update/2400s，源预条件零head a6f74e...adf2（不是退化候选），待机15%固定、动态20% 0→.1→.25→.5→0、65%分层旧域复习优先0–.5直行。68required预检通过；先前遗留gate stage102不在抽样被拒绝，已修正gate列表为真实ids+active，未运行错误配置。
+两分支同4.89/3/scale5.5、PD60/2、spring4.31、Dfb/b/C、DR.1与轮腿4–8/obs action0–8/tau0–5/反馈年龄0–8，不动原后退进程。新分支完整低速32/动态后退yaw32/60点retention与振荡审查，不自动晋升或权重合并；旧参数冻结不意味着新残差跨域行为保护。runtime/freeze/覆盖异常即停。command/contract/evaluation_command/launch与桌面图monitor各自保存。
+
+### 2026-11-01 并行分支实际进展：后退-.25首次静态32/32
+现场GPU0约96%/6941MiB；reverse_settle48更新805.21秒完成，候选1ff6f8967ce802232e5a81e613bf4b74448efe4f03761223cb691950d31a053b，freeze/coverage通过，进入验收。-.25静态30→32/32、pitch振幅中位.2235→.1793°，-.4 32保持，retention48→53/120；待机8→1退化、+.1仍0，不能整体晋升。partial_review.json保留最差speed/yaw/angle与振幅，不只报中位数；动态序列仍运行，超调未下结论。low_forward_parallel约28/48更新运行、freeze/coverage通过，midrun_audit保存；未合并分支、未扩最终延迟或命令域。
+
+### 2026-11-01 并行两分支完整复核：静态收益不掩盖动态超调
+reverse_settle：静态-.25/-.4各32，retention53/120，但原短动态-.25 0/32、-.6 8/32、-.8 27/32、返回-.4 32；-.25超调31例/中位.309，-.6超调24例/中位.388。低速前进并行批：静态待机0、+.1 0、-.25 17、-.4 32；retention44/120，动态-.8仅1/32。两者promotion_review明确不晋升，后退静态收益候选保留，禁止同配方重复。
+reverse_settle_review/reward_exposure.json复用真实snapshot，按physical_episode_age（非delivered command continuity age）近似回算overshoot cost；输入速度为延迟/噪声obs恢复且剔除clip，明确非即时reward精确重放。后退动态正惩罚约10.48%样本、截顶0；不支持惩罚饱和导致失效。分析脚本初稿用错age字段已现场纠正，未改训练代码或宣称训练时钟错误。长保持改善稳态但原短过渡超调仍严重，后续需短/长混合课程而非继续单长保持；全部原验收与延迟包络保持。当前两分支进程已结束，无新GPU启动。
+
+### 2026-11-01 用户要求每批有明确用途：实现短长保持混合覆盖
+新增command_training_sequence_alternate默认空；只允许与primary完全相同的有序vx/yaw命令、不同时间表。动态环境even/odd分别primary/alternate，命令生成和sequence_overshoot reward均按对应表计算，不把短表奖励错套长序列。无primary时拒绝alternate，暂拒与reverse_settled_tracking同时启用以免其phase clock不一致。现有单sequence路径保持不变。train runtime新增primary/alternate、分配规则、dynamic env ids读回；还需GPU实采双cohort覆盖验证。
+29项command_sequence/training_contract测试通过，含相同episode时刻不同命令及正确超调惩罚、reset、错误命令表拒绝；编译通过。mixed_timing_course.json保存短/长计划与必须验证项，未启动GPU、未称训练有效。改进目标是补短过渡与长稳态共同覆盖，不再叠加奖励权重；旧短混合yaw验收和其他域retention保持。不能保证每次收敛，但每次必须有可证伪假设和停止条件。
+
+### 2026-11-01 短长混合后退课程启动，实际覆盖fail-fast
+reverse_mixed_timing_20261101复用同预条件源e57877...20e4，与long-only reverse_settle对照，唯一课程变化为动态even短表/odd长表；65%旧域复习、20%动态、15%固定-.8及全部reward/DR/物理保持。48update/1800s。29项CPU测试通过；runtime要求两组dynamic ids都有，labelled_act每步核对真实physical command与该组episode时钟表一致，记录2×phase计数，update6仍缺任一phase立即停止。训练后冻结、coverage仍需通过，桌面尾图按env奇偶匹配各自时间表，不错标长表为短表。
+源SHA/command/contract/evaluation均保存；原短混合yaw32、低速4×32、60×2及振荡审查不放宽。此批验证能否同时保住低速稳态收益和短切换抑超调，不宣称必收敛，不从失败末期weight续训。当前启动唯一GPU训练，无自动晋升。
+
+### 2026-11-01 混合课程覆盖检查时机错误已修复，独立目录重启
+reverse_mixed_timing首批runtime通过、命令时钟parity通过，但第6次被runner要求全部阶段覆盖而停止；128step×.008×6=6.144s，长表末阶段17s，因此该断言时机不可能合理，属本轮监控实现错误，不是策略/仿真失败。不隐藏failure.json、不把本批算完成、不续其不完整weight。
+retry目录reverse_mixed_timing_retry_20261101从相同e57877源重启，唯一变化为覆盖deadline按ceil((17+2)/(128*.008))=19更新计算（19.456s），命令parity/冻结/数值即时检查不变，19次后各组各阶段仍须真实非零采样，未放宽覆盖范围。guard_timing_audit保存推导，原失败证据保留。48updates/1800s、全部物理/DR/reward与验收不变；runtime与结果仍待真实读回，不自动晋升。
+
+### 2026-11-02 中断接续核验与混合课程结论
+reverse_mixed_timing_retry48更新865.22s完成，SHA8136f1c9f5b3729956806e88d6430e3789a5037eb10b3a18e8822e5080989814；两组phase全部实采、command parity与freeze/runtime通过。完整评估结束，无重启。静态-.25/-.4各32、待机2/+.1 0；retention46/120；授权后退动态-.25 3、-.6 9、-.8 29、返回-.4 32，仍不整体晋升。course_comparison.json同原短序列比较，-.6超调中位.398，说明补短长覆盖不足以解决制动。
+reverse_braking_signal_20261102/report.json复用真实post-step heading轨迹：-.6首次穿越目标时mixed加速度中位-.539m/s²（original-.247），穿越至峰值.600s（original.420），峰值超调.1418m/s（original.0392）。-.25同趋势。通用overspeed margin.1m/s偏宽但已有sequence相对惩罚，不得称无惩罚或唯一根因；下一修复需更早区分接近目标仍加速与正常起步，不能再用更长hold替代动态通过。原始报告保留；无新GPU实验，长期目标活跃。
+
+### 2026-11-02 低速机体速度抗振奖励覆盖缺口已按实际配置确认
+oscillation_reward_gap_20261102/eligibility_audit.json从本批env.yaml回读：command_reward_contract_by_command=true，speed_oscillation_start_level13对应vx1.0，tolerance.08m/s；待机、+.1/.25/.5、-.25/-.4/-.6/-.8均未启用该速度振荡项。其他姿态/角差/变化率reward仍有效，不称没有任何稳定性奖励，也不称唯一根因。此前只检查pitch-rate和角差项，漏了此速度阈值，现纠正。
+新增独立reward helper tracking_oscillation.py，以(command-speed)减同滤波后的(command-speed)衡量跟踪误差变化，避免对完美跟踪的step/ramp施加变化惩罚；不滤actor gx、不改观测或执行。2项测试证明完美阶跃/斜坡与恒定偏差不制造振荡cost、双向误差等价/reset豁免/参数校验。该helper尚未接入env，必须验证同时间基准滤波、历史reset/命令变化和瞬态代价后再启用，不能宣传修复成功。无新GPU启动。已掌握域延迟适应仍不全，静态-.25/-.4局部32不替代动态或全域认证。
+
+### 2026-11-02 全已学域抗振项接入并启动，保留中高速直行/压弯与后退
+新增默认0 command_tracking_variation_weight/tolerance.005/scale.05，以同时间常数的目标和速度滤波差构造跟踪误差高频量；采用已有signed方向历史重基准和reset-valid，所有实际command域均可生效，无>=1m/s屏蔽，不滤actor观测/gx。18项测试通过含完美阶跃/斜坡/恒偏差不误罚、reset、持续5Hz有信号；实际起步有误差仍可能受惩罚，必须动态retention防迟滞。
+calibration.py复用leg4/8实录仿真轨迹：-.25新代价均值.000073→.02932，说明能区分已观察振荡；不是因果收益证明。选择weight4（准备文件calibration原proposed2仅早期估量，不是实际配置）。
+启动learned_tracking_variation_20261102，同预条件已收益源e57877...20e4，48update/1800s、mixed short/long、68commands/65%旧域复习、原权重与物理/DR保持，唯一新增新reward4。历史直行至1.9、历史双向压弯、后退均保留；未掌握2–3.2暂缓，不称全最终域已训。执行器4.89/3/scale5.5、spring4.31、DR.1、轮腿4–8/obs action0–8/tau0–5/feedback_age0–8保持，19更新coverage截止。完整短动态32/低速4×32/旧60×2与静动态振荡自动验收，无自动晋升。修正新command.json中继承的旧stage长度/旧reward说明/24update描述，历史证据未覆盖。
+
+### 2026-11-02 tracking variation完整复核及yaw缺口分离
+learned_tracking_variation48更新1165.24s完成，候选87cd639c3c472c2a8121f7ecc561ff11a8bcf900a1119a511cc2bdc245ee3342。低速静态待机0/+.1 0/-.25 32/-.4 32，retention51/120；授权后退动态2/14/22/32，仍不晋升。相比本批源pitch中位待机.723→.622、-.25 .223→.290，显示各域收益冲突，不能以全覆盖reward推出全部减振成功。
+turn_delay_gap_20261102/report.json逐点复用2rep筛查：+.25转弯6例4speed失败/yaw0失败；+.5转弯6例yaw全失败；1.5转弯12例speed全过/yaw全失败；1.0转弯30例13通过、1早终止、10speed/16yaw失败。说明低/中速yaw应按具体缺口处理，不对速度已经合格的1.5统一增加vx reward。此为筛查不是32回合/arc/bank认证；静态复习不代表动态yaw已训练。所有进程已结束，无新GPU启动，报告与promotion_review保存。
+
+### 2026-11-02 用户新目标2m/s/yaw1.6/reverse-1.5：启动明确缺口的并行课程
+当前未承诺今日收敛或全域通过。新domain_push_parallel_20261102两分支同预条件有局部收益源e57877...20e4，未从退化末期续训；各256env/48update/2400秒、GPU0共享，旧actor冻结、65%分层复习/20%动态/15%固定目标。
+yaw分支75required：动态1m/s yaw±.8/±1.6、1.5m/s±.8，静态复习加1.5±1.6及2m/s直行，按缺口增加turn/中高速采样，不改yaw reward。reverse69required：短反向序列0→-.25→-.6→-.8→-1→-.4→0，sequence overshoot6→12（只对跨目标的相对超调，不加arrival压力），-1为训练前沿，-1.5仅8rep诊断边界，不宣传已训。
+全部保持4.89/3/scale5.5、PD60/2、spring4.31、Dfb/b/C、DR.1、轮腿4–8/obs action0–8/tau0–5/feedback_age0–8。读回额外检查overshoot权重，coverage/freeze/nonfinite失败即停。源/候选重点点8rep、原混合动态32、旧60点2rep与振荡自动审查，快筛非正式认证，严禁直接合并两个head。原目标尚有待机/低速振荡、过渡超调/压弯及最终高延迟全域缺口。command/contract/evaluation/launch及桌面尾图monitor各自独立保存。
+
+### 2026-11-02 并行扩域训练完成，先报告真实局部结果
+两分支48更新均完成，yaw1480.23s SHA397a6c6abc2afe25f9f2778427576119a066dad433b74ff16017859345dea7d0，reverse1505.23s SHA58e4647e6150ce8cf19240d7743c6c3bf1386807d060ab982762de0848c78726；runtime/freeze与75/69命令coverage通过。yaw实际采样±1.6与2m/s均有，reverse-1有51826样本，非配置空写。
+focus8rep：yaw(1,+.8)0→5pass但完整6→5，(1,-.8)0→2；(1,±1.6)/(1.5,±1.6)/2m/s尚未严格通过，+.25/+.1旧点8→2退化。reverse直接静态起步-.6完整0→1/8，-.8/-1均0，-1.5仅边界诊断0；不能以渐进序列历史29/32替代直接起步。focus_review逐点失败原因与幸存者误差分开，不隐去提前终止；当前retention/dynamic两个pipeline已现场确认运行，不重复训练、不晋升。
+
+### 2026-11-02 domain_push两分支完整验收结束，明确可保留收益与不同缺口
+全部pipeline结束，无重启。yaw retention56/120、reverse48/120；动态yaw候选1m/s±.8尾误差中位.08750/.08914，尚未过.05；reverse候选授权-.6动态21/32、-.8 27/32，直接起步-.8/-1仍失败。promotion_review按branch保存，不晋升但保留候选作定向修复依据。
+2m/s bias审计8实例：active signed mean中位2.331°、std.179°、绝对P95 2.546°；hip mean1.471°/std.197°，速度MAE中位.1415，全部速度合格。故2m/s主要active静态偏置，不能当持续周期振荡处理。1.9则hip std1.699°/P95 2.713°，仍有明显动态摆动。next_targets.json分别列2m静差、1.9动态、yaw跟踪与正向存活、后退直接起步与超调，不混淆目标，不擅自放宽gate或拼接网络。最终2/yaw1.6/-1.5尚未认证。
+
+### 2026-11-02 用户授权高速角差工程容差，保留原压弯目标并做dense yaw定向对照
+仅直行vx>=1.6角差P95改工程3°，低速仍2°；严格报告保留，速度/yaw/存活/周期振荡要求不放宽。旧yaw分支2m/s工程5/8，源亦5/8，故不能把gate放宽称训练收益；1.9候选仍1/8，动态摆动缺口保留。新增audit_highspeed_engineering_gate.py独立报告，不自动晋升。
+后退capacity audit实际update36共18922个reverse样本，六维新增head tanh饱和比例均0、轮残差P95仅预算35%/18%；不支持残差硬限幅耗尽，也不能证明单帧网络容量充分。source到reverse候选-.6超调中位21.0%→14.0%、超标18→11/32；-.25仍26.2%→24.6%、27/32超标。问题集中目标附近制动/过渡拟合，不能称已修复、不能归咎MLP架构或全部后退都不会。
+启动domain_push_denseyaw_20261102/yaw，与上轮同源e57877...20e4/seed/75命令/48update/256env，唯一dense yaw coverage .4501→1.6、权重.5不变。runtime全部通过；4.89/3/scale5.5、spring4.31、DR.1及原全部延迟保持，65%旧域复习，完整candidate focus8/retention60x2/dynamic32，源评估复用hash相同记录。训练最长2400秒，冻结/读回/覆盖异常停，不晋升。完整command/evaluation与物理契约保存，训练仍运行、无结果宣称。
+用户再次强调原各速度压弯要求不取消：1m/s双向1–2.5，1.5为.8–1.8，2为.6–1.3，2.5为.4–1，以及各速度小yaw。required_envelope.json明确最终目标与本批75命令非同义；历史60点retention清单不是穷尽，>2yaw当前观测截断重建限制尚未解决，不能说全目标域已保留或全适应。
+
+### 2026-11-02 dense yaw训练结束，验收路径错误修复
+48更新1095.20秒完成，候选ff12522b8dd2a83a70c9937111b50be829a8046b2417742be74dd02505cf0c85，runtime/freeze通过。复制evaluation JSON时对编码前字符串替换未命中中文转义路径，误引用上一批checkpoint/output；evaluate拒绝覆盖旧输出，未产生本批结果。改为JSON解码后递归替换并断言checkpoint/output，原command与失败日志保存；只启动resume_evaluation，不重复训练、不晋升。历史源结果复用不变，后续全部候选按SHA核验。
+
+### 2026-11-02 当前reward审计发现大yaw正确跟踪也被扣分
+实际env.yaml command_yaw_overspeed_relative_to_target=false、weight=.25；env.py excessive_yaw=max(abs(yaw)-1,0)，因此目标1.6正确跟踪仍扣.09，1.8扣.16，2.5扣.5625（单步reward项、非总回报）。已有target-relative开关可改成max(abs(commandyaw),1)，小yaw/直行防失控保持，大yaw不再被固定1rad上限误罚。幅值不能证明主因，先保留已完成denseyaw试验单变量证据，下一独立训练使用开关并检查读回；未事后篡改本批配置或认定根因已解决。yaw_reward_conflict_audit.json保存数值。
+
+### 2026-11-02 dense yaw重点8rep筛查完成，尚无大yaw突破
+与上一yaw分支相比(.25,+.1)严格2→5/8；(1,+.8)5保持且存活5/8，(1,-.8)2保持；(1,+1.6)存活5→4/8，双向1.6四点严格仍0；1.9严格1保持，2m严格0。engineering3°下2m仅3/8（上一分支5/8），不能以局部低yaw收益晋升。focus_comparison.json保存幸存者误差与存活分列；retention及动态仍在验收，本批不重复训练。
+
+### 2026-11-02 停止重复配方，实际reward/terminal credit审计
+最后denseyaw完整retention59/120、存活115/120；动态授权后退-.25/-.6/-.8/-.4为0/10/30/32；promotion_review明确不替换。没有启动新训练。
+复用domain_push实际update36并剔除done避免timeout bootstrap污染：reverse-.8非终止6415样本平均reward -18.19、负值85.1%；-.6 -9.77、负值72.3%。early done按age<2498排除20s超时，reverse31例中15例r-V>0；说明critic终止估值/负回报累计存在疑点，不能直接说策略故意倒地，不能仅据adv正号宣称根因。总reward clip低/高日志0，新增head未饱和；不支持rewardclip或残差硬上限是当前瓶颈。audit.py/report.json/terminal_credit_audit.json保存，后续要对正确收敛轨迹与超调轨迹的分项累计回报比较，而非继续翻倍惩罚。
+已确认独立错误：大yaw使用固定1rad超速阈值，正确目标1.6仍扣分，下一配置应启用现有target-relative开关并测试，未改已完成试验。新增verify_candidate_evaluation_paths.py在GPU前校验checkpoint实际SHA、状态SHA、spec路径、输出本目录，防止复制JSON中文转义路径再次漏替换；本批三组验证通过。最初CPU审计误用系统python缺torch，切已验证issaclab解释器完成，无GPU重跑。
+
+### 2026-11-02 实际reward受控反事实与唯一确定修复
+reward_objective_audit/counterfactual.py直接执行当前_get_rewards AST并加载reverse实验实际env.yaml，30组水平静态受控状态（非物理可达轨迹、非累计return）。-.25/-.6/-.8静/动态准确速度均比±.05/±.1误差获得更高reward；不存在简单反号、准确速度被局部reward排斥。对称误差通常欠速惩罚更重；动态crossing在允许带外才开始制动代价，不能从此单独断言超调根因。仍需区分动态姿态代价、critic与累计负回报。20项reward_contract/sequence_overshoot测试通过；测试夹具补当前默认identity _additional_reward_before_clip，生产reward未因此改变。pytest需PYTHONPATH=scripts:scripts/rsl_rl，前两次路径缺失及旧夹具错误已修正，不计成功测试。
+启动yaw_relative_penalty_20261102：同原yaw分支源e57877...20e4、seed、75命令、48update/256env/2400s、65%rehearsal；仅command_yaw_overspeed_relative_to_target=true。dense yaw仍原.4501/.5，不叠加上次失败扩展；其余物理/DR/所有时序不变。新增JSON解码递归路径复制与checkpoint/output断言，验收前verify_candidate_evaluation_paths，源既有验收复用、候选8focus/60x2/32dynamic及振荡/工程gate重跑。禁止自动晋升，后退暂不额外加负奖励/训练。训练结果待实证。
+
+### 2026-11-02 真轨迹与PPO回报对齐，区分起步失稳和过渡超调
+aligned_trajectory.py按保存iteration11959/physical_episode_age和physical_command完全一致断言，r[t]对齐下一pre-action真速度/关节，剔除reset/done/末样本，不用obs反推。reverse动态-.6 near189样本reward5.38但adv均值-1.69；overspeed190样本reward-1.76而adv+.192，关联并非因果，因为后续轨迹/critic不同。固定-.8超速3549样本速度超目标均值1.62m/s、角差中位30.64°，与渐进进入-.8欠速但角差.69°不是同一问题；不能将所有后退负回报归为单一speed reward错误。
+agent.yaml actor与critic均policy25D；sequence_overshoot_cost却依赖previous target和phase，同当前-.6/实际-.65，上一目标0/-.25/-.8得到不同惩罚。hidden_reward_context.json给出严格受控函数对照；不声称真实25D碰撞已证，也不等于必须改部署actor。后续候选应比较历史无关目标相对超速代价或训练专用critic上下文，避免继续单纯提高惩罚。
+yaw_relative48更新1085.21秒完成SHA cd562443c7400048037eddc3be9bfcab2ec0662ffbb91e06de945756a06a4c76；focus11/96、存活90/96，大yaw仍0；retention55/120存活115，dynamic还在PID583067验证。固定yaw阈值修正未带来主要突破，不宣称根因解决，无重复新训。
+
+### 2026-11-02 全链复核后转向起步样本分布对照，不再连续加reward权重
+相对yaw阈值批完整结束，retention55/120、动态授权后退0/1/2/15（-.25/-.6/-.8/返回-.4）；promotion_review明确拒绝替换源。奖励正确性修复不等于学习突破，禁止再从本批退化末期接续。
+新reverse_stable_anchor_20261102仍从e57877...20e4；唯一课程变化固定15%目标-.8→-.4及该命令对应原leg scale .194，65%rehearsal/20%动态0→-.25→-.6→-.8→-1→-.4→0、所有reward/物理/DR保持。依据实际rollout固定-.8过量早期失稳且大角差，渐进同域更稳定；检验减少失败固定起步样本能否改善制动credit。不是删掉-.8/-1目标，rehearsal仍采、direct focus仍验；-1.5保留边界诊断而非已学能力。
+预检69required与原集合一致、active gate通过、SHA匹配；48updates/256env/2400s，runtime含fixed_anchor检查，freeze/coverage异常停，旧60点2rep/focus8rep/dynamic32/振荡全部保留。复制配置用JSON结构变换，candidate SHA/output预检；未运行重复旧训练。预检脚本初稿函数名/传入checkpoint层级错误在CPU被拦截，已按实际函数修正为actor_state_dict后通过，未绕过校验。GPU0其他工作区进程不动。
+
+### 2026-11-02 stable anchor完整完成：渐进-.8授权动态首次32/32
+48updates1065.20s，SHA ddd419a3bcf9fc666b733d35de84855c8e552143fe7c2869792db93613b9fcc0。实际runtime/freeze/69命令coverage通过，候选完整focus8rep、retention60x2、原混合dynamic32及静动态振荡审计结束。
+静态直接-.6存活6/8通过5/8（同源原0/8、前批1/8）；-.25 7、-.4 8维持；-.8/-1/-1.5直接起步仍0。渐进动态授权yaw.1的-.25/-.6/-.8/返回-.4为3/20/32/32，源2/14/29/32；上一扩域reverse4/21/27/32。-.25超调中位25.01%/27失败，-.6 14.84%/12失败，-.8超调0；32/32只是原序列单seed授权门槛，不是严格yaw.05（-.8 strict0）、直接起步、多seed或全延迟认证。
+retention56/120，相比源48有15新增、7损失：.25+.1两例速度、.5直行一例速度、1.1-.6一例yaw、1.5-.6两例yaw、1.7直行一例yaw。retention_transitions逐项保存，不以总数净增掩盖旧技能丢失。-.6幸存pitch振幅中位.327°/vx .0546m/s，上一批.901/.164但幸存数不同，不是配对振荡因果证明；待机仍1/8且周期未消失。promotion_review明确保留局部收益候选、不整体替换；不重复本配方训练。下一步针对-.25入门超调/直接起步与旧域损失，先保住此次-.8渐进收益。
+
+### 2026-11-02 从共享残差跨域输出漂移入手保护旧技能
+retention_anchor_feasibility/audit.py同观测离线对照：7个丢失旧域实例1316状态新旧actor最大动作差.02264，85.7%样本至少一维差>.01；新-.8动态1504状态仅.8%样本>.01。不能据动作差直接推出行为因果/可合并性，但证明旧参数冻结并未固定整体输出，65%rehearsal不等于行为约束。
+复用已有StartupAnchor（不改生产actor结构/obs），收集源策略retention已通过且vx>=0的39实例各64时刻共2496条，源actor确定性输出作anchor。限最大action误差.01，真实actor临时强制bias+2越界后的回退验证成功（恢复误差2.09e-7），不保存临时修改。anchor_audit及SHA保存，固定观测约束不能替代闭环验收。
+启动reverse_anchor_guard_20261102，与stable_anchor同源e57877...20e4/seed/reward/69命令，只加RMUC_STARTUP_ANCHOR。固定15%-.4、20%动态到-1、65%旧域复习，48update/256env/2400s，全部物理/DR/延迟不变。postwarmup连续4次完全拒绝更新即停，避免保护过紧仍空训；状态/实际anchor接受比例将读回。focus直接起步8/旧60x2/dynamic32/周期振荡完整验收。保留ddd419局部32/32候选，当前对照不从其已退化旧域继续，目标验证同一修复能否减少旧域损失；不自动晋升。
+
+### 2026-11-02 anchor真实更新触边后按预设停止，验收保存中期而非重复训练
+reverse_anchor_guard完成38条update日志后连续拒绝触发停止；前17条全步，第18条半步，后续多次减步，末5条0；max_action_error始终<=.009997。说明旧域输出约束生效但可行更新空间受限，不等于旧技能闭环通过，未放宽边界重训。原status保持failed/early-stop evidence，不能写48完成。
+保存model11960（第37条对应快照；实际日志最终11961）到独立reverse_anchor_checkpoint_review，SHA e171f333767a6a6daab18c7ea92bfdb243b32be22e9a15b59a7dc9c75f42ae0f。同原源比较只有joint_delay_network参数改变，buffer/frozen全通过；独立验收前SHA/路径3组通过。只启动focus8/retention60x2/dynamic32评估，最大600s每组，物理/DR/延迟完全相同，原checkpoint/日志保留。不能称已完成或晋级，判断受限更新是否在减少旧域损失的同时保留后退收益。
+
+### 2026-11-02 全局anchor约束牺牲修复，准备可恢复源输出的残差隔离候选
+受约束保存37更新focus：-.6直接起步1/8（无约束5/8）、-.25 7/8、-.4 8/8、-.8/-1仍0；retention52/120存活115，dynamic仍在运行。不能以固定观测误差<=.01称旧技能已保住。
+新增可选joint_delay_reference_network：旧checkpoint无此字段走原式；新候选同一joint_delay_budget内以scope混合冻结源与修复head，gate0精确源、gate1精确修复，平滑边界，未增加预算/观测/动作维度。rmuc_command_adapter恢复可选reference；默认生产配置不启用。新增tests/test_rmuc_joint_delay_reference.py与原physics共15项通过（域外输出与梯度隔离、core一致、限幅、JIT、错误安装拒绝）。
+reverse_reference_candidate CPU构造887779b8cc7a83a363f0504ce9a65aa17aa86bdd62098be05832d50537fcecd7，源e57877、后退ddd419。scope[-1.5,-1.4,-.1,0,.01,.05]，8192输入域外=源/core=ddd/reload差均0；完整core[-1.4,-.1]，不声称-1.5适应。与此前只把整个head关掉不同，域外保留非零源head；避免旧域源残差丢失。但跨零状态轨迹可能变化，尚未GPU闭环验收，不晋升不导出。当前运行旧候选eval的无reference分支语义保持；未启动新训练。
+
+### 2026-11-02 reference隔离候选并行GPU验收
+887779候选在reverse_reference_candidate/reverse独立目录启动eval-only；次序retention60x2→dynamic32→focus8，原源对应相同seed/初态/质量惯量/material配对自动断言。三组每组600秒上限，SHA/output预检全部通过，使用4.89/3/scale5.5、spring4.31、原DR.1及全部delay配置，不新增训练，不覆盖已有证据。新teacher组合尚未闭环通过；原guarded评估同时继续，不能把CPU域外完全一致当sim2sim或部署认证。
+
+### 2026-11-02 同seed混合批验收存在跨环境噪声耦合，修正对照方法
+reference隔离闭环完整：retention49/120、直接-.6 5/8、动态授权6/24/31/32；guarded为52/120与动态2/15/29/32，不晋升。reference同输入实际观测全量CPU新旧actor差0，初态/质量/material一致，但前进轨迹第253步开始分离。source后退env0在252步reset，candidate在254步reset；前251/252步env110状态/动作无差，253步观测/动作先异。源码观测噪声与reset共用global torch RNG，reset次数不同改变其他未reset环境噪声，实现不满足common-random-noise配对。不能把所有历史压线得失当成确定策略改变，也不抹除原失败结果；reference_retention_parity/report保存首次偏离及全实录同输入parity。
+observation_noise增加可选generator，env_cfg observation_noise_seed默认-1保持旧行为；启用时gyro walk/physical sensor noise/command-consistent noise均独立生成器，reset不重置它。evaluate新增--observation-noise-seed/readback。4项私有RNG/残差隔离测试通过，包含global reset随机消耗不影响序列、原默认随机流一致、target/history保护。额外gravity DR当前strength0，若未来启用其reset/noise共用私有流仍需单独处理，未称所有DR已完全配对。
+新paired_observation_rng两组source e57877/candidate887779、60x2、same独立seed27021、其余4.89/3/5.5/4.31/DR.1/delay不变，预算600秒/组；只重新评估，不训练、不覆盖原证据。
+
+### 2026-11-02 独立噪声对照确认旧域无损，回归后退主线短批
+paired_observation_rng完成：源48/120、隔离候选50/120，只新增-.6两例、丢失0；所有非负vx首回合观测/动作/速度最大差均0。修正配对噪声后此前1.6/1.725压线差异消失，证实混合批跨reset RNG污染了旧域比较。仍仅single seed2rep快筛，不能当全域掌握；原结果不删。额外physical sensor RNG测试合计8项通过。
+用户要求停止无意义训练，直接启动reverse_entry_scoped：源887779（未认证但前进域结构和闭环保持，后退有收益），固定15%-.25，65%旧域复习、20%动态到-1，reward保持、24update/256env/1500s，不再从e578重学全部。joint_delay_network可训，冻结reference与其余网络；zero阶段reference冻结但跨零必须验。训练预检为此显式允许带reference的纯后退序列zero阶段冻结，拒绝全zero/正向/turn序列；非零阶段仍验证gate>0。6项隔离/RNG/sequence测试通过，69命令预检通过。
+训练源/旧候选都保留。结束独立noise seed27021的源/候选focus8、60x2、dynamic32六组配对，source已改变不能复用e578结果；延迟/4.89/3/5.5/PD/弹簧4.31/DR.1保持。无自动晋升，旧域输出漂移/非有限/覆盖失败停；代码、command、contract、SHA、launch保留。
+
+### 2026-11-02 scoped24更新完成，修正源验收目录链接遗漏
+24更新550.16秒完成SHA33e0405db5c206f10a76c3a8485416c9af41302d20d09b729f09f2facc00a15e，冻结检查通过。准备脚本字符串替换未实际替换source symlink，六组eval首组被旧evaluation.log保护拦截；没有新行为结果。旧source链接改名historical_source保留，三个source重建为本批887779独立目录，命令从候选结构化派生，双方noise seed27021；新增所有run目录非symlink/输出路径/不存在日志断言。只启动resume_evaluation，旧训练日志和旧失败保留，不重复训练、不晋升。此次遗漏属于脚本准备错误，不能用同源历史结果代替新源验收。
+
+### 2026-11-02 用户澄清抗振验收采用无延迟相对基线
+用户不要求数学零震荡，而要求延迟下至少恢复此前无延迟表现。后续同契约/同命令/同初态/同噪声比较存活、vx/yaw误差、pitch与双腿角差P95-P05振幅/主频/持续性、起停与切换超调收敛。正常微调与传感器噪声不自动判失败，明显新增或放大周期振荡仍修复。不得把旧高D/旧峰值/旧弹簧或非零固定delay当无延迟对照，不擅设相对容差掩盖差异。baseline_relative_acceptance.json保存，本轮未启动新GPU或重复训练；60点全域缺口继续覆盖，不只后退。
+
+### 2026-11-02 同契约全域无额外延迟基线启动
+no_added_delay_baseline使用887779当前隔离教师、原60点2rep/12s、同seed/独立noise27021，唯一整组变化wheel/leg/obs/action延迟0、motor response tau0且strength0、wheel feedback age关闭；physics2ms/policy8ms保留，不称连续时间零延迟或历史最佳。4.89/3/scale5.5、PD60/2、spring4.31、机械b/C与电磁补偿、质量惯量/COM/arena DR保持。预算600s，仅评估，checkpoint与延迟/响应/age读回检查、strict/engineer/periodic自动保存。目的按用户新标准量化各域相对无延迟退化，不能将原fixed2ms+obs8ms冒充零延迟。scoped24update六组配对验收继续，无重复训练。
+
+### 2026-11-02 scoped短批完整验收：-.6直接起步进步，停止重复-.25配方
+33e040候选24updates完整六组同noise27021评估完成。60点retention源/候选均50/120、丢失0；focus -.6存活6→8/8、通过5→7/8；-.4直接起步8→7/8，-.8/-1仍0。动态授权-.25/-.6/-.8/返回-.4源与候选均2/23/32/32；-.25超调中位23.23→24.40%，-.6 13.18→14.32%，入门超调没有改善。promotion_review保留-.6直接起步收益但不整体替换，不重复同配方；下一训练优先转向中高速直行与大小yaw延迟适应，保留后退候选和原域。
+no_added_delay基线虽运行与零时序读回通过，但与延迟组initial mass/inertia/wheelgain不一致，配对audit失败；仅诊断不做延迟因果结论、不立即重复。motor_response strength0采样分支不消耗global RNG，strength1消耗，改变其后物理DR抽样（源码已确认存在此路径，不宣称唯一差异源）。同seed不是同物理随机实现；需训练/验收时间参数私有随机流或显式物理参数回放后才能做严格无延迟基线。保留原结果/失败断言，不把未配对数字作为晋级依据。
+
+### 2026-11-02 转向前进/压弯延迟抗振主线，冻结已有后退修复
+实际1.7/1.75完整轨迹pitch rate P95 .398/.536rad/s，high_speed_pitch_rate penalty阈值.75使对应惩罚覆盖0；pitch_rate_reward_exposure记录，不能据此保证降低阈值有效。新增joint_delay_reference_network可显式训练选择，gate=1-joint_delay_gate，后退core输出冻结；4项隔离/选择/sequence测试通过，actor25D/6D与预算不变。
+启动forward_turn_pitchrate_20261102，源887779、75commands，fixed15%1.75直行、dynamic20%1m/s yaw±.8/±1.6和1.5m/s±.8、65%旧域rehearsal；pitchrate阈值.75→.15、weight5不增加，其余reward保持以检验抗振信号。24updates/256env/1500s，4.89/3/5.5/PD60/2/spring4.31/Dfb/b/C/DR.1/轮腿4–8obs-action0–8tau0–5feedback-age0–8不变。后退候选保存，暂不重复-.25训练；结束75域重点focus8、60x2、动态32源/候选独立noise27021，速度/yaw/存活/后退retention不放宽。全run实体目录/输出/source路径已预检，实际SHA与freeze/runtime/coverage继续fail-fast，不自动晋升。
+
+### 2026-11-02 forward批覆盖预检拦截后修复，不绕过warmup检查
+原forward_turn_pitchrate在gym构建前因sequence coverage需要17次warmup而退出，未发生训练更新。固定目标改1.75使1.5±.8失去静态覆盖；现将原有stage59加入stratified priority/anchor/gate及weight5。retry独立目录forward_turn_pitchrate_retry，source/reward/24update/物理DR不变，保留全部旧失败证据；不将warmup任意设低，train.py重新计算并验证覆盖，实际runtime/rollout依然fail-fast。用户所需既有中高速/yaw域不删减。
+
+### 2026-11-02 历史遗漏全量回查：1068评估+3776非标准报告
+用户要求1.25/1.5 yaw1.2/1.6及1.6–2.0 yaw约.8不得遗漏。historical_skill_inventory扫描1068份evaluation.json无解析错误，142个至少历史legacy-pass或重算tracking-pass条件；剔除显式actionbias/student后区分4/32回合、旧宽gate、当前严格速度10%/yaw.05（后退.1）。初筛发现57个>=4回合聚合tracking证据点不在原60清单，但包含诊断目录，不能全称独立已认证技能。另抽取3776非标准report/summary/screen，用户重点条件314条重复证据，唯一额外strict>0匹配为1.5/-1.2的2rep（fixed/bridge候选各2/2）。
+生成154点inclusive restoration_manifest.json/md与grid分批；原60外94点、当前forward训练池外88点。清单包括历史弱证据及用户明确要求核验点，不是154点全掌握证书。明确遗漏1.25±.6/±1/±1.4、1.5±1/±1.4及中间速度/2.0直行；1.25+1.4与1.5+1历史各有32聚合报告。1.25/1.5±1.6与1.6–2±.8当前未找到充分通过原始证据，保留为用户要求恢复/核验，不能从近邻推断/静默删除。历史1.5+1.6采数速度误差.296等失败证据仍保留。
+required user points全部包含、grid唯一性验证。后续联合延迟验收与采样必须参考此清单，不再以旧60点自称全部历史保留；正在运行短批不就地修改命令/权重。目标恢复同契约低延迟表现与抑振，baseline原pairing失败仍不可当比较证据；各方向独立、不拼接多个checkpoint认证，不把仅存活当通过。主线当前75命令只能称本批覆盖。
+
+### 2026-11-02 当前恢复缺口实数与机器覆盖约束
+154inclusive恢复点对当前887779/noise27021的60点2rep静态strict筛查：21点所有replica通过、39点部分/全部失败、94点未验。不是21点正式认证，不是133点全部不会；154含弱历史证据与用户要求核验点。当前延迟仍wheel/leg4–8ms bridge，不称最终6–11/12ms包络完成。新增audit_restoration_coverage.py根据实际stage/priority/sequence和eval grids列missing_training/missing_evaluation，必须标部分批次，不以声明替代实际coverage。当前forward批24更新570.16秒SHA6c95f180...58477，focus仍有.25+.1 8→4回退，完整retention/dynamic进行中，不晋升、不重复训练；后续根据完整结果选择修复而非承诺全部已适应。
+
+### 2026-11-02 用户要求大批次恢复154点：1024env全域课程启动
+154恢复清单实读范围vx[-.8,2]/abs yaw<=1.8，无spin，不等于最终3.2/6–8spin全目标。canonical新增stage到旧表尾，保持旧reward eligibility索引语义；all154必覆盖、镜像后176signed required，门控逐点>0、动态sequence门控与3warmup覆盖预检通过。stage leg scale从checkpoint绑定profile插值，不改action映射；65%完整stratified复习、20%vx/yaw+后退动态、15%固定1.5/yaw1.4，避免只后退。
+源887779保留正向基线和后退局部收益，训练joint_delay_network和joint_delay_reference_network两路，原主体冻结；这次forward/turn也可更新，不能宣称整个非负域输出固定。1024env48update/128rollout约629万采样，3600秒预算，GPU0共享不终止其他工作区。reward修正target-relative yaw并pitchrate tolerance .15（权重不加），其余沿原yaw方案；4.89/3/scale5.5/PD60/2/spring4.31/Dfb/b/C/DR.1及4–8ms最终用户选定transport不变。当前大批属于课程/采样/已审计奖励共同实施，不宣传单变量因果。
+36项reward/selection/contract测试通过；12eval目录实体/source/output路径核验，源SHA核验。结束154x4源/候选按32点分5批，另原动态32配对，obs独立seed27021、strict/highspeed工程/periodic全部保存；4rep只是筛查、通过仍检查周期振荡并需正式认证。最终目标4–8ms不继续上探，新增baseline_relative要求仍保留。实际runtime/coverage/freeze失败即停，不自动晋升。完整证据full154_delay48_20261102/train。
+
+### 2026-11-02 大批初次stage数组遗漏在更新前失败，独立修复重启
+full154初次在env初始化command_stage_transition_steps索引越界，未发生PPO更新，训练不算完成。新命令表224项而transition/survival/advance arrays仍107；已扩展全部7个stage数组到224，保留旧阶段值与新阶段继承同一固定课时/门槛，run新增一致性断言。full154_delay48_retry独立目录重启1024env48update，物理/DR/reward/目标176signed覆盖不变，旧失败证据保留。prepare校验最初误把scalar stage字段当list已在CPU更正，全部长度实际检查通过，不绕过gate。
+
+### 2026-11-02 154域大批真实完成48更新，进入全量配对验收
+full154_delay48_retry48更新1245.29s完成，SHA9a5539c24b85d150d2c73fd91163789c30efef33ed01f3bcd8a33a24be87a679；runtime/freeze通过，176signed实际coverage全覆盖、最少1366samples，154manifest逐点映射无遗漏。manifest_actual_coverage保存，采到不等于学会。训练末图桌面RMUC训练曲线/full154_delay48_retry_20261102保存。当前12组source/candidate154x4+动态32按队列运行，不重复训练；review_progress.py只汇总完成的配对批次、全点失败项与振荡幅值，禁止推算未完成点。当前尚无全量行为/晋级结论。
+
+### 2026-11-02 full154大批静态配对齐全，真实收益与退化分列
+154点x4配对全部完成，源全4严格pass62→候选67；新增10/丢5。reverse5→6/9、straight26→23/46、lowturn0→1/11、midturn31→37/75、fastturn0→0/12、idle0。中转弯存活291→284/300，拒绝以净增掩盖生存退化；损失.275/.425/.475直行、1.25+1.4、1.5-1.8。static_domain_summary/oscillation_domain_review/next_repair_priorities保存，不晋升，动态32尚在队列运行。
+振荡逐点包括所有pass点：1.75四实例pitch振幅中位1.563→2.778°、vx .0299→.0651，说明全域增样/更敏感pitchrate惩罚不等于各点减振；1.7部分hip振幅下降也不抵消其它失败。1.25+1.4一例早终止，幸存幅值不冒充全回合稳定；.275主要speed3/4失败且小幅pitch约.083°，不能混成所有都是震荡。下一步必须分组保留收益并修具体损失，不重复完全相同full154配方；4rep静态仅筛查，最终行为/无延迟相对基线未证实。
+
+### 2026-11-02 大批退化归因到分布/共享更新，启动唯一优化器均衡对照
+full154实际观测重建coverage最少1366最多684094；物理命令update36独立核对131072样本169命令，1.5±1.4约19%、最少113，不把重建统计误称全部真命令计数。shared forward residual同时更新所有正向域，冻结旧主体不保证整体不退化；这些证据支持贡献失衡疑点，不证明唯一根因。低速损失为欠速、大转弯有生存损失，不能全归咎震荡或单一reward。
+新增默认关闭RMUC_COMMAND_BALANCE：用每步实际physical_commands给PPO advantage正权重，命令频数inverse-sqrt、原权重夹[.5,2]再归一mean1（最终权重比<=4），不重中心、不翻转符号、不改critic returns/reward。实际rollout离线权重.628–2.512、sign保持；目标1.5±1.4权重.628，1.25+1.4 1.124、1.5-1.8 1.265。3项测试通过equalcounts恒等、sign/mean/bounds、shape/nonfinite拒绝；拒绝capture-only/per-mini-batch-normalize不兼容路径。
+full154_balanced同源887779同seed/1024env48updates/全部176signed课程和物理DR，唯一增加上述优化权重。源paired154/动态复用同一原源hash与noise契约，不重复源仿真；6candidate组重验154x4+dynamic32/振荡，source仅只读链接不列scheduled runs。训练3600s、actual balance正/mean/ratio检查、freeze/coverage/nonfinite失败停，不自动晋升；目标恢复所有历史技能而非净增包装。原full154仍保留未晋升，完整动态即将结束。
+
+### 2026-11-02 balance存储集成错误修复
+首次full154_balanced在首update写storage.advantages时遇InferenceMode tensor原地写保护，未完成优化，原failure保留。改为torch.inference_mode内copy，新增真实inference-storage类型回归测试，4项通过。full154_balanced_retry独立目录相同源/全部课程/1024env48/reward/物理延迟重启；不绕过运行检查，不把首次失败称训练进度。actual command_balance比例与冻结/coverage继续审查。
+
+### 2026-11-02 用户新增随机命令泛化+老教师对照要求
+random_command_generalization建立3个heldout seed27131/2/3、20s policy-tick平滑vx/yaw随机序列，含网格间低速/中高速双向压弯、停车、直线后退；validate_sequence验证，序列hash/events保留。未把训练固定序列当泛化，也不把未掌握随机域算历史既有能力。历史joint-delay课程前教师461b87f7...9265f与当前源887779的SHA已实读；前者本身仍含历史时序，不能称绝对零delay。
+准备6组16rep命令（未启动GPU），先老/当前在同4–8ms条件比较robustness/retention，另老教师原契约参考须读回后单列，避免动力学变化冒充丢技能。候选训练完成再按SHA添加；必要物理配对不符即标未配对，不拿静态passed字段解释动态。验收同时看vx/yaw、超调/收敛、survival、pitch/腿角差频幅持续性，ramp内与hold分开；随机平滑不替代急停。当前训练不中断、不重复源固定网格。
+
+### 2026-11-02 随机泛化首seed实际启动，均衡批33更新运行正常
+full154_balanced_retry现场33/48、176coverage通过、freeze无违规，actual正权重均值1/比<=4正常，未有行为结果。random_command_generalization新增专用ramp事件分析，不能对每8ms变化套step gate；只报告完整首回合、ramp tracking与hold，hold不足1.5秒不作无周期结论。seed27131老461b87/当前887779同4–8ms当前契约16env20s对照已启动，每组600s，hash/动态标记/物理初态/噪声配对检查；老教师非zero-delay参考，尚无结果。两个剩余seed及候选待本批新checkpoint可验后接续，不重复固定源网格。
+
+### 2026-11-02 均衡154大批完成，随机泛化候选对照接续
+full154_balanced_retry48更新1496.05秒完成SHA80fa40e84cd09b49f2c17be56aa0082b65b90e4ea5f7b13bdb182929fa12525c；176覆盖通过、freeze无违规、实际权重最大比4，154候选网格评估已进行，不晋升。老教师seed27131当前4–8ms随机ramp前至14s16/16完整，16s段13/16、最终停车10/16；约1.981m/s/.60yaw阶段平均速度误差中位.945（ramp全段非稳态），不能称当前延迟基准合格。原合同历史能力仍单列，current source同seq运行中。
+已启动balanced_candidate_27131同契约16rep20s/600秒，仅checkpoint变化，源SHA/完整command保存；专用ramp分析避免小阶跃误判，待三方对拍物理初态+噪声契约后比较，不把幸存者平均掩盖倒地。当前不重复训练，不以优化器指标当行为成功。
+
+### 2026-11-02 均衡大批随机泛化未改善存活，禁止直接长训晋升
+seed27131三方完整：historical/current/balanced物理初态/质量惯量/material/独立noise逐项配对通过。后退减速16s段完成13/12/10(各16)，最终停车10/9/9。balanced部分vx误差下降（约1.98m/s混合ramp段MAE中位.945/.922/.833），yaw切换大误差仍在；只报幸存者均值不能当成功，完整轨迹含失败。seed27131_threeway_comparison.json保存，不宣称新策略泛化通过，剩余seed不在当前失败后盲目重复验证。
+均衡154网格目前完成64点，源全4通过23→候选18；partial_decision逐点wins/losses记录，剩余90点仍按已启动队列完成，不 extrapolate、不启动同配方续训。离线正权重/coverage/freeze通过没有保证真实行为提升，后续必须把随机减速/停车及大yaw切换列为独立修复约束，保留旧教师参考但不把旧教师当前delay失败当豁免。
+
+### 2026-11-02 随机命令交付与事件时钟复核
+三方seed27131 world command与actor vx输入完全一致、未clip yaw重建误差<=1.2e-7。policy trace episode_step是步后计数，actual command对应step-1；按offset-1计划/实录最大差<=6e-8，原同tick比较出现.0064m/s/.0128rad/s只是时间标记偏移，不是反号命令。专用analyze事件时钟修为(step-1)*dt；三份原分析另存before_clock_alignment，CPU重算三方报告，无GPU重复。完整回合13/12/10和最终10/9/9结论不变，大误差不能由8ms解释。
+均衡154网格128点配对时source59/candidate56，剩最后一批与动态仍运行；不提前外推、不晋升。当前证据继续不支持原配方长训，随机失败保留为后续约束。
+
+### 2026-11-03 均衡154全量结束，明确否决并定位重复旧域漂移
+full154_balanced_retry完整154x4与动态完成，源全rep过62→候选59、总存活601→593/616；新增5/丢8，promotion_review拒绝替换且不重复本配方。动态授权后退4/17/32/32，随机减速/停车生存未改善，单独-.25局部改善不能抵消退化。默认RMUC_COMMAND_BALANCE仍关闭，试验仅opt-in，不部署。
+shared_residual_drift_20261103对源已过的.2–.5直行稳态观测做三actor离线对照96组：两批都产生跨低速动作漂移，balanced主动槽0平均+.01694、hip槽1+.00777、左轮槽5-.00631（归一化action差，不直接推断净轮力矩或速度因果）；unbalanced亦同类漂移。支持共享残差跨域干扰疑点，反对继续只改采样权重，尚不能称根因全部确定。保存report与原checkpoint，不重复GPU评估、不启动无依据续训；后续需按已验证历史域隔离修复并用随机跨域检验，不能以输出一致代替轨迹保持。
+
+### 2026-11-03 停止退化大批续训，隔离保留已验证负向压弯收益
+全局shared更新两批均退化，balance方案不重复、默认关闭。检查未均衡9a553在vx1–1.5/yaw-.6至-1.4核心22个历史点无新增存活退化，包含多点恢复；主要低速直行/正向1.25+1.4/负向1.5-1.8损失在该域外。新增可选joint_turn_source_network+signed box gate，在原joint_delay_budget内混合参考head，旧checkpoint无字段走原路，不增权限。恢复器/optimizer选择gate同步，防后续选择模块时域外错误更新。
+negative_turn_retain候选98b6973fee5c7614092002894b26fcc28cd2c48ad54a155fbfb46e9011fa770d，以887779为基，负转参考head取9a553；core vx[1,1.5]/yaw[-1.4,-.6]，外fade[.9,1.6]/[-1.6,-.45]。源core外保留，后退旧head不采用9a553退化变动。8192CPU对照outside/core/reload误差0，19项reference/旧physics测试通过；初稿合成obs相关线未落core被断言拦截，补显式core样本后验证，不隐去未测试区域。
+不再耗GPU训练，直接eval-only同物理/DR4–8ms、obs/action0–8ms/tau0–5/age0–8，154x4全域+heldout27131随机16；先随机检验跨域、再全网格，每组600s，hash/initial/noise配对检查。promotion仍false，边界混合和随机跨域尚未证明，不能把离线输出相同宣称晋升，完整commands在eval目录。
+
+### 2026-11-03 negative-turn隔离候选随机对照完成，未新增存活损失但原缺口仍在
+98b697候选seed27131同物理初态/噪声配对通过；入修复域前2/4s段vx/yaw误差与887779源逐项一致。各段complete与源一致：直到14s16/16、16s减速12/16、18s停车9/16，未复现balanced减速10/16额外损失；不能称随机通过，仍需修原失败。部分误差微变不等同技能恢复，random_comparison保存。
+全域154网格继续PID865947验收，review_progress.py逐已完成批次列新增/损失、逐实例振荡，不推算未验点；未重复GPU训练、未晋升。优先保留负向压弯22点有效收益并保护域外，需全网格与随机后续seed验证，不以源同样失败豁免部署。
+
+### 2026-11-03 隔离收益全154验收闭环通过旧域保留，启动7点32回合确认
+negative_turn_retain98b697全154x4完成：源62→69全rep严格过线、新增7、丢失0，总存活601→601/616；新增1/-1.4、1/-1.2、1.05/-1.4、1.05/-.6、1.1/-.6、1.15/-.6、1.5/-.6。random各段存活与源相同，源原失败保留。gain_oscillation_review显示新增点pitch/腿角差有升有降，不把跟踪全过称无振荡。
+候选允许进入targeted confirmation，不立即部署/全局晋升：negative_turn_confirm32同契约7点各32rep，分4+3点，source/candidate四组，每组600s；源hash887779、candidate98b697，独立noise27021与物理初态配对检查。不是新训练，也不重跑154，首episode完整/跟踪/振荡仍按原严格规则，single-seed32不宣传multi-seed。成功后可作为主线局部推进依据，剩余全域/随机减速/停车/无延迟等价目标未完成。
+
+### 2026-11-03 7点32rep确认继续，完成后自动整理而非重启
+PID879794/879795现场确认仍在source_0执行，非停滞推断，无重复启动。新增review.py严格按完成的配对批次汇总，要求32rep、hash来源与物理初态/噪声一致；逐实例完整tracking和振荡保存，未完成点不计通过。batch_size_audit确认4x32=128与3x32=96，满足环境上限。finish_review只等待原status完成后CPU汇总，failure或超时保留证据、不自动重启/晋升。当前新局部候选69/154快筛与无丢失结论保持，32rep尚待完成。
+
+### 2026-11-03 7点32回合确认完成，98b697晋升训练接续基线（非部署）
+32rep同seed配对：1/-1.4源0→25，1/-1.2 1→25，1.05/-1.4 1→32，1.05/-.6 0→24，1.1/-.6 14→32，1.15/-.6 30→32，1.5/-.6 30→32。所有224回合存活且速度全部过，失败仅yaw，源已过实例无退化。decision_evidence含全部振幅，不能宣称零振荡或无延迟等价。
+结合154x4源62→69丢失0/存活601不变、heldout随机survival不差于源，明确晋升98b6973fee5c7614092002894b26fcc28cd2c48ad54a155fbfb46e9011fa770d为training_continuation_baseline_only。training_baseline_20261103/selected_checkpoint.json及confirm32/training_baseline_promotion.json保存源路径/SHA/证据与缺口。promoted=true仅此局部训练基线含义，deployment_approved=false、final_delay_adaptation_complete=false；不篡改早期报告的当时未晋升状态。
+剩3点yaw25/25/24仍保持.05gate，remaining_yaw_gaps记录幅度，未擅放宽；全域154多数尚待恢复、random减速停车、多seed、物理配对无额外delay、最终弹簧/部署未完成。下一训练从此已保留收益基线推进，不从退化大批续训或重复旧源学习。
+
+### 2026-11-03 已晋升基线剩余3点误差分解：稳定偏差且修复方向相反
+yaw_error_decomposition.py复用7x32真实first episode10–12s：1/-1.4失败7例signed平均+.05662/标准差中位.00761；1/-1.2失败7例+.05390/std.00643，均欠转。1.05/-.6失败8例signed-.05128/std.00787，属过转。不是统一方向失配，也不是这三点主要由大幅yaw周期震荡造成；不能据此排除其它速度域或实机震荡。四个32/32点继续保护，strict.05不放宽。next_repair_contract保存state-conditioned双向修复要求，禁止统一负yaw偏置、盲增抗振罚项或把所有gap归此；本轮只CPU归因，未重复训练/评估。后续从98b697基线接续而非退化80fa或9a553整体。
+
+### 2026-11-03 signed negative precision接续，复用源验收避免重复仿真
+从训练晋升基线98b697接续，512env24更新/1800秒，只训练joint_delay_reference_network；core外旧输出冻结，完整154镜像176命令65%rehearsal，20%七点negative sequence，15%1/-1.2固定及镜像冻结。现有pseudo-Huber yaw精细奖励max从.4501扩1.4001，权重.5不变，使三处相反方向静偏都有有效梯度；不添加统一yaw偏置，不改gate/物理/延迟。6项reference隔离测试通过，七目标负侧gate1正侧0，coverage grace3和7组stage224一致。CPU准备时stage元数据含env.前缀导致StopIteration，启动前修正，无训练消耗。
+命令及预算位于artifacts/negative_turn_precision_20261103/train；先7x32同seed确认，对比既有98b697源记录。无净增或4个已全过点退化则停止后续全网格，不自动晋升；改善才运行154x4与heldout27131随机，保留频幅持续性。peak4.89/scale5.5/continuous3、spring4.31阶段、joint4–8ms及其他现行DR不变。当前为启动阶段，不记新通过点。
+
+### 2026-11-03 precision完成且晋升，递进修复1.5/-1.4
+negative_turn_precision24更新895.21秒完成，SHA4e5587e36c6e8cbbf488917151329340c22da37bb7b3ebd59366dac61856f23b，runtime/freeze通过。七点32rep全部224/224 strict通过，原3卡线点25/25/24均升32。154x4全过69→70，新增1/-.8，丢点0，存活601/616不变。随机27131减速12→13/16，最后停车9→10/16，未全面通过；确认点pitch振幅中位.28381→.28586和.26395→.26289deg，未把微小涨落说成零震荡。promotion_review完成，selected_checkpoint更新为训练接续基线，原选择另存before_precision；不作部署/多seed/最终DR认证。
+剩84点尚未全rep过线。下一批negative_turn15_repair只改重点课程至1.5/-1.4，实际4rep存活速度过但yaw误差.243–.259；不改reward/物理/延迟/head域。512env24更新1800秒，保留七点与154rehearsal，目标source/candidate32→七点32→154x4→heldout随机；目标无净增或保护点退化停止后续评估。完整命令与CPU gate/grace3检查保存，进程现场无旧训练后启动。桌面precision实际训练尾图已保存，不等同验收图。
+
+### 2026-11-03 1.5/-1.4原奖励接续失败，限幅假设纠正并改为单变量奖励试验
+negative_turn15_repair24更新905秒完成ec9a7a1369f8b65f7046b387557a875a2a1a694bdc1e226faed2c23ca48601c0。source/candidate目标32均存活但0/32严格通过；速度MAE均值.09437→.07549，yaw .253006→.252967基本没变。按事先规则停止后续全域，没有晋升，保留4e5587基线。
+CPU head_audit实际gate恒1、Tanh各槽无饱和，同输入动作变化约.002–.007。初看active3>1误判执行限幅，随后立即核对execute_authority_action与checkpoint plateau1.5，真实限额1.6818、实际执行约1.07；6942目标采样六槽clip率全0，明确否决该限幅根因，不改限额/不增加惩罚。exploration_audit中5772过转样本、near460，仅相关样本不是因果证据。
+reward代码vx1.5无vx(.8,1.2)专有绝对yaw超额项，但已启用dense pseudoHuber。新negative_turn15_dense2从已晋升4e5587接续，同课程唯一修改dense yaw weight .5→2；误差.253时该罚项约.86→3.44，不改物理/gate/budget，未宣称必收敛。512env24更新/1800s，目标source32复用，候选32无净增或七保护点掉点则停，改善后154x4+random。pipeline/命令/契约保存，失败证据保留，非原样续训。
+
+### 2026-11-03 dense2目标未通过，记录梯度冲突并做采样单变量
+negative_turn15_dense2完成24更新910秒，SHA4852b7e8961fb0e45548ca9d6218bd22efe37bef4de561d960bf7a2855ed576b。目标32全存活，仍0/32通过，yaw MAE.24355，相比原.253仅小幅改善；自动停止后续全域，未晋升、不从失败candidate续训。
+gradient_conflict.py复用update18真实65536样本及当时actor：目标6942样本gradient norm.62164，其他有效门控17459样本norm.30580，余弦-.44923。为旧policy点一阶Gaussian surrogate、未含PPO clip/momentum，不能当因果证书或全部根因；但支持采样冲突试验，反对无依据继续增大yaw权重。
+negative_turn15_sampling从4e5587训练晋升基线，唯一相对dense2变化rehearsal65→55%，fixed15→25%；512env24更新1800秒、reward2和所有物理延迟不变。282rehearsal约141/sign容纳116stage；实际随机sign分配依赖runtime176coverage，actor前必须通过，不能用期望数替代实读。继续source target32复用→candidate32→protected7x32→154x4/random，无增益或保护退化则停止后续。命令/契约/审计存档。
+
+### 2026-11-03 reward/critic实码审计与受控差分诊断
+turn_reward_review_20261103执行当前_get_rewards AST与dense2实际配置：固定水平姿态/effort/history，vx1.405时yaw-1.65→-1.4奖励-1.388→4.942（weight2）；单独vx1.405→1.425仍过转仅-1.388→-.240。正确yaw方向奖励明确，不能称反号reward；合成状态并非物理可达轨迹，不据此排除训练目标问题。测试夹具初版单条sequence被校验拒绝，改两条合法后CPU运行，不消耗GPU。
+三个真实update18目标非terminal奖励clip率0。critic near-yaw分组value-GAE平均+182/+300/+303，组内explained variance负；含过渡状态、GAE同critic自举，不以此实锤critic单因。继承head门控/权限已核对，不能把active>1误当限幅。采样55%批已24更新990秒，SHA7f187f84b75057e2c39a6ca2ba778fe2dcd4d7e4efc32cd2abddf3dd2cc9fac8，目标32评估中、未晋升。
+为区分有效控制通道与优化问题，wheel_probe从4e5587只对joint_delay_reference_network末bias轮槽2/5施加相反±.3，原tanh/.1残差限额不变。正负两组32同物理/初态/噪声配对、每组600秒，仅诊断，不部署不晋升。runner初稿语法括号错误在启动解释时失败、未开GPU；修正并compile后重启，原runner.log保留。等待实测因果响应，不开启第四批盲训。
+
+### 2026-11-03 sampling目标验收否决，轮差分第一组证明通道有作用
+采样55%候选7f187完成目标32，全部存活但0通过，rejection_review保存真实speed/yaw均值，停止后续全域、不晋升。diff_plus受控32全部存活，yaw MAE .253→.37137，speed MAE .08959，物理/噪声配对通过；残差轮通道可以显著改变yaw，并非无执行权限。反向diff_minus仍在运行，未有结论，不把单向变差推断反向必成功。保留4e5587基线，不开下一批未经论证的训练。
+
+### 2026-11-03 双向轮差分确认有效方向，CPU局部初始化接闭环审查
+wheel_probe配对完成：diff_plus32存活0通过/yaw MAE.37137；diff_minus32存活14通过/yaw MAE.08449、speed MAE.08845，源0/32/yaw.253。说明当前有有效纠偏权限，非通道失效；探针是人工干预诊断不晋升。
+turn_local_bootstrap仅用已有154实录及diff_minus轨迹采样观测，对现有reference head做CPU局部监督初始化：target1.5/-1.4采用probe目标，其它观测保持已晋升source输出；其它参数冻结，未添加外环/动作预算/网络层。env mod4留出，target actionRMSE.001865，retain P95.00542、max.03211；明确仍可能丢技能，不把离线MSE当验收。候选ed255738964feec392edb9a65cad17122688888da5ff01a479bf4bb947dc8b83。
+启动target32→protected7x32配对闭环，每组600秒，target无改善提前停，源历史同contract结果复用。无自动晋升，未启动新PPO；先确认bootstrap能保留旧域再决定critic/PPO接续。fit.py/fit_report/evaluation_command与hash证据保存，当前teacher基线仍4e5587。
+
+### 2026-11-03 局部bootstrap目标已有改善，七点保护核验继续
+turn_local_bootstrap候选ed255目标1.5/-1.4完成32：存活32、严格11，yaw MAE.10022、speed MAE.09028，比基线0/32/.253改善，但略差人工diff_minus14/32/.08449。不能称学会或晋升；七点32保护继续原PID1080070，不重复评估。CPU相同source稳态输入对照protected最大action变化.0021–.00968，闭环退化风险仍需实验。增加bounded CPU review等待现有结果，七点任一点失去32全过即拒绝bootstrap；全保留才具备后续训练试验资格，仍需154/random后才能晋升。基线4e5587未改，未启动新训练。
+
+### 2026-11-03 bootstrap七点全保留，开始有收益初始化的PPO接续
+turn_local_bootstrap闭环全部完成：target1.5/-1.4为11/32、32存活；七保护点224/224严格通过，closed_loop_review eligible_for_training_experiment=true但promoted=false。基线仍4e5587，不能把保护7点等同154域retention。
+turn_bootstrap_ppo从ed255738964feec392edb9a65cad17122688888da5ff01a479bf4bb947dc8b83接续，critic warmup3→8、总32更新（actor更新余下24）、512env/2100秒、原reference head、dense2/rehearsal55%保持。为适应局部新轨迹的价值估计，不重复失败源原样训练；新source全部sequence gate CPU重新通过。物理/DR/延迟保持既有contract。
+目标32比较bootstrap11，七保护32比较bootstrap224全过；full154和random比较已晋升4e5587，各baseline_sha256显式绑定、防误配。目标无净增/保护掉点则停止大验收，不自动晋升；runtime/coverage/freeze检查失败即停。完整命令、contract、postplot保留，无其它训练进程后启动GPU0。
+
+### 2026-11-03 bootstrap PPO持续运行，预热后更新方向实读
+现场PID1087953在运行，已15/32更新，176命令actual coverage通过，freeze违规0，不重复启动。CPU update_direction复用bootstrap目标稳态实录输入：预热checkpoint12000 actor输出完全相同；12005轮差分变动约+0.000034，12010约-.000819，全部动作最大变动.00378。后者方向与受控探针改善方向一致但幅度小，不能据此当行为通过或提前晋升；等待原pipeline目标32与七保护点32结果，候选未替换baseline。审计存artifacts/turn_bootstrap_ppo_20261103/audit。
+
+### 2026-11-03 bootstrap PPO退化否决，启动轮/腿通道互补消融
+turn_bootstrap_ppo32更新1340秒完成fcae6153d9e3a76ebddd7aa95c0871121688dc9508bd9fbc40ec7b546e3892d8，target32全存活但11→0通过，yaw MAE.10022→.14102，speed.09028→.07224。自动拒绝，不做全域、不晋升；critic预热8未解决更新退化，不能继续原样长训。
+同bootstrap目标观测下最终head更新使轮差分平均-.00237（原探针有效方向），但legs也改变最高约.012；不能仅由轮差分符号预测闭环。turn_channel_ablation构造纯诊断wrapper，new wheels+old legs和new legs+old wheels分别按25D同输入替换reference head logits，不改变其它网络、tanh/budget/contract。源fcae、参考ed255双SHA绑定；两个32各600秒，实际physical/noise pairing要求通过，evaluation显式标diagnostic hybrid防把普通checkpoint冒称混合策略。仅诊断不可导出/晋升。基线仍4e5587。
+
+### 2026-11-03 轮/腿消融完成：主要退化来自轮更新，非腿抵消
+turn_channel_ablation同seed配对：new_wheels_old_legs32存活2通过/yaw MAE.13168；new_legs_old_wheels32存活10通过/.10667；bootstrap11/.10022、完整PPO0/.14102。证据否定主要腿更新抵消假设，主要损失与轮输出更新相关，但不称所有根因已定。basin.py首episode10–12s逐env：bootstrap部分约-1.37通过、其余约-1.53稳定过转；PPO几乎全部-1.54，std很小。分布双峰描述不等于严格动力学吸引子证明。
+停止重复PPO，做一次已知有效轮方向幅度.3→.45的32rep因果对照，源仍4e5587，probe99c00f18fddc26a3ca93a919ea8e31215acb1782b433b7b4416a06fdc2a2c2f1；原tanh与budget/.1 wheel保持、不加外环/权限/模型。600s、相同DR/延迟和初态噪声配对，诊断不能晋升；有效后仍须局部初始化+全域retention。脚本及命令存turn_wheel_direction045_20261103。
+
+### 2026-11-03 轮方向幅度.45变为全体欠转，保留区间证据
+turn_wheel_direction04532/32存活但0通过，yaw MAE.09249、speed MAE.08186；signed_error_review显示全部signed error+.08148..+.10439，即实际yaw约-1.30，不能按平均误差下降宣传成功。先前.3为14/32通过，其余大多约-1.53过转。支持非线性状态/幅度敏感，不证明某个固定补偿可部署。
+只补一个有界区间内.34 diagnostic32rep（600s），源4e5587、probe c3ced3ea2ccb4a9e510482066023c15bbd922edbe8037cdfbde49705c1c38ca3；完整物理/DR/延迟不变，paired初态噪声。没有重复PPO、没有修改权限，未晋升任何probe；若方向初始化有效仍需局部化与七点/154/random retention。baseline仍4e5587。
+
+### 2026-11-03 .34诊断完成但仍不足，局部bootstrap进入全域保留核验
+turn_wheel_direction03432全存活、15/32严格通过，yaw MAE.06677、speed.08439；不晋升，停止继续逐个常数试探，不能将全局固定差分当部署修复。
+已通过七点224/224的ed255局部bootstrap尚缺154/random检查，现补full_retention：154x4五批+heldout27131随机16，源对照4e5587现有同contract证据复用，各组600s，physical/noise pairing强校验、频幅持续性、wins/losses独立报告。目标11/32仅局部收益，不称已解决；本次为完整恢复域净收益核验，不重做七点、不开新PPO。全部物理/DR/延迟不变，基线4e5587不覆盖，无自动晋升。命令和review位于turn_local_bootstrap_20261103/full_retention。
+
+### 2026-11-03 bootstrap全域验收发现遗漏退化，拒绝晋升并强化保留拟合
+ed255 full_retention154x4完成：70→69全过，丢1/-.8、无新增全过，存活601不变；random16s减速13→12，最终停车10→10。七点224全过不能替代全域保护，明确不晋升、基线4e5587保持。
+turn_local_retainfit复用同数据/target标签，CPU监督retain权重1→8、4000步；hold retain actionP95.00542→.00201/max.02706，targetRMSE.00449（有所增加）。1/-.8同源稳态输入轮差分漂移减小，max action差.00281→.00184，不能直接证明gate恢复。候选baa7026c3936934dc70e0d27eab8eec1977aa8191dca13cf1da3ac3b7f82d118，只有原参考head改变。
+先target32，再包含lost point的原grid1 32x4，物理/DR/噪声配对，复用源证据，各600s；target0通过提前停，不立即重做全154，不启动PPO。新的完整命令存turn_local_retainfit_20261103/eval。对全域retention漏点吸取教训，不能只按七点保护晋升。
+
+### 2026-11-03 retainfit原验收继续，增加自动旧域回退判决
+现场PID1143694存活，target32进行中；未重复启动。候选baa702 SHA再次校验，target比较ed255原11/32，grid1比较4e5587原同4rep，源引用不混淆。新增review_when_done只等待既有两批：target无收益或grid1任一源全过点丢失即标reject；全部保留仅eligible_for_remaining_retention_only，不能自动训练/晋升。其余122点、七点32、random和振荡比较仍是缺项，未凭部分测试宣称成功。
+
+### 2026-11-03 retainfit完成并拒绝，修复None尾段汇总错误
+目标32全存活但2通过（原bootstrap11），yaw MAE.15653；grid1完成128env，丢失点1/-.8恢复4/4，同基线该网格无新增passed点损失或survival损失。不是仿真没完成：run.py汇总3个不完整episode的None tail时TypeError，导致result只留target。recover_review.py复用evaluation/strict_screen/periodic/配对证据CPU重建，原result与failure保留，无GPU重跑；run.py新增missing_tail_count与available-tail口径，缺失回合仍计失败，不把幸存者均值当全部通过。
+决策reject_as_next_training_source：加权保留恢复旧点但目标11→2，不继续堆retain权重/PPO轮数。consolidated_decision记录已证实/未证实归因和拒绝重复路径。当前需要精确保留域外输出、域内state-dependent有限神经纠正，不能依赖稀疏样本拟合保留或部署固定差分；尚未实现/验证下一结构，不假称训练推进。基线4e5587与70/154快筛不变，全部最终技能/DR仍未完成。
+
+### 2026-11-03 精确域外保留代替近似retain正则，开始闭环核验
+新增可选joint_turn_update_anchor/domain：原reference冻结为anchor，仅指定vx/yaw box内混合新reference，仍共享原joint_delay_budget，非外环无额外权限。source未有字段保持原路径；restore与physics selection gate同步。修改scripts/rsl_rl/rmuc_physics_adaptation.py、rmuc_command_adapter.py、rmuc_physics_selection.py；新增test_rmuc_joint_turn_update_scope.py，相关7测试通过（域外零梯度/精确端点/预算/gate恢复）。
+turn_exact_scope从4e5587、局部head来自ed255：vx fade[1.3,1.45]/[1.5,1.6]，yaw fade[-1.6,-1.45]/[-1.35,-1.2]。8192CPU样本域外7787/核心405逐位一致，restore误差0；不能以此当闭环retention。candidate ac62b045dc487fbb12f2675d3b03a4e2dc329d623891743f7569b4329041fdff。target32+154x4+heldout随机16（每组600s）接续，物理/DR/延迟同契约，不自动晋升。仍保留4e5587基线；目标本身未全过、边界动态/完整行为有待验证。
+
+### 2026-11-03 exact-scope原验收持续，目标收益保留及首批无丢点
+现场PID1158843与其eval child1162959存活，target32严格11/32且32存活，与bootstrap一致；首grid0共32点source/candidate全过11/11、存活122/122、无新增损失。其余122点与random仍运行，不提前外推全域保留/晋升，不重启GPU。新增review_progress按完成批次配对、finish_review等待原status完成后自动汇总154和random survival，任何丢点/存活退化明确reject；全保留也仅等待振荡审查，不自动新训练/晋升。基线4e5587未动。
+
+### 2026-11-03 停止单点偏置搜索，按用户要求转高速直行成组适应
+不再追加1.5/-1.4偏置诊断/相同PPO；exact_scope既有154验收继续，不重启。当前4e5587高速1.7/1.725/1.75/1.8/1.85/1.9/2.0全4存活、speed均值过线，主要yaw和alignment失败，不能继续主要奖励速度。highstraight_batch从4e5587，仅训练已有high_straight_network（1.7–1.9gate1，2.0gate.5，其他turn/中低速关闭），zero-yaw stabilization权重1→4，alignment14保留，物理/DR/延迟不变。
+512env24updates1800s，65%154rehearsal/20%七点sequence/15%1.8固定；176命令coverage要求不变。七点8rep配对筛查，无净增或已过点丢失停止后续；有收益全154x4/random，然后仍需正式32rep。command/experiment_contract/prelaunch gate和runtime审计/pipeline保存，预算明确，不以训练完成当适应完成。高速角差严格2与授权工程3deg均保留，当前代码pipeline以strict筛查。启动GPU0，原baseline未动。
+
+### 2026-11-03 高速成组训练完成进入配对验收，单点分支收尾
+highstraight_batch24更新1185秒完成，SHA6ed1daa0af4e08f924273db3da695bb9c1fc770ed29bf1d5df89b0c15bb89602；176coverage通过/freeze违规0。现场pipeline1166892及eval child1178012存活，7x8 source/candidate配对中，无新行为结论，不重复训练。新增batch_progress逐完成点配对汇总；授权高速3deg工程与2deg严格报告分开。
+exact_scope154完整：70→70、无丢点、random survival无退化；target仍11/32。oscillation_comparison实际首episode幅度：全域中位delta0，局部最大速度幅增.00832m/s、pitch增.15072deg、active差增.24115deg、hip差增.36672deg。不能称无振荡等价，保留research candidate、不替换4e5587主基线、不再追加单点偏置实验。当前主推进高速1.7–2.0成组收益，剩余域仍须逐批真实验收。
+
+### 2026-11-03 高速成组候选不能按总pass增加放行，停止剩余验收并修筛选
+highstraight target7x8：source strict4→candidate6，均56存活；但七速度yaw MAE全部变差，1.85 active/hip P95均值4.52/3.36→6.33/4.28deg。target_failure_decomposition保存，source工程3deg报告补算（仅CPU）。总pass净增不代表有用训练，明确否决6ed1候选。经/proc核实PGID1166892只属本pipeline/eval，SIGTERM停止该组剩余大验收，未动其它workspace/GPU任务；完成/未完成证据保留，未晋升。
+新增scripts/rmuc_world_model/audit_batch_progress.py：逐点存活/已过点损失/净pass/全部点tracking恶化联检，None尾段只作available mean并保留失败。当前候选因所有点yaw恶化被拒；2项测试通过。pipeline接入此triage，阻止以后相同错误放行。仍须独立振荡和工程角差审查，不把新triage当最终gate。用户要加速而非换无效试验，本批不续训、不重复评估，主基线4e5587保持。
+
+### 2026-11-03 找到高速直行对齐奖励的actual-yaw减免漏洞，单变量修复
+straight_alignment.py实际yaw在.05–.2逐渐关闭直行angle penalty，floor0使yaw>=.2完全免罚。highstraight_reward_gate/report复算source/candidate真实10–12s尾段：1.85摆角变差但实际alignment罚2.231→2.134，未减免罚3.235→4.073，candidate19.4%样本gate0。固定5/3deg角差下罚7.715在yaw.2降0，而新增yaw stabilization4*y²仅.16；仅组件证据，不宣称全部reward或动力学因果已定。
+采用现有配置floor1，只对command_yaw=0持续惩罚，非零转弯仍免罚，保留用户“只直行待机对齐”语义。highstraight_alignment_gate从4e5587，唯一相对失败batch变量floor0→1；512env24updates1800秒，高速head隔离、其它奖励/物理/DR/延迟不变。9项alignment/batchtriage测试通过。source7x8证据复用且不在scheduled runs，候选先triage后全154/random。所有点tracking恶化或无净增即停，不再用总pass微增蒙混。GPU0启动，基线未替换。
+
+启动补记：原template未显式列floor，替换式配置编辑未生效，runtime实读0被guard拦截并停止；未放宽guard。retry新目录显式append env.command_straight_alignment_yaw_gate_floor=1.0，其余源SHA/物理DR/预算不变，原failure保留。
+
+### 2026-11-03 对齐gate修复批24更新完成，新增防复发测试
+highstraight_alignment_gate_retry24更新980秒完成，SHA d0bd413bc3c69d526fe70949b6cd0d3521d18bfb04eb6524415c9aa36f4132d7，actual env.yaml floor1/176命令coverage/freeze通过，completion_integrity保存；target7x8原eval进行中，未有行为结论，不重复GPU。桌面实际训练尾图已生成。
+补test_full_yaw_floor_has_no_drift_escape_and_turns_remain_exempt：固定角差、actual yaw0到±.4时floor1罚不变且对yaw梯度零，非零command yaw仍免罚。alignment8tests通过，保留legacyfloor0兼容测试；此测试锁住奖励漏洞修复，不代表策略已学会。主基线4e5587不动，等待原pipeline配对验收/triage。
+
+### 2026-11-03 对齐gate修复不足以解决高速训练，记录实际优化冲突
+highstraight_alignment_gate_retry target7x8全56存活，strict4→5但所有点yaw均值变差，triage自动拒绝且未运行剩余大验收；不晋升d0bd候选，不声称奖励减免是唯一根因。
+CPU高head实读：1.7–1.9gate1、2.0gate.5，所有槽Tanh饱和率0。update18样本1.8为12206、2.0为673（18.14倍）；gradient_by_speed.py复用当时actor/advantages计算一阶surrogate，1.7与混合gradient cos-.233，1.75/1.8约-.03，1.9约+.829。单rollout相关样本不能定为独因，证明需关注跨速度优化冲突/实际曝光，反对继续盲增reward/轮数。所有诊断保存在highstraight_learning_audit_20261103，当前不启动重复配方。后续应先均衡高速实际曝光而非再次全154优势加权（历史失败），保留正确floor1和原baseline，仍需行为证据。
+
+### 2026-11-03 按用户加速要求修正固定目标曝光偏置，启动成组采样对照
+原固定active15%始终1.8，使七点虽coverage通过但实际曝光1.8/2.0相差18倍；不再仅检查“存在”。新增可选command_active_straight_speeds：fixed-active按永久env_id modulo7分配速度，rehearsal/dynamic保持，episode内不会因别env reset换速；stage tensor到command/leg-scale同源，禁reset辅助/ramp/play混用，默认空不改历史行为。required_training_commands显式加入配置点。测试验证域外不改/稳定分配/完整均匀全集/无效配置，相关12tests通过。
+highstraight_cohort仅改变固定active分组，原reward floor1/zero-yaw4/angle14、source4e5587、high_straight_head、512env24/1800s和DR合同保持。实际cohort在env.yaml/readback强校验，176coverage仍须通过，最终真实曝光再核验，不宣称随机子集绝对均匀。源7x8复用，candidate逐点triage后154/random；退化不晋升、不重复失败源训练。改动active_speed_cohort.py、env.py、env_cfg.py、rmuc_training_contract.py、新test_rmuc_active_speed_cohort.py及试验文件。
+
+### 2026-11-03 高速分组实际曝光改善已证实，行为验收继续
+highstraight_cohort24更新1005秒完成，SHA9c523686ab6b12d82f09cdb61c2c462ef4e178286365c98271bba176c213516e；176coverage通过/freeze违规0，现场eval child1215335运行。audit/exposure.py以相同24更新实录比较：七点累计max/min14.3415→2.6221，update18快照18.1367→1.9200；2.0累计19842→61835，1.8从284564→81455。明确不是“采样配置看着均匀”，而是actor实际obs曝光；仍有序列时序残差、不宣称完全均匀或行为过线。
+目前不再改reward/增加新实验，等待既有目标7x8配对和逐点triage；未晋升、主baseline4e5587保持。采样审计写入train/sampling_readback.json，工程三文档同步。
+
+### 2026-11-04 cohort目标结果有局部收益但工程门槛退化，继续原retention而不晋升
+七点8rep共56/56存活，strict4→8（1.75:0→3，1.8:0→2，1.725:2→1）；所有速度MAE均值下降，但工程角差3deg授权gate15→13，yaw多数仍增。target_metric_comparison/target_review保存两套结果，不能只挑strict增益宣传成功。原pipeline已进入154 retention且现场进程存活，不重启/不开新PPO。
+复用periodic报告逐点汇总：1.7/1.725 pitch与active差振幅中位下降，但1.8/2.0有增幅，hip多点无改善；target_oscillation保存频幅/持续性原指标。脚本初版summary命令vx键与速度metric同名覆盖，在使用前改command_vx并CPU重算；未影响原验收。完整retention后仍须按真实工程门槛和振荡做决策，不自动晋升。baseline4e5587未动。
+
+### 2026-11-04 停止只看均值，启用匹配跟踪误差波动奖励的成组对照
+cohort全154完成70→70无丢点、存活601→601；target strict4→8但工程15→13，不能晋升。highstraight_variation/deadband_audit复用七点完整首回合6–12s按原tau重建filter：旧.08m/s震荡deadband不触发比例92.7–100%，新variation原weight0。此为离线近似重建，非runtime逐项reward回放，不称唯一根因。
+新批从4e5587、同七点staticcohort/动态/rehearsal/highhead/物理DR，唯一variation weight0→2，tol.005/scale.05。命令和测量相同reward滤波、perfect step/ramp无罚，不改obs/gx/执行反馈。14项相关tests通过。512env24updates1800秒，runtime显式检查weight2+matchedfilter，先七点配对再retention，频幅/严格与工程门槛并列审查，不把速度平均改善当克服震荡。完整证据在highstraight_variation_20261104，主基线保持。
+
+### 2026-11-04 variation三方对照否决：未实现抗震荡，及时停止剩余验收
+24更新855秒完成9326候选，覆盖/freeze合格。review_target配对baseline/cohort_control/variation实际初态质量惯量material/noise全部一致；目标strict baseline4/control8/variation9，工程baseline15/control13/variation14，均56存活。但是variation七个速度的vx幅度中位均高于同采样control，1.8hip幅2.599baseline/3.103control/3.758variation。不能把多1回合通过当克服震荡。
+核实PID1486632及process group只属当前pipeline后停止剩余大验收，原完成证据保留，明确rejected_anti_oscillation_objective，不晋升、不续训该权重配方。采样修复本身曝光改善成立，但波动奖励“代码正确/死区覆盖”不等于优化行为成功。下一实现须验证实际PPO对震荡回合的信用分配与输出更新，不继续无依据叠加惩罚。主基线4e5587仍保持。
+
+### 2026-11-04 实录信用分配核验：新奖励确实生效，不支持泛化的“奖励鼓励震荡”解释
+highstraight_credit/audit.py复用cohort和variation update18轨迹：obs/physical command/episode age完全对齐，r[t]/adv[t]对齐下一pre-action state，排除reset和末帧，static episode>=6s。tensorboard penalty_tracking_error_variation旧0、新末期约.138–.151，实际惩罚非未启用。14组同速度比较，高speed-change四分位reward均低于低组、adv均值也均更低；不能声称普遍奖励高波动。1.85高变化组仍可正adv但同时速度误差更大，未控制姿态/历史，不能据此判critic唯一根因。
+这些是相关样本、非频谱震荡标签，GAE仍同critic自举；未宣称延迟信用正确。保存audit.json/conclusion.json，排除未启用/简单索引错位/全局奖励反向三项解释；不再仅据这些猜测启动同类reward长训，baseline4e5587保持。策略全域抗延迟仍未达标，不能把排错当技能产出。
+
+### 2026-11-04 加速复用已有checkpoint，排除只选末轮造成的收益损失
+按用户今日全域推进要求，不再叠加失败reward配方。CPU highstraight_update_audit确认head中间Tanh无>.99饱和；同目标观测累计source KL随12000/5/10/15/19为.00189/.01649/.03304/.04940/.08036，动作最大差增至.01257。不是PPO单步KL或失稳证明，不能断言训练过头。
+仅选择事先指定12005/12010两已有checkpoint并行GPU0七点8rep，复用源匹配证据，各600s不训练；SHA56268babf8afcd20d521e68bda689cf1d1f3581ec4d00d38717658c94e8c0290与9591b1fc12ea792825a3b1e33b853b154ac32a928cbdeecc273bf312a1b605c2。物理DR全部不变，输出严格/工程/存活/periodic，不能只挑末checkpoint或只挑pass增长。筛选成功仍需fullretention，不承诺今日必全部收敛，不下调gate。工程主baseline4e5587保持，最终目标所有未完域不取消。
+
+### 2026-11-04 中间checkpoint无完整收益，转实际失败延迟段覆盖
+checkpoint_select12005/12010均56存活，strict6/10、engineering14/14仍低于source15，不晋升，不把中期峰值当全域恢复。highstraight_delay_failure复核所有5actor第一回合joint_delay trace逐tick完全一致；source action6/8ms为0/23工程过，0/2为13/29。速度/其他随机量混杂，此为描述性训练优先线索，不能称队列延迟单一原因；没有轮反馈年龄trace不推断左右age因果。
+新增可选SampledDelay正权重采样，默认None保持旧randint RNG路径，所有tick权重>0不删范围。training-only cfg joint_delay_action_sampling_weights在reset应用，readback明确probabilities，eval默认空仍均匀。9项queue/feedback/weighted tests通过。highstraight_action_tail从4e5587，唯一相对cohort变量action0/2/4/6/8ms采样.1/.1/.1/.35/.35；512env24/1800s，其它reward（variation0）、物理/延迟/七点cohort/rehearsal不变。运行概率与实际60–80%tail强检查；target验收均匀旧profile，不换gate/分布求过线。GPU0启动，baseline未替换，工程记录同步。
+
+### 2026-11-04 高延迟加权收益不抵消低段丢失，停止大验收并修复分组筛选
+现场确认pipeline1510262仍在剩余grid验收，核实cmdline/PGID后只终止本组，不动其它workspace。正式拒绝6eee候选：high6–8ms工程0/23→1/23、速度振幅中位.09987→.06173、yawMAE.12482→.10915；low0–2ms工程13/29→8/29，全56工程15→11。用户认可高段适当多采样，不等于允许牺牲低段，基线4e5587不改。
+修改scripts/rmuc_world_model/audit_batch_progress.py加入已授权工程3deg和初态action tick低/中/高分组自动检查，原严格gate不变。初态延迟配对不符直接报错，缺失尾段失败，不能用总strict4→5掩盖low损失。新增两项有意义回归测试，合计4tests通过；实际group_aware_triage拒绝all和low两项，记录lost6/gained2。原report/失败/命令全部保留，不重跑GPU，后续禁止同配方自动续训，不能把sim privileged delay作为部署actor输入。
+
+### 2026-11-04 高段70%保留，增加真实低延迟成功轨迹的输出信任域
+复用source已过low action0/2ms13案例，取2–12s共1027obs，不加privileged delay到actor。CPU anchor_audit证明退化6eee在这些obs最大动作差.00878，小于旧默认.01，旧guard会误放；.002约束下当前方向.125可接受，未预先锁死全部更新。不是行为保留证明。
+rmuc_position_authority_training新增可选RMUC_STARTUP_ANCHOR_LIMIT默认仍.01；本批用.002及已有StartupAnchor回溯/optimizer-state恢复机制。tightguard测试验证.008更新缩至.25且误差<=.002，含batchtriage共5tests通过。highstraight_lowdelay_anchor从4e5587，与上批唯一差别输出信任域，高action70%和其它cohort/reward/DR合同保持。512env24/1800s，预热后3连续完全拒绝actor更新即停，避免历史anchor无限空转。
+完整命令/contract/anchor哈希源证据保存，原均匀eval分布不变，group-aware工程门槛防低段丢失；仍需全域retention，不声称约束必收敛。启动GPU0，主baseline保持4e5587。
+
+### 2026-11-04 lowdelay anchor按计划止损，CPU筛除低收益续训路线
+lowdelay_anchor实际11更新、freeze0，accepted1六次/.25/.0625/0/0/0，误差停在.001986接近.002边界；预定3次拒绝止损触发，非意外崩溃，不重启。stagnation_review含proposal误差与accepted，scalar回溯卡边界不证明不存在可行方向，亦不自动放宽限额。
+delay_state_overlap使用同速度实录25D低段成功观测和高段观测NN距离，不能证明单帧必然alias或需要改接口。随后CPU固定标签拟合600步约20秒（只现有highhead）以whole-env留出检查：低段hold最大差.000307，但高段拟合RMSE仍约.00467、与source到candidate .00533同量级，没有明显获得候选映射。标签来自未晋升candidate本身不保证正确；未保存部署checkpoint、未消耗GPU rollout，明确拒绝继续该监督/硬回溯配方。保持25D、baseline4e5587，不把sim真实delay加actor。三个工程记录同步，未宣称新增技能。
+
+### 2026-11-04 纠正离线可行性比较偏差，拒绝无约束候选GPU验收
+复查前600step CPU fit：low归一化.002、high.01再乘low4，实际low平方误差权重是high100倍，且global baseline RMSE与holdout混比。因此不能据此推断head无法同时拟合。fit_tradeoff改同动作单位、同whole-env留出，retention权重.25/1/4各1200step（CPU约3.3秒，冻结其它参数）。high hold baseline.004862→.001052/.002423/.003444；low hold max .00744/.00632/.00567仍全部超过事前.002。
+已保存实验head checkpoint及SHA，明确非部署/非晋升，不送GPU、不用低MSE宣称能力。初次actor-equivalent快路径检验最大float差2.38e-7略超2e-7，按float32累加次序改5e-7后通过，物理/行为门槛未改。纠正既有“不能拟合”暗示：实际存在拟合权衡，未证明25D能力不足，亦未验证高标签最优。原baseline4e5587不动；本轮不启动没有通过保留边界的配方。
+
+### 2026-11-04 区分动作代理约束与真正行为gate，单候选闭环检验
+纠正前turn过度筛除：.002是agent设置的输出信任域而非用户行为门槛，超过它不能证明低段必退化。只选事先保留权重4的CPU候选81d5976dd86cc26764bd34fc38e0eb5e8ff544358aec17dcae6bc216fb2576fa做原7x8均匀delay配对，不扫描所有weight、不改变行为gate。其仅high_straight_network六参数tensor改变，freeze_audit通过，25D/6D/预算/物理/DR不变。
+lowhigh_behavior_check命令/契约/600s预算/hash保存；检查group-aware工程/严格/存活/periodic再决定，未通过不得全域晋升；即使通过仍须154/random/multiseed。原fit_tradeoff_decision保留历史当时判断，本段解释为何重新按真正行为衡量，而不是隐去反复。source主基线4e5587不动。
+
+### 2026-11-04 保留拟合闭环仍有两例yaw退化，加入候选访问状态纠正
+lowhigh_behavior_check81d5七点56全存活，strict4→8、工程15→15，但新增2/丢2，低段13→12，不晋升。changed_cases证据：env15/v1.725 yaw .03478→.07759；env28/v1.8 yaw .04455→.06188，speed和工程3deg仍过，不能归因“摆角gate太严”。
+现有source轨迹anchor未覆盖candidate shifted-state。lowhigh_state_replay复用candidate env15/28全首回合每12tick共250obs，由冻结source输出作保留标签，只更新原highhead；权重4其余不变，CPU1秒完成7cbcc15154f64a7cd80b14664466aeaba7622ef568c86dc5a5056c64988e73dd。属于训练数据聚合，不是参考动作最优性证明；source env15原holdout身份已被同env校准污染，整个同seed重放明确只作calibration。
+启动一次原7x8/600s校准重放，只检查已知缺口是否修复；通过仍强制独立新seed source/candidate和完整154/random，不允许用校准结果直接晋升。baseline4e5587不变，物理DR/命令/gate均未改。完整命令和边界说明保存，无部署新产物。
+
+### 2026-11-04 state replay校准有净收益，启动独立seed而不直接晋升
+7cbcc校准7x8：56存活，strict4→11、工程15→18；low13→15、middle2→2、high0→1，但lost2/gained5，不能等同旧能力全保留。使用过校准env15/28，明确不是heldout验收。下一步不继续拟合该seed，固定candidate，源4e5587与其配对新sim7907/obsnoise28021/jointdelay8207，均匀延迟范围不变，其他采样时钟按原合同，不能宣称所有随机源独立重种。
+lowhigh_freshseed两组GPU0并行7x8/600秒，双SHA和初态mass/inertia/material/noise强匹配，严格/工程分组/periodic完整保存，无自动晋升。真实新seed结果和后续154/random未完成，不提前宣传低段恢复或全部延迟通过。主baseline4e5587保持。
+
+### 2026-11-04 新seed完成：减振可泛化但偏航保留不足，不替换基线
+lowhigh_freshseed7907/28021/8207配对通过，源/7cbcc均56存活，strict6→9、engineering16→16，lost5/gained5；high action6/8ms4→3、low11→11。triage拒绝，不以校准15→18宣传正式通过。
+failure_and_oscillation_review实际新seed幅度中位：vx.05830→.04770、pitch2.80680→2.44392deg、active差2.10432→1.78521deg、hip差4.27053→3.94126deg。减振局部研究收益成立，但5丢失回合均yaw超线，其中env26还active4.508deg超工程3。yaw_direction_audit显示不同速度/环境有不同方向偏差，不能用统一轮差分常数处理。
+明确retain_research_antioscillation_candidate_not_replace_baseline，主4e5587保持；新seed不再塞回拟合做“独立验证”。无新全rep点认证，不启动相同全head惩罚配方。当前要同时满足yaw和振幅保留，不能只优化平均速度或宣称所有延迟gap已解决。三文档同步，未改执行器/观测契约。
+
+### 2026-11-04 只验证减振/偏航输出可分性，不追加整网reward训练
+highstraight_action_modes同基线实录obs源/7cbcc输出分解：轮common RMS约.00076–.00349，diff约.000075–.000475；差分小不能证明yaw影响小或根因，不能直接加常数抵消。新增单一诊断commonmode：保持candidate高head腿/轮common，恢复source同obs高head轮diff，经可行common截断保持原每轮预算，非速度/pitch/yaw外环、不加privileged delay。纯代数10000样本验证差分和预算保留，非行为证明。
+两个checkpoint SHA绑定，7x8均匀原校准seed600s，旧域及振幅不符不推进；evaluation显式标诊断hybrid不可作为checkpoint导出，无自动晋升。已看过的新seed保持不用拟合；本轮不宣称独立验证。原baseline4e5587不变，完整脚本/contract存highstraight_commonmode_20261104。
+
+### 2026-11-04 高段延迟增配的下一批边界
+用户要求高段适当提高比例、低段减少。既有action高6–8ms占70%的试验减振但低段工程13/29→8/29，不能原样重训。下一批action队列0/2/4/6/8ms权重确定为1/1/2/3/3，即低20%、中20%、高60%；其余延迟通道分布不变，不把action与轮腿传输混称总延迟。CPU十万采样验证完整支持和约60%高段，配置保存artifacts/delay_sampling_policy_20261104/next_training_sampling.json。此项是待用训练配比，尚未启动新训练或证明能力提升；验收保持原均匀分布并分段检查retention、yaw/速度/摆角和震荡。主baseline不变。
+
+### 2026-11-04 停止近似配方堆叠，保守高直行续训
+新seed减振但yaw退化，commonmode校准strict10/56、工程18/56，相比7cbcc的11/18无净收益，不晋升该输出拼接。当前采用未退化4e5587基线，仅high_straight_network训练，实际actorLR2e-4降至3e-5，并执行用户批准高段60%采样；这是两项调整的修复包，不声称单因果证明。不继续增reward、加head或改25D。12更新/1200秒后7x8原分布分段triage，无净增或分段退化停止，不自动续训；通过才进行154和random retention，未获正式新增通过。完整command/contract保存artifacts/highstraight_conservative_20261104/train。
+
+### 2026-11-04 保守更新完成并止损：低段有增益，高段仍无产出
+候选575f49d5d62d53596b4c8ce08775c0280a3eb54ce0e01b4e98f9328738032ca0完成12更新405秒，freeze/runtime通过。7x8同条件strict4→9、工程15→17、56全部存活；action高6–8ms仍0/23，低段13→15。振幅中位vx.03775→.03971、pitch1.992→2.072deg、active1.272→1.300deg、hip3.868→4.392deg，不能宣称抗振改善。自动aggregate triage虽然允许扩验，人工依据本轮抗振目标停止所属进程组1631544后续全域验收，不影响其它工作区，promoted=false，原报告保留。证明小学习率+60%采样不足，不能再照搬相同配方追加轮数。主基线4e5587不变，当前仍无新增全rep高段通过点。
+
+高段专项筛选修复：audit_batch_progress新增可选--require-high-delay-gain，必须有配对高段样本且高段工程通过数净增；缺证据fail closed。不修改原技能gate，默认旧通用行为不变。7项相关测试通过；对本批真实56回合回放，新目标筛选正确拒绝低段增益掩盖高段0→0。后续高段专项须启用该参数。
+
+### 2026-11-04 从微调转向根因对照：训练专用特权critic
+复用轨迹完成119条速度/延迟分档Pareto：前沿并非完全不动，tail70在部分高段两项同时改善但仍未达yaw门槛。近邻分析匹配25D+当前动作、跨env同命令、8/16/32/64ms后状态增量；各速度近邻数量不均且未来动作/DR不受控，不能实锤单帧上限。原critic与actor同读延迟25D已从代码确认。
+新增默认关闭training_privileged_critic_enabled，actor保持25D，critic361D包含clean状态、关节/根速度/施加力矩、队列、延迟、响应状态与轮反馈年龄；新输入权重置零保留原critic初值。普通/特权对照同source4e5587、reward、actorLR3e-5、12更新，学习前重新对齐Torch采样seed166，高段60%，各512env/GPU0并行。分档EV和advantage在每rollout记录，GAE目标非独立真值，不按EV阈值定根因。10tests通过，包括输入无修改、无额外RNG、扩展前后初值等价。完成后各7x8均匀验收；不自动晋升，不改学生/部署。commands及证据位于artifacts/delay_root_cause_20261104。
+
+特权critic对照启动纠错记录：首组在PPO前因诊断文件目录未创建退出，已修os.makedirs，原证据保留。retry组审计发现critic扩维改变CPU RNG消耗，env.reset的arena材质分配不同，已提前停止不用于因果结论。新增RMUC_PAIRED_TRAINING_SEED在env.reset前及learn前分别复位Torch CPU/CUDA RNG。有效对照artifacts/delay_critic_matched_20261104的初态物理readback（含arena逐env、重心、所有delay/response）除预期critic参数数量外逐项相同；10tests通过，actor契约未动，仍属单seed探索性对照。普通critic全域GAE EV早期已>0.9，不能据此断言局部高段值估计充分，继续拆速度并等待行为结果。
+
+### 2026-11-04 公平特权critic对照完成，继续隔离检查冻结约束
+有效matched普通/特权各12更新约435/440秒，源4e5587；初态物理readback逐项相同（除预期critic参数量），首rolloutEV均约.841589。特权第10更新七速度EV较普通均提高，稳态2m/s约.195→.326，但56回合strict7→10/工程12→14、高action6–8ms均0/23、均56存活，振幅未改善，均不晋升。不能据此宣称单帧上限，也不能把EV提升直接当能力提升。
+新增默认关闭RMUC_ORACLE_FULL_ACTOR诊断开关：全actor参数开放、distribution.std冻结、buffers/物理动作预算保持；CPU实际源checkpoint优化器审计994参数tensor可训练且源初值完全不变。与matched ordinary臂同source/reward/LR3e-5/seed166/12update，唯一变化冻结范围，512env/1800s，7x8诊断不自动晋升。工件artifacts/delay_full_actor_oracle_20261104；部署25D、学生均未改。现有相关10tests通过。
+
+全解冻首启动因readback序列化未包含rmuc_oracle_full_actor被保护器拒绝，非训练失败；已补字段并保留原证据。有效诊断目录artifacts/delay_full_actor_verified_20261104，初态地胶/质量/COM/延迟/响应等全部与matched ordinary对照一致，runtime_verified通过。没有放大残差/电机力矩，没有改变actor输入，解冻研究checkpoint不得自动部署。
+
+### 2026-11-04 全actor探针完成：协调更新有正向证据，仍不晋升
+全解冻候选168df9ddc98bbb53eb1d4171c93a144ed052675bf8621b5246b27aa126d3a59a：12更新335秒、所有固定buffer/std与参数范围审计通过，56回合均存活。工程15→13、strict4→6，高段0→1/23；高段速度振幅.09987→.07240、pitch4.799→3.610deg、active4.355→3.190、hip6.163→5.408deg，全组yawMAE.08696→.08206。同预算小分支ordinary工程12/高0、privileged工程14/高0且均未减振。支持冻结更新范围限制协调适应这一方向，不证明唯一根因；低段13→11、中段2→1，不能晋升。历史actor暂缓，优先复核更宽协调更新并保留低中段，不加动作预算/不改25D。根因对照报告artifacts/delay_root_cause_20261104/report.md，现无新完整速度点认证，所有诊断进程完成。
+
+### 2026-11-04 全actor协调适应加入软保留
+从未退化4e5587基线复用matched全actor配方，唯一新增训练专用源策略KL beta1：保护action延迟0/2/4ms或高直行gate之外的样本，高目标6/8ms保持自由；标签随TensorDict shuffle，不进入25D actor。无硬回退、无reward/动作修改、无预算扩大。冻结reference在candidate访问状态上生成标签，避免仅保留旧轨迹而遗漏状态偏移；仍只是行为保留代理，必须真实验收。11tests+实际教师CPU hook验证梯度等价、mask对应、reference独立、std冻结、mask清理通过。GPU0单批512env12更新1800s，同动力/延迟/高段60%；先7x8、高段须净增且低中段不得退化，再决定154/random。工件artifacts/full_actor_soft_retention_20261104；未宣称新增技能或晋升。
+
+### 2026-11-04 软保留首批有联合改善，进入全域保留筛查
+fd1f4d4166376439e012057ede3ea2b2b65abc560c38b948eeb7995e4e68f987完成12更新330秒，source/runtime全同上轮unanchored。7x8 strict4→12/工程15→17、56存活；low13→14、middle2→2、high0→1/23。高段速度振幅.09987→.06125、pitch4.799→3.513、active4.355→2.636deg；全组yawMAE.08696→.07892。保留项动作均值梯度范数比PPO中位约.00783，生效未硬锁更新。但仍丢3个原工程通过回合，不能称全部旧能力保留或高段完成。通过本轮分档triage后启动154x4及random27131同条件筛查，GPU0三组并行、单组900s，无自动晋升；最终32回合和多seed尚未完成。command保存在train/retention_evaluation_command.json，证据写comparison/target_decision。
+
+### 2026-11-04 软保留全域完成：70旧全通过点零丢失，进行新seed
+fd1f4d全154x4严格全通过点70→70，lost0/gained0，存活601→602/616；不能宣称154全通过。随机27131后退减速完整13→15/16，最后stop10→11/16，仍未通过动态门槛。上一goal turn仅解释目标未执行属no-progress，本turn已复核所有结果并启动新seed配对，属于实质推进。固定候选不再拟合，source4e5587/candidatefd1f4d新sim7919/noise29021/joint8307七速度x8，wheel-feedback私有seed不变，物理/DR/均匀验收相同，GPU0双并行各600s。目录artifacts/full_actor_retention_freshseed_20261104，promoted=false，尚无多seed正式认证。
+
+### 2026-11-04 新seed减振复现但yaw边缘保留未过，定向续训
+7919/29021/8307新seed源/candidate均56存活，strict13→13、工程17→16、高段2→1；高段速度振幅.06127→.04636、pitch3.332→2.666deg、yawMAE.10716→.09758。丢3回合全部只yaw超线，1.725两例.05560/.05172、1.85一例.06890。全154逐回合另有2例源存活而candidate倒（1/.8；1.5/1.4后者原严格通过），不能用70旧全通过点不丢覆盖个别回退，promoted=false。
+沿已复现减振方向从fd1f4d续训，软保留参考固定4e5587，唯一reward变化直行yaw平方惩罚4→40（转弯项不变），12updates/1800s。CPU量级审计发现4→8在.05只多.01惩罚，未启动该弱改动；40在.05惩罚.1、.2为1.6，仍是假设非保证。其余actor全解冻/std冻结/LR3e-5/高action60%/物理/DR均不动；先7x8，不能以平均值掩盖yaw丢点。目录artifacts/full_actor_yaw_retention_20261104。
+
+### 2026-11-04 yaw定向续训完成，工程与严格摆角分开报告
+9753b1da2b0bde87a894c8f70ada62be840d325ba6111e082e55af7bd7638b9d完成12更新305秒。相对父fd1f4d，原7x8工程17→19、strict2deg12→8，56存活，高段工程仍1/23；高段yawMAE.11764→.09536、速度振幅.06125→.04251、pitch3.513→2.468、active2.636→1.876、hip5.732→4.430deg。减振/yaw进一步改善但部分稳态角差严格口径退化，不晋升。启动曾用于缺口分析的7919/noise29021/joint8307验证集复查，只跑candidate并复用精确source；明确不是独立新seed，600s。目录artifacts/full_actor_yaw_validation_20261104。不能用总工程上涨掩盖单回合/严格口径回退。
+
+### 2026-11-04 yaw修复在第二seed高段收益复现，补低段保留
+9753在已使用验证7919上strict13→14、工程17→20、高段2→4/21、56全存活；高段速度振幅.06127→.04098、pitch3.332→2.303deg、yawMAE.10716→.08267。低段15→13（丢4得2），丢失4例全部yaw，1.7/.06114、1.725/.05617、1.8/.05118、1.85/.07101；不能晋升。下一批从9753续训，仅soft-retention beta1→4，旧reference4e5587/yaw40/actor范围/物理/DR/采样/LR不变，512env12updates1800s先7x8；目录artifacts/full_actor_retention4_20261104。减振与高段通过已两组条件有证据，但尚无全域正式认证，目标保持active，不替换主baseline。
+
+### 2026-11-04 beta4完成并扩验，直行yaw工程线单列
+6504a5dec1bd1ac27a0a479db8360142fb1171f433d49ecfeee213f50daeef33完成12更新295秒。原7x8 strict4→12、工程15→22、高action0→4/23；low13→15/middle2→3，56存活。用户允许适当放宽直行yaw，另存straight_yaw08_screen.json采用.08，仅直行，保留.05原严格/工程文件和reward40。源/候选新分项29→40/56，但真实world heading显示部分通过回合后6秒仍有数度漂移，full_acceptance=false，不称轨迹通过。新增audit_straight_yaw_engineering.py读取真实世界heading解缠及横向偏移，排除reset串接。
+启动该候选自身154x4+random27131保留，GPU0三并行各900s，旧源4e5587、动力/DR/验收采样不变，未晋升。前turn仅讨论yaw无执行，本turn完成状态核验和实质扩验。工件artifacts/full_actor_retention4_20261104。
+
+### 2026-11-04 beta4全域完成：71点全通过但仍有单回合压弯回退
+6504a5de全154x4严格全通过70→71，旧70点无丢失，新增(.25,.1)3/4→4/4为筛查非正式认证。存活601→603/616；逐回合仍有1.5/+1.4、grid3 env120原严格通过现倾倒，不能用总数掩盖。随机27131减速13→15/16、最终停10→12/16，仍未全过。已复核进程结束，无重复训练。启动6504在已用7919/noise29021/joint8307验证集复查，source4e5587证据复用、56回合600秒，非新独立seed，promoted=false。下一缺口是压弯单回合保留，不能直接将候选设为全域基线。
+
+### 2026-11-04 beta4第二seed完成与压弯回退归因
+6504在7919验证原yaw.05工程17→16、strict13→11、高段2→2；直行yaw.08单独分项30→37、高段8→12/21，均56存活。高段速度振幅.06127→.04975、pitch3.332→2.692deg，仍减振但不稳定优于父9753，禁止盲增beta。主baseline不替换。
+1.5/+1.4 grid3env120首回合真实trace对齐：初态与前.2s接近，.8s候选pitch24.43deg vs源17.94；1.2s候选vx2.7/pitch53.17 vs源1.76/2.66，属于启动瞬态回退而非yaw验收过严。证据train/turn14_early_comparison.json。下一步应针对启动压弯保留而不是重跑全部微调；所有本轮诊断结束，目标未完成。
+
+### 2026-11-04 压弯启动模块归因与恢复诊断
+同观测逐模块回滚CPU审计发现rmuc_turn_expert改变对1.5/+1.4启动动作影响最大（RMS.00237），对已记录高直行0；恢复其8参数的e0c8d7候选原grid3闭环仍env120倒、存活127→126，不晋升，否定单专家足够的假设。已完整保留证据turn_expert_restore_20261104。
+进一步按CPU影响筛出48个模块/200参数，仅恢复有turn影响且记录highstraight影响为0的模块，候选055df535daff09361e7eafa506abc150f9b7ae19d5a94865fd678bde5ad1d549；两seed168000直行观测对拍全输出差0，属经验支撑而非全状态证明。不改变网络接口/门控/预算。启动原grid3同条件128回合900秒验证，证据turn_paths_restore_20261104；未自动晋升，待行为结果。
+
+### 2026-11-04 完整转弯路径恢复成功修复目标启动回退
+055df535原grid3完成：env120（1.5/+1.4）恢复严格通过，speedMAE.025328、yawMAE.024917；存活127/128与源一致，无lost survival；17旧全通过点全部保持。此前进度依据同命令倾倒日志推测目标仍倒不准确，完整env编号证明那是其他原失败回合，已向用户纠正。单专家恢复e0c8d7失败、48模块转弯路径恢复055df5有效，为更广转弯保留范围提供行为证据。已记录直行168000观测输出零差，但尚非全域认证，promoted=false。
+另备启动replay7426条、59个源通过turn环境，包含源与候选首1.5s状态，冻结源给action标签；仅备用校准数据、未用于训练，不把source动作标签当恢复正确性证明。下一步优先验证055df5其他转弯与动态retention，暂不新增训练。
+
+### 2026-11-04 转弯路径修复后接续完整保留
+055df535候选grid3已确认env120严格恢复，127/128存活且无源存活丢失。接续其余122点x4及random27131，与源4e5587同条件；原grid3通过symlink只读复用、不重复GPU，不覆盖原配对证据。GPU0三并行各900s，command清单在turn_paths_restore_20261104/train/retention_evaluation_command.json；无自动晋升，仍须逐回合存活及随机检查，不能只报70全过点保持。前turn完成修复证据为progress，本turn进入后续必要验收。
+
+### 2026-11-04 用户要求桌面仅当前策略网络
+选当前修复候选055df535，已修复grid3启动回退并记录直行输出保留；完整剩余retention尚未完成，非最终部署认证。CPU导出完整deterministic teacher TorchScript，仅桌面单文件/home/kellen/桌面/RMUC_教师策略_20261104_055df535_policy.pt，25D->6D，不含critic/optimizer，不是H723蒸馏学生。5605条命令边界/真实turn和straight观测对拍最大误差0；文件SHA08b42cfa9b31146c6005edfd6a89be193257efe9dacd39177bd831db80ba8ce3，4580052bytes。导出脚本和审计保存在工作区artifacts/teacher_network_delivery_20261104，桌面无额外文档，旧baseline不变。
+
+### 2026-11-04 修复候选全域结束，保护转弯路径继续协调适应
+055df5完整154x4：严格全通过70→72，旧70点零丢失，新增.25/+0.1与1.6/0，存活601→602/616。grid3目标1.5/+1.4恢复，但grid1env112的1/+0.8原存活现倒，promoted=false，不宣称全行为保留。随机减速13→15、最终停车10→11/16，均未全过。
+CPU实际教师优化器验证冻结已恢复200tensor、其余794可训练，一次optimizer.step保护tensor零改变；11tests通过。新默认关闭RMUC_COORDINATION_PROTECTED_KEYS在全actor模式下提供明确key冻结，std/buffer保持。启动coordinated_protected_turn_20261104从055df5研究分支接续，唯一变化保护范围，beta4/yaw40/LR3e-5/物理DR不变，512env12updates1800s，先7x8，后必查grid1env112、grid3env120和全域；旧正式基线4e5587不变，桌面策略文件未覆盖。
+
+### 2026-11-04 保护协调接续完成但无净收益，停止同配方
+838510c16f364da8666ff1885b3077864882333c65e2a24989a79d47f7f9b753完成12更新280秒，runtime/freeze通过。原7x8工程父22→17、yaw.08分项40→35，strict12→11；高段yaw .09615→.09692，振幅几乎未变，不扩验不继续，promoted=false。参数冻结不等于行为保持，不能因200key固定就自动续训。桌面055df5不覆盖，正式源4e5587保持。
+复用父6504两个seed轨迹分解剩余缺口（055df5记录输出已验证相同，但不称全状态等价）：第一组16失败全含yaw.08，10兼angle3、1兼speed+angle3；第二组19失败中9 yaw+angle、6 yaw、4 angle。yaw偏置占MAE中位约.501/.542，非单纯恒定偏航，因此统一常数差分补偿不合理。报告remaining_straight_failures_20261104，已区分静态偏置与周期分量，无GPU重复实验。下一阶段需动态yaw/腿轮协同学习信号，避免盲增beta或重复当前冻结配方。
+
+### 2026-11-04 历史预测与梯度范围审计后聚焦专项PPO来源
+CPU同旧教师轨迹预测32/64ms vx/yaw/pitchrate变化，单帧31输入21382参数 vs4帧106输入20166参数，各3optimizerseed；源7891按env6/8训练2/8验证、源7919测试。高段归一MSE均值.02817 vs.02730仅约3%差，历史非一致优势，不足以宣称25D上限或改部署接口；非RL证明，report保留限制。
+失败8385rollout target24788/65536，其余40748（62%）也通过PPO更新共享参数；2048抽样x3的非目标加权梯度量级约目标.82–1.03倍，cos+.246/-.183/-.044，说明干扰量级但不是因果证明。下一单变量改动：PPO actor advantages在highstraightgate之外置零（不重中心不放大），critic returns/value targets不动、源KL保留和200key冻结不动。10tests验证mask/gradient/原数据不变；新开关RMUC_TARGET_POLICY_GRADIENT默认关闭。source055df5、beta4/yaw40/LR3e-5/物理DR全相同，512env12update1800s先7x8，目录target_gradient_coordination_20261104。未晋升，桌面网络未改。
+
+### 2026-11-04 目标策略梯度完成，限量复核收益与压弯保留
+e0230c3d85d6714f3d04d2eff2bfb7df1c3d43e9ae21a22be011d0b09070d70d完成12更新320秒。源4e5587对照strict4→9/工程15→20，均56存活；与即时父6504记录等价直行相比工程22→20、yaw08分项40→39，但高段速度振幅.05984→.05196、pitch3.068→2.500、yawMAE.09615→.09363。较同源未mask的8385（yaw08=35）改善，未宣称全面晋升。仅启动原grid1/grid3与已用7919高直行三组定向保留，各900s；不重复全154、不追加相同训练轮数。checkpoint SHA绑定、物理配对和逐回合存活检查；桌面055df5不覆盖。
+
+### 2026-11-04 目标梯度定向复核完成并补全retention
+e0230c3d定向grid1/grid3存活分别125/128、127/128，与源一致且逐回合无新增存活丢失。grid1全过15保持；grid3全过17→16，仅1.5/-1.2 env69 yawMAE.0503295压线（其余checks通过），严格失败保留，不擅自按直行.08放宽转弯。已用7919验证source/candidate工程17→22、直行yaw08分项30→40，高段yawMAE.10716→.07960、速度振幅.06127→.04542，56全存活，收益复现但非独立新seed。
+补验其余90点x4与random27131，已完成grid1/grid3只读复用，GPU0三并行900s，SHA绑定e0230c3d，物理DR不变，无自动晋升，桌面055df5不覆盖。三组结果改变下一步选择，属实质progress；目标尚未完成。
+
+### 2026-11-04 目标梯度全域完成，32回合核验筛查变动
+e0230c3d全154x4严格全过70→70，存活601→601/616且逐回合无源存活丢失。新增1.625/0从2/4→4/4，丢失1.5/-1.2由4/4→3/4仅env69 yaw.0503295，严格结果不抹去。随机27131减速13→15/16、最终停车10→10/16，未全面改善。此结果不自动晋升。
+按预先指定这两个点，source4e5587 vs candidatee023各2x32回合，既有seed7891（环境数量变化导致分配不同，明确不是复跑原env或新multiseed），同物理/DR/延迟，GPU0双并行各900s，不启动盲目新训练。完整命令与结果在target_gradient_adjudication_20261104；目的验证新增点稳健性及压线退化是否系统性，仍需全域门槛。
+
+### 2026-11-04 复盘短批次碎片化，保留优化器持续接续
+32回合核验：1.625/0源严格14→候选21/32，工程26→27；1.5/-1.2新旧严格/工程均24/32，双方64全存活。4rep压线变化不足以指控系统退化，仍未32全过。此前重复12update含3criticwarmup与resetoptimizer，短批次实际actor学习少，验收/分支切换占时过大；局部方向性证据不应宣传根因已定。
+从e0230c3d启动64update连续接续，保留802optimizer states（step144–192）、warmup0，不改reward/架构/DR，200turnkey保护/targetgradient/beta4/yaw40维持。GPU0 512env3600s，保留中间checkpoint，runtime/freeze/nonfinite/coverage异常止损，最终7x8自动检查无自动晋升。目录target_gradient_sustained_20261104，桌面055df5不覆盖。首次生成脚本存在IndentationError在任何写入前被解释器拒绝，修复后完成CPUprovenance校验，非训练失败。
+
+### 2026-11-04 持续优化器接续实际启动，纠正多重旧guard限制
+首次持续批次在仿真前被explicitphysics强制reset拒绝；新validator随后暴露import搜索路径和两处router/coverage强制warmup条件，失败均保留、无PPO更新，未算进展。已用源SHA/optimizer模块组/全actor范围/200key文件SHA/可训练参数集合验证允许同范围resume；不同源或模块仍fail closed，coverage实际采集与检查不取消。7tests通过，实际源CPUvalidator通过。
+有效运行target_gradient_optimizer_resume_20261104，PID1855356，日志恢复iteration12044、warmup0，runtime全部通过，已真实3更新，64update/3600s；Adam更新状态保存核验另存optimizer_continuation_verified。桌面055df5与正式基线4e5587保持，前面启动纠错耗时属实现问题，不归咎策略学习。后续按行为中间checkpoint检查是否止损，不再反复12步reset重开。
+
+### 2026-11-04 持续64更新完成：分项通过与高段减振净增
+c0c6dce5bad5c20c9818ea28ca57e396f25883f654a6ccf45d34d0b298a98a58完成64更新1660秒，保护/运行审计通过。Adamstep144–192→1168–1216，精确增加1024，验证真正保留优化器接续。原56回合父e023 vs末期：strict9→10、工程20→21、直行yaw08分项39→44，56存活；高段原yaw工程2→4/23，yawMAE.09363→.08608，速度振幅.05196→.04778。yaw08各速度通过1.7=7/8,1.725=8/8,1.75=7/8,1.8=8/8,1.85=5/8,1.9=4/8,2=5/8，仅分项筛查非最终能力认证。
+结束后不再重复中间checkpoint验收。启动已用7919/noise29021/joint8307验证固定c0c6，source证据复用、56回合600秒，目录target_gradient_sustained_validation_20261104；非新独立seed，无自动晋升，桌面055df5不覆盖。
+
+### 2026-11-04 持续训练第二seed核验：优势并非全面复现
+c0c6在已使用7919验证源/候选yaw08分项30→39、工程17→21、56全存活，但直接父e023yaw08=40，新39；高段父/新yawMAE.07960→.07890，速度振幅.04542→.04498仅小幅改善。不能以第一组39→44宣布持续训练显著胜出。当前暂停追加训练（非暂停长期goal），固定模型完成自身154x4和random保留，与4e5587同条件，GPU0三并行各900s，完整命令在target_gradient_optimizer_resume_20261104/train。父模型和桌面055df5保持，未晋升，按真实保留结果择优。
+
+### 2026-11-04 持续训练完整retention结束：静态保留、动态退化，不晋升
+c0c6dce5全154x4 strict全过70→71，新增.25/+0.1，旧70点无丢失；存活601→601/616且逐回合无新增源存活丢失，1.5/-1.2压线恢复。不能继承父模型1.625点改善为本模型全部技能。随机27131减速源13/父15/新13，最终stop源10/父10/新9，存在动态保留退化，decision拒绝全局替换，不再同配方长训。静态改善不能抵消动态损失；需要动态轨迹显式保留，不能只按命令域/延迟标签施加源KL。父e023和桌面055df5保持，正式基线4e5587保持，无部署产物更新。本turn完成之前活跃验收的终态核验并据此改变下一步，属progress。
+
+### 2026-11-04 动态保留覆盖缺口核实与显式样本准备
+读取c0c6运行readback确认102dynamicenv仅1.7→2.0正向递增，random_speed_range为空，没有验收16s后退减速/18sstop访问轨迹。故源KL“域外保护”并不代表这些动态状态被覆盖，不能靠继续增beta修复未见状态。建立dynamic_retention_replay_20261104/replay.pt共7545条，父e023在对应阶段完整存活env的前1秒至后2秒观测，加candidate访问状态，剔除|pitch/roll|>=30deg和reset后串接；父确定性动作标签、checkpoint/dataSHA齐全。存活不等于跟踪通过，反事实标签不等于最优，未训练未认证。
+同输入c0c6相对e023动作差RMS约.0009–.0011、max.0039–.0052，提示小动作差不能替代闭环动态保留，不足以认定唯一根因。若用数据拟合，随机27131需标calibration并另设新序列验证，禁止继续称独立验收。只完成必要CPU数据工作，未启动重复GPU，桌面网络保持，长期goal仍active。
+
+### 2026-11-04 显式动态保留CPU修复完成，进入校准闭环
+从c0c6源CPU120步Adam1e-5，保留200turntensor/std，动态e023标签与静态c0c6全域样本软约束权重4，候选541d7e6f3717625b6ea773c005b3070f257802a89e724186ab36f59ee220c506。wholeenv留出动作RMSE.000959→.000150，静态anchorRMSE.0000794/max.001472，526tensor变化且freeze通过；非行为证明，源optimizer移除防错误resume。
+启动随机27131校准和高直行56回合保留，GPU0两并行各900s，物理/DR/延迟不变。27131已用于拟合，禁止称独立验收；若收益成立需新序列及全域验证。无晋升，桌面055df5不覆盖。样本manifest/fit/hash/命令均在dynamic_retention_replay_20261104。
+
+### 2026-11-04 近门槛批量推进，停止仅高直行反复
+动态replay541d7e校准减速13→14/16、stop9→11/16，但高直行yaw08 44→40/56，收益交换，未晋升。全154近线审计按全部存活+最差指标超线<=25%仅作排序，c0c6有7点，源e023有9点，不能宣称所有剩余点都压线。源9点：1.5/-1.2、.25/.1、1.85/0、.225/0、1.675/0、1.725/0、1.383807/.015817、1.5/-.45、.285279/-.068713。
+新增默认关闭command_active_targets，固定活跃env循环分配9命令，保持signedyaw及同命令legscale，rehearsal/dynamic不改；PPOmask和KL目标域共同匹配explicit commands，critic仍全样本。8tests验证符号、旧域不变、mask和梯度。sourcee023保留优化器，32update/3criticwarmup（新命令分布）/2400s，9x8源筛查与训练并行、候选后验，DR/物理/reward/beta4/200保护不变。完整工件near_gate_batch_20261104，验收门槛没放宽25%，不自动晋升，桌面不覆盖。
+
+### 2026-11-04 近门槛9点训练完成，实际梯度覆盖复核
+32更新865秒，候选fdc12a003315c811b8deee5b05b02deb00e35b66efc068f189df02b436aae4e7，runtime/freeze通过。末期snapshot9目标各有1024–4128 PPO样本，非仅配置覆盖；176命令访问检查通过，但不等于行为保留。1.725因动态序列重叠样本偏多，记录为后续分配问题，不改动正在运行的训练。源9x8严格23/72、工程角差28/72、直行yaw08组合分项36/72；新增环境分配下不能继承4rep的近线判断。候选72回合配对筛查正在运行，未晋升。修正experiment_contract中复制遗留的12update/旧7速度/旧KL域描述，与实际command/runtime保持一致；无物理或门槛变更。
+
+### 2026-11-04 近线批次配对结果与冻结路径审计
+fdc12a00的9x8源/候选严格23→26、工程组合分项36→38、72全存活；1.5/-1.2严格3→6，1.383807/.015817为2→3，但1.85yawMAE.0994→.1341、速度MAE.0972→.1338，1.5/-.45通过2→1。无新8/8点，decision拒绝全局替换，不扩大无收益验收。
+CPU同观测平均输出Jacobian审计：1.5/-.45轮输出平方梯度范数88–94%、腿98–99%位于冻结参数；1.5/-1.2轮95–97%，小转弯轮81–85%。范数受参数尺度影响，属学习通路受限证据，非唯一因果证明。最大的可修复受限模块rmuc_turn_expert8tensor。新批near_gate_turn_access_20261104仍从e023起步、同9点/32update/DR/reward，仅解除这8tensor，其他192保护/std/buffer保持；可训练802tensor，范围变化按规则resetoptimizer并3warmup。启动及完整命令已留档，未晋升，桌面策略不覆盖。
+
+### 2026-11-04 转弯专家解冻结果：局部改善，整体仍退化
+9637d8ac32更新770秒，8tensor实际更新，其余192保护/std/buffer通过。配对72全存活、严格23→28、工程组合36→40；1.5/-1.2为3→7/8，但1.85速度振幅.0921→.1892m/s、pitch3.859→6.829deg，仍明显退化，无新增8/8点，不晋升。不能将冻结路径认作全局唯一根因。
+进行局部参数隔离：源e023仅移植9637的8turnexpert张量，候选ac78670c889e159412b0e992ea3530ac6eb341ef3720ef06867c1a961b3198be。源及候选轨迹9600条直行输入输出与e023精确一致，12000转弯输入有改变；仅记录输入证据，非全状态或闭环证明。移除optimizer防错续训。GPU0启动同9x8闭环，900s，全部物理/DR/延迟不变，命令和工件turn_expert_isolation_20261104；无自动晋升，桌面未改。
+
+### 2026-11-04 隔离组合无通过增益，转为直接训练转弯主路径
+ac78670c组合9x8严格23→23、工程组合36→36，72存活。四个直行点指标恢复父源；1.5/-1.2仍3/8（yawMAE.05002→.04909），未保留整模型7/8收益。拒绝晋升及扩大评估，不把记录输入对拍当技能保留证明。
+CPU复用解冻批次snapshot，按9命令计算最多1024样本/命令的一阶PPO梯度。1.725占目标样本26.4%，混合方向cos.843；1.5/-1.2仅.062、1.5/-.45仅.079，.225为-.048。有限样本、未含KL/Adam后续步，非唯一因果证明，但支持共享混合更新干扰。启动turn_expert_only_20261104：同e023源、同9点32update/DR/reward，只有8turnexpert张量训练，其余全部actor参数/std/buffer冻结；新范围resetoptimizer。保留beta4源KL和3warmup，2400s，自动9x8配对，不自动晋升。桌面不改。
+
+### 2026-11-04 用户要求长进程推进高速及转弯：串行队列实际启动
+转弯专家only287d2f14完成32update775秒，9x8严格23→24、工程组合36→37、72存活；1.5/-1.2为3→4/8，其余点通过数不变，四个直行指标保持。无新增完整点，不自动晋升，不延长无显著收益的同配方转弯。
+GPU0另有工作区进程1757313约11.3GB显存，本任务约4.3GB，未干预其他进程；continuous_skill_queue_20261104确认前序真实完成才启动highstraight_isolated_long_20261104。源e023，同物理DR/reward/7个1.7–2.0直行目标，仅6个top high_straight_network张量可训练，其余actor全部冻结。96updates/4800s、3criticwarmup、Adam在整批持续，512env；非最终技能完成承诺。实际PID1938642，runtime_verified全部通过。结束自动7x8配对筛查，无自动晋升；随后必须按行为决定广域/动态保留。完整命令、参数范围、停止条件在实验目录，桌面网络不改。
+
+### 2026-11-04 抗震荡目标覆盖审计：确认专用奖励盲区，非能力上限结论
+复算e023已保存6–12s轨迹并核对当前运行配置：command_speed_oscillation_start_level=13对应vx1.0，deadband=.08m/s，filtertau=.16s，variationweight=0。待机4回合该专用震荡惩罚始终0；高速56回合55个始终0，整体仅约0.455%采样非零。其余跟踪/姿态奖励仍有效，不等于总reward对震荡完全无感。待机highspeedpitch项同样因vx<1关闭；当前仅6highstraight参数训练且vx0门控0、PPO目标域无待机，因此当前长批次不能改善待机。
+待机稳态轮target未触4.89限幅；4–8.3Hz持续谱峰和振幅不衰减支持稳定周期闭环现象，但缺少严格配对干预，不能确认延迟是唯一根因。25D上限和全局最优不可达均未证明。证据脚本/report/conclusions在oscillation_objective_audit_20261104。需先修正奖励盲区和实际可训练覆盖，再谈全域抗震荡；本审计没有暗改运行中的reward或模型。
+
+### 2026-11-04 用户要求加入待机与失败低速：修正奖励与训练路径后启动
+从e023完整154筛查提取0–.75m/s未4/4严格通过23点（含待机、小转弯）；未修改strictgate定义。原highstraight96批因抗震荡专用项盲区operator_stop，trainer已退出，最后checkpoint和SHA在operator_final_report.json；runner按异常保存failed，不伪装完整训练。
+新idle_low_oscillation_20261104同e023源，训练alignment_network6tensor+turnexpert8tensor，其余actor冻结；23命令CPU输出梯度非零。抗震荡项startlevel27=0m/s，deadband.005scale.05weight2；旧idle4轨迹新计罚覆盖55–80%采样，原0，非学习成功证明。摆角weight14→2/tolerance.5→2deg对应用户抗震荡优先，trackingreward不变。训练固定目标55%/rehearsal35%/dynamic10%，512env64update3600s；新范围resetoptimizer3warmup。物理与DR保持，23x4源评估→训练→23x4候选串行，避免GPU0其他工作区11GB占用下并发OOM。完整命令和contract写入train目录，无自动晋升，桌面不改。
+
+### 2026-11-05 待机低速批次修正覆盖不足后实际进入训练
+idle_low_oscillation_20261104在3criticwarmup末因176旧命令覆盖不足停止；35%rehearsal造成缺失52命令，属于配置错误，非策略失败，未进入有效actor更新。源23x4评估已完成直接复用，历史失败目录不覆盖。
+新idle_low_oscillation_verified_20261105仅恢复rehearsal65%（dynamic10%、fixed25%），其他23目标/14tensor/抗震荡reward/物理DR不变。64update3600s，PID2081826；实际runtime_verified通过，warmup后176命令全部访问、缺失0、冻结违规0，已记录4更新。未晋升，行为验收pending。
+
+### 2026-11-05 抗震荡批次持续推进与配对行为对照
+idle_low_oscillation_verified_20261105实际23/64更新，覆盖通过、冻结违规0，原任务继续不重启。新增compare_behavior.py与finish_comparison.py，现有训练及23x4验收完成后自动CPU汇总：逐命令存活/严格通过/速度yawMAE/速度pitch与两腿振幅，震荡变化仅计算双方都有完整6–12s窗口的配对回合，并单列存活损失，避免幸存者偏差或欠速假改善。未自动晋升，结果待闭环验收。
+
+### 2026-11-05 待机低速抗震荡64更新完成：局部减振，跟踪未过
+候选13b78f9fb9897b127ba92985ca7c081293346c7e3d28943384afb51983050011训练64updates945秒，23x4同条件92全存活；strict19→17，不晋升。待机速度振幅.0205→.0179、pitch.6321→.5539，严格1→0，不能宣传待机通过；多处低速直行振幅降低但跟踪略退。逐点完整结果paired_behavior.json。
+进一步low_speed_bias_audit否定“统一.02速度奖励死区导致欠速”猜测：tracking_targets对vx<.2已有.002–.007margin；轨迹0.025–.175主要正偏差（超速）而非欠速，候选约+.016至+.024m/s。待机有符号速度均值-.01123→-.00511，但MAE仍超门槛。保留研究候选不覆盖正式基线；继续从已有轨迹区分超速奖励/动作成本与retention权衡，不盲续同配方。
+
+### 2026-11-05 低速持续超速奖励定向修正与接续
+核对运行配置：通用速度误差项在低速已生效，但专门overspeed margin=.1/scale=.3/weight1.5，对当前+.02m/s超速无信号；未宣称这是唯一根因。新增默认关闭command_low_forward_overspeed_shaping_enabled，只替换0<=vx<=.75的overspeed reward：margin=min(.01,max(.002,.04vx))、scale.05、保留原weight1.5；零指令用abs(vx)，有指令只罚超速；不改全局margin（该字段还有其他用途）、动力/观测/动作。3tests通过，未改反向及高速奖励。
+从13b78f9f减振研究候选接续idle_low_overspeed_20261105，32updates2400s、同14tensor/65%rehearsal/10%dynamic/23目标/抗震荡配置，reward改变故resetoptimizer+3criticwarmup。GPU0启动，源23x4直接复用父候选结果；结束候选23x4与震荡配对自动汇总，不自动晋升。旧全域基线及桌面网络不改。
+
+### 2026-11-05 低速overspeed修正闭环结束与权限排查
+46d97785完成32updates500秒，23x4存活92→92、strict17→18；低直行MAE仅降低约.0004–.0006m/s，idle速度振幅.0179→.0189/pitch.5539→.5854反增，不晋升、不盲续。
+low_domain_authority_audit_20261105复用候选稳态观测：待机与低直行alignment_gate=1，小转弯turnexpertgate大多1（.05yaw为.5），alignment tanh>.95占比0；同输入父/新动作RMS.000166–.001048。故当前弱收益不能归因于低直行路径关闭或预算饱和，不据此放大残差。retention/PPO输出梯度范数比中位.04456、max.08555，不能据此认定KL主导，亦不能排除方向冲突。下一步聚焦实际优化/信用信号，不宣称唯一根因。
+
+### 2026-11-05 四天低产出复盘：学习链审计发现最终consumer裁剪盲区
+learning_chain_audit_20261105复用46d977训练snapshot：obs命令重建与物理vx/yaw最大误差0/1.19e-7，未见命令标签错位；目标PPO样本占33.69%，不能将全部采样量算目标学习量。restore同snapshotactor推理与记录分布均值max误差.001413，尚未归因，不能宣布全链精确一致。
+此前只查alignment tanh未饱和不足以排除最终动作饱和。用真实execute_authority_action重放rawsamples：低速转弯无expanded权限，active槽3按±1裁剪；.5/.3裁剪96.48%、.75/.1为99.09%、.75/.3为97.03%；std.03下均值采样回有效区间概率约4.16%、1.60%、2.16%。对应腿通道探索大部分变成同一执行值，是学习效率低的具体机制证据，仍未证明唯一因果。待机未出现该饱和，不能用它解释所有问题；不得直接扩大硬件限位。
+PPO实际加载sitepackages/rsl_rl，actor/critic分别clip_grad_norm，排除“critic大梯度统一裁剪actor”的假设。下一步检查饱和感知学习修正、待机优势信用分配和snapshot replay差异，不盲重复reward微调或宣称网络无法收敛。
+
+### 2026-11-05 snapshot输出差异归因完成，准备最终consumer边界辅助学习
+GPU0纯推理同128x512输入/同snapshotactor：TF32开启与记录分布均值max/rms误差均0；CPU及GPU关闭TF32的max约.001413、RMS.000111。差异归因数值精度，不能再称未确认输入/权重错配；只证明该snapshot推理一致，不证明实机观测。precision_report.json留档。
+新增rmuc_consumer_boundary.py和train.py默认关闭RMUC_CONSUMER_BOUNDARY_WEIGHT：只对explicit目标命令的均值超出原consumer box增加平方距离梯度，使用真实execute_authority_action边界；不变sample/logprob/动作执行/硬件限位/部署输入。analytic梯度避免autograd.grad触发已注册KLhook而重复计梯度；原KL继续独立施加。边界/符号/域外/expanded权限及既有retention共5tests通过。尚未GPU训练，必须hook集成与配对行为验证后才可宣称修复。
+
+### 2026-11-05 consumer边界辅助项集成完成并启动配对验证
+边界hook需允许criticwarmup无actorgrad，现记录actor_frozen_at_entry；解冻后hook遗漏仍failclosed。集成测试验证前向值不变、exact增量梯度、连续update无重复hook和freeze/unfreeze，含原KL共6tests通过。
+consumer_boundary_adapt_20261105从46d97785起步，唯一配置变化RMUC_CONSUMER_BOUNDARY_WEIGHT=10，32updates2400s、14tensor/原reward/65%rehearsal/DR不变，23x4父评估复用并候选后验。辅助项是训练均值到原consumer边界的平方距离，不改sample/logprob/执行映射或硬件限位。runtime额外核对weight10，存在contract文件后再核验避免启动写入race。目的验证裁剪降低能否改善真实tracking/oscillation；不预设因果、不自动晋升。
+
+### 2026-11-05 边界辅助项32更新完成：未解除裁剪，确认raw-KL目标冲突风险
+0520cf08完成32update485秒，warmup3次无actor梯度正常，其后29次各16hookcalls；23x4存活92→92、strict18→17，不晋升。用实际consumer重放双方确定性6–12s：.5/.3、.75/.1、.75/.3 active3仍100%裁剪，越界均值约.065/.078/.074几乎不变。因此本次没有成功干预裁剪机制，不能据此排除其因果作用。
+源码确认retention KL约束rawmean，执行同为1的1.07和1.02仍被当不同动作惩罚；std.03/beta4局部曲率4444，高于boundaryweight10。标量同归一化示例平衡移动仅约.00015（真实mask/归一化/PPO/共享参数不同，非实际收敛量证明）。整体KL梯度范数低不能排除此局部冲突。下一步在同侧饱和域验证execution-aware保留约束，不盲加weight、不扩大硬件限位；不得推及未饱和待机问题。证据paired_clipping/raw_kl_conflict.json。
+
+### 2026-11-05 对照历史成功课程，修正保留旧饱和均值的约束
+读取20261011 positive_bank_dense06_ppo真实command/contract：60update、nestedphysicalnetwork、LR1e-5、std腿.03轮.012、无现今RMUC_DELAY_RETENTION_REFERENCE；旧contract峰值5.5、b.002/C.001、response实际.0002–.003、少量legacy延迟，和当前4.89/辨识摩擦/全通道delay不同。不能将过去成功视作同契约能力，也不能将后加raw-KL当成原来成功必需。
+实现默认关闭execution_aware retention：仅explicit目标且reference原始均值超出consumer范围的维度，改用projected mean差/std²代理，候选外侧投影导数0、回界内后维持边界reference；其余域/维度完全原rawKL。不是真正裁剪概率分布KL，不保证随机动作分布相同，必须行为retention；不扩大硬件限位。8tests验证原模式不变、域外保留、可行reference保持、同侧饱和释放和越界方向。
+consumer_execution_retention_20261105同46d977源、32update2400s/boundaryweight10/14tensor/其余recipe不变，唯一变保留代理，GPU0启动且runtime需显式核对。源92回合复用，候选后验，必须比较裁剪有没有先下降及真实跟踪震荡，不自动晋升。桌面不改。
+
+### 2026-11-05 闭环信号与reward/critic/GAE/entropy联合审计
+closed_loop_signal_audit_20261105：已有92回合稳态407376history标量对上一policy步执行动作完全一致；0/8ms frame延迟可精确对齐的obs6/腿角/腿dq残差RMS分别约.00212/.00010/.00010，与noise配置相符。2ms只读instrumentation完整12s复跑行为逐值一致，action/轮/腿队列、PD、响应、history、轮包及补偿cache误差0。observation首段假差来自审计器在已经primed的同tick误记ignoredpush，修正审计器而非环境；回归测试+1.024s92env短复核全部检查max0，轨迹与原prefix逐值一致。不能因此宣称实机物理或全系统绝无bug。
+ppo_signal_quality_20261105复用真实rollout：globalGAE_EV=.98859，待机约.367，.75/.1约-9.23；剔除重置/命令变化稳态后仍.370/-7.177，其他小转弯多为负。256ms无terminal Bellman一致性也有明显残差，但仍bootstrap非独立真值。GAE gamma.998/lambda.99递推相对误差P99约4.34e-5，归一化最大2.09e-6，未见公式实现错误；trace e-fold.664s。entropy_coef=0且std.03冻结，熵无训练推动力；非“无随机探索”。非terminal65513样本reward上下clip触发率0，排除本snapshot奖励总clip抹平信号。
+新增现有value_diagnostics的目标命令×actiondelay分档EV/bias/RMSE（只日志、不改训练），测试验证globalEV>.99仍可localEV<0，相关10tests通过。今后不能用globalEV替代目标域价值质量。executionaware候选a167fc39存活92、strict18→17，三关键turn active3仍100%裁剪，旧recipe不续。后续优先局部critic质量及有效探索验证，不能再只微调reward加相同轮数；无唯一根因或25D上限结论。
+
+### 2026-11-05 critic固定标签CPU探针与冻结actor在线校准
+critic_fit_probe_20261105：CPU复用保存GAE标签，wholeenv idmod4留出、两optimizerseed、每组512步batch2048。同源critic普通采样留出目标平均RMSE165.52→166.02，无改善；commandbalanced→149.75约-9.5%，但其他域RMSE364.07→409.82、部分目标退化。仅20/23目标有留出样本且每点1–4env，固定bootstrap目标不是真实价值证书，不直接合入策略。
+启动low_domain_critic_calibration_20261105：源46d97785，两组25D/361Dcritic，actor保持25D且全程freeze24updates，其他23目标recipe/DR相同，GPU0并行各1800s。扩展snapshot记录critic输入/权重及最后policyobs，默认只在原capture打开时增加证据。完成必须actorstate逐值等源、实际obs/actions/无terminalreward轨迹配对；用原sourcecritic端点bootstrap统一256/512ms目标对比最后未参与该步更新前的预测，不用各自GAE当相同真值。该比较仍有共同端点bias，非MonteCarlo或行为通过。4critic tests通过，完整命令和预算已报告；不自动开启actor、不晋升，桌面不改。
+
+### 2026-11-05 冻结actor的critic匹配校准结束：未支持直接切换特权critic
+初次low_domain_critic_calibration启动器root层级错误，普通/特权均在加载train.py前退出，无更新；保留失败目录。修为读取command.json cwd并验证入口，实际运行low_domain_critic_calibration_verified_20261105；两组24criticupdates约595/600秒。最终actor全部参数和buffer与源逐值一致，最后rollout的obs/actions/dones/physicalcommands/bootstrapobs/非terminalreward两组逐值一致，配对成立。
+统一原sourcecritic端点bootstrap的256ms短目标：source/普通/特权平均RMSE164.28/174.61/542.46；512ms为180.78/187.11/548.98。特权明显valuelevel正移；去各命令平均bias后512ms平均RMSE166.86/163.66/165.52，特权仅10/23点优于普通，无一致局部收益。不能因rawRMSE大就宣称真实长期价值更差（共同端点也有偏差），但也无证据放行actor或采用特权critic。无策略能力晋升，不将criticcheckpoint当新策略交付。comparison/trajectory_pairing/value_level_shift/decision完整留档。
+这轮CPU+冻结actor验证改变下一步：不能只增加critic信息或采样均衡就假设解决低域信用分配；需要独立回报或有限时域敏感性证据。部署25D/6D、物理、旧全域基线及桌面策略均保持，goal继续active。
+
+### 2026-11-05 独立实际回报审计入口修复并实际启动
+发现旧evaluate --audit-critic仅拷贝少量bank/yaw/clip奖励且要求DR0，不能用于当前联合DR价值结论。新增默认关闭--audit-critic-joint-dr，显式训练奖励scalar白名单+runtime逐项readback；新增command_reward_stage_speed_lookup仅供reward_level_eligible读取训练阈值，不改评估命令列表或legscale（训练224级与评估82级索引语义不同）。默认空保持旧行为。auditcritic不因已完成若干回合提前退出，按用户指定steps取样；保存有界return的env/bucket/episodeage和privileged上下文供三critic离线共标签比较。
+两个启动前验证失败保留：动态sequenceovershoot及dynamictracking权重与固定命令审计不兼容；初始化即止，无rollout。修正fixed非负命令cohort必为0的dynamictracking/stop/sequence项显式0并记录；固定reverse若依赖dynamicreward则failclosed，不能静默丢项。相关5tests通过。
+实际运行independent_return_static_20261105，source46d97785、actor冻结stochasticstd.03；4commands[0,0],[.1,0],[.5,.3],[.75,.1]x16env，steps6000=48s、episode60s、GPU0上限1800s；新采样seed86717/noise36717/joint46717，物理与DR范围不变，runtime奖励readback通过后已进入首拍。返回标签仅实际discountedreward，不加criticbootstrap，按absrewardbound100/gamma.998保留tailbound<=5；steadyage>=6s用于统计。固定command未来分布与混合训练可能不同，单轨迹return不是精确期望V，不能叫全域critic认证。结束自动离线比较source/普通/特权critic，未训练actor、不晋升、不覆盖桌面。
+
+### 2026-11-05 全分部critic审计：确认汇总EV掩盖，尚未完成因果修复
+响应用户要求，CPU复用同一low_overspeed训练快照（iteration12135/capture28，SHA7cad643f98132d4768800f9a54398d950d4baad3abcc9218a95e331fbc84bc58），不只查23低域目标。筛physical age≥6s、command age≥2s、非terminal、物理/交付命令对齐并排除连续cohort，共42197帧/141命令；globalGAE_EV .98859，steady pooled .99258，但去命令均值的组内EV .65409。按分部 pooled→within-command：低速直行.93085→.82883；中速直行.92700→−6.36854；高速直行.84862→.72949；低速转弯.98789→−.15306；中速压弯.98916→−.44626；高速压弯.98250→−1.79273；后退.91355→−1.00583；待机.36984。GAE是bootstrap标签，不是独立真实期望。
+高速直行11点7点EV负；1.9m/s占该组组内目标方差96.29%，不能用.729汇总宣布其余点正常。中速压弯56/60负、高速10/10负；57/141点不足2环境，小样本明确标注。仅保留≥2env且≥128帧，中速压弯24/28、高速4/4、后退4/4仍负。各点target_std/RMSE/bias/环境数和普通/特权配对快照的逐帧action queue0/2/4/6/8ms拆分保存在critic_stratified_audit_20261105/report.json；不是按最终delay倒填。不同延迟档命令组成不同，不据此推导延迟因果；校准各自GAE也不作同标签优劣对照。独立中心化复算与分区计数校验通过。
+独立48s实际return审计已结束，4命令×16env，actor未更新、无critic bootstrap、尾误差界≤5；稳态每点10400相关帧。原/普通/特权RMSE：(0,0)1707.63/1651.21/2144.82；(.1,0)515.17/495.12/510.80；(.5,.3)681.41/522.13/1170.01；(.75,.1)349.93/205.86/816.69。普通降低四点RMSE但局部EV仍低或负，特权不一致，尚无可晋升critic。固定命令future与混合训练不同，样本return不等于精确V，高速/压弯未有该独立return证据。
+当前结论是局部critic为有证据的重点嫌疑，而非已确认主要/唯一根因；下午完成定位和反证，没有完成critic到策略行为改善的闭环。需同actor/reward/DR/预算的critic单变量行为对照，先证明留出共同return改善，再看减振/跟踪/retention；不能排除已发现reward盲区、冻结路径、最终consumer裁剪/探索受限。promoted=false，无新GPU训练、无桌面策略替换。完整报告artifacts/critic_stratified_audit_20261105/report.md；实际return终报artifacts/independent_return_static_20261105/final_report.json。
+
+### 2026-11-05 实际回报监督critic修复通过局部留出门槛，开始同预算actor因果对照
+critic_mc_repair_20261105 CPU31.4秒：使用48秒冻结actor实际return、尾界≤5的数据，只取age≥6s；每命令按整env划train8/validation4/test4，禁随机帧混拆。25D/361D各2optimizerseed1024步，train-only输入标准化、导出折叠首层保持原critic接口；25D旧域source-value anchor用于抑制共享回退，非旧域真值。只按validation选择25D seed3501，再跑一次test。四点test RMSE比原critic为.6726/.3968/.2442/.4522，两转弯centeredRMSE比.5638/.6589；testEV分别.4374/−2.3364/.5831/−.4100，明确未完全解决。原actor1176stateentries逐值不变，仅critic替换；MC初始化SHAe69c0d9c13070ea6337977117b0ca91edcc72d057fde5928531f1a84200430e0，原46d97785。未扩25D部署接口、无策略晋升。
+首个critic_mc_actor_pair_20261105以warmup0启动，被现有coverage guard在训练前拦截（必须≥3）；两组0更新，失败日志保留，非训练效果失败。修正为两组相同warmup3，总24更新，其中21次actor更新；新critic_mc_actor_pair_verified_20261105 GPU0并行实际训练，均runtime_verified通过。源actor/reward/DR/seed/14tensor权限相同，仅critic初始化不同；4目标(0,0),(.1,0),(.5,.3),(.75,.1)，65%旧域rehearsal、10%原动态范围、beta4retention；峰值4.89/continuous3/scale5.5、spring4.31/radial0、D/b/C及联合延迟原契约不变。每组1200秒预算，参数不符/非有限/越权更新即停；后续自动同布局23x4验收并与原源对照，完整154与动态retention未做前不晋升。完整command/evaluation_command/runtime/来源SHA均保存新目录。当前是critic局部误差修复取得进展，actor减振收益尚待结果，不能先写学会。
+
+### 2026-11-05 MCcritic行为对照结束：修价值不足以突破；全参数oracle仍无晋升
+critic_mc_actor_pair_verified两组各24更新，训练约720/725秒，actor14tensor及冻结审计通过；23x4均92/92存活、严格18/92，4active目标均0/16严格。MC组相对原源目标速度MAE.014761→.013953（约−5.5%），vx幅度.010918→.011308、pitch幅度.30529→.31632，不能称整体减振。待机有局部改善但未过线。MC组在原actor的留出return上误差仍优于同预算control，证明校准收益未完全消失，但不是新actor真值。后处理漏写evaluation/command.json导致auditor退出，补入已执行命令仅CPU重算完成，未重复GPU评估；失败记录单独保留。
+critic_mc_authority_oracle保持同MC初始化/reward/DR/seed/budget，仅开放994个actor参数张量（std与buffer不变），与原14tensor臂对照；24更新后92存活、严格17/92，4目标0/16。目标速度MAE.013290、vx幅度.010365、pitch.292996，虽较受限臂改善但没有新目标严格通过且低域retention下降，不能直接晋升。三组两个低速转弯active槽3确定性均100%被最终consumer裁剪，raw越界约.064–.079，单纯critic修复和开放参数都未解除此机制；待机不裁剪，不能用它解释所有点。
+
+### 2026-11-05 entropy探索落实为有界可训练轮std，默认关闭
+确认现行entropy_coef0、六维std.03冻结；不等于无随机采样，但熵无法调节探索。源码authority及delayretention入口此前强制freeze_action_std，现有freeze_leg_action_std不能直接用于此主线。新增显式--bounded_wheel_std/--bounded_wheel_std_lr：fresh optimizer、与旧冻结/其他噪声hook互斥，原Gaussian采样和logprob保持；仅轮std可训练、腿std逐次固定，独立optimizer group，每个step后严格上下界，warmup可冻结/恢复。rmuc_delay_retention现在固定初始化的mean penalty尺度，冻结std旧模式数值不变，避免增大std偷偷减弱旧技能约束；仍为mean保留代理，不声称方差分布完全保留。9项bounded/retention测试通过，源码编译通过；已运行oracle不受代码改动影响。
+critic_mc_entropy_20261105从同e69c0d9c MC源，原14均值tensor+distribution.std_param，entropy=.003、轮std[.02,.06] LR1e−4、腿std.03，24更新1200秒；硬件/DR/65%rehearsal/beta4及23x4后验不变。runtime通过；第17次更新轮std约.03661/.03381，腿仍.03，确认实际学起来而非只改entropy数字。protected_keys文件沿用原初始mask，显式bounded入口在optimizer准备后解除std整体freeze，仅轮梯度可用；effective更新范围以本实验allowed_keys/contract为准。当前行为结论待后验，不自动晋升，不改桌面策略。桌面仅新增真实末期曲线RMUC训练曲线/critic_mc_pair_20261105（1.024秒片段，非验收）。
+
+### 2026-11-05 有界entropy对照完成，轮探索已生效但没有行为晋升
+critic_mc_entropy_20261105完成24更新约505秒，checkpoint8bc8f6528728b38b3f073db079fad5c57cb89119b8b4feff3cabd707853c1899。最终轮std .0386213/.0375071，四腿std始终.03；runtime/冻结检查通过（14个mean参数张量+distribution.std_param允许变化，std仅轮槽2/5变化），原Gaussian sample/logprob一致，retention均值尺度固定初始.03。9测试通过，默认不开启新入口。
+同布局23x4结果92存活、严格18/92；4目标仍0/16。与MCcritic+固定std对照，目标速度MAE.013953→.014070，vx幅度.011308→.011349、pitch幅度.316322→.317726，无明确行为收益；其他19点严格仍18但有单回合互换，不能仅总数不变称完全retention。故promoted=false，不改桌面策略。本实验仅轮std探索，两个低速转弯腿槽3仍100%消费端裁剪的问题没有被修复，不能以此排除整体探索瓶颈，也不能再把critic或entropy任何单项认定为唯一主因。
+最终报告、完整command/evaluation、rawJSON、freeze/retention均在artifacts/critic_mc_entropy_20261105。真实训练末期速度/腿差曲线已按用户要求另存桌面RMUC训练曲线/critic_mc_entropy_20261105/entropy及critic_mc_authority_oracle_20261105/oracle，均明确1.024秒末期片段非行为验收。当前这几组进程已经结束，无训练自动续跑；主线goal仍未完成。下一优先是验证饱和腿通道实际有效探索与actor更新约束，保留当前校准证据和所有旧基线，禁止复用未通过候选当全域成功。
+
+### 2026-11-05 用户纠正：critic尚未修好，禁止用局部校准或探索入口完成代替
+重新核对critic_mc_repair留出测试：四点EV为.4374/−2.3364/.5831/−.4100。RMSE下降证明局部校准有收益，不构成critic质量全面达标；高速/压弯独立实际回报未覆盖。接短PPO后严格18/92不变、4目标0/16，不能称critic修复成功。更不能用“未充分修复的critic干预没有行为突破”排除critic为主要瓶颈；此前证据只支持这次初始化校准不足。entropy有界轮std入口修通和9tests通过属于机制验证，不是探索问题解决，也不是critic修复。
+状态明确：critic修复未完成、策略晋升未完成。后续应继续围绕局部critic的泛化、目标一致性与在策略更新中的价值质量验证；动作饱和/探索是并存问题，不把它们当借口跳过尚未完成的critic修复。物理/部署契约不改、无新GPU启动，现有baseline保持。
+
+### 2026-11-05 按用户建议实现critic专用命令均衡，保持actor采样与GAE不变
+新增rmuc_critic_command_balance.py，默认关闭RMUC_CRITIC_COMMAND_BALANCE；按物理vx/.025与yaw/.05分桶，50%原样本质量+50%等命令桶质量，归一化后严格限制权重[.25,3]、均值1。使用critic输出反向hook实现与显式weighted MSE相同梯度；权重作为TensorDict旁路字段随minibatch打乱，actor输入/样本/advantage/GAE标签不变，不额外复制物理采样。明确这是期望梯度等价的价值损失重权，不是实际新增轨迹。允许高/中/低/后退rehearsal全部命令参与，不只23目标。8项commandbalance+critic测试通过，包含两轮更新shuffle/cleanup、显式MSE梯度等价与actor梯度不变。
+critic_command_balanced_online_20261105从46d97785源、actor全freeze24updates，仅critic梯度权重变化；与此前ordinary24同actor、seed、reward/DR/采样，最多1500秒，runtime已通过。预扫描146桶权重.6096–2.9395；实际更新每轮16critic minibatch全部命中，权重上限3、均值1。完成后核对完整轨迹相等、冻结审计、所有命令共512ms标签与独立实际return，不用各自GAE作优劣证明；若其他域退化禁止局部晋升。
+同步补高速/压弯独立return：初版13x16超过评估器128env上限，解析时退出、0仿真步；保留失败目录critic_broad_actual_return_20261105。改为critic_broad_actual_return_split_20261105 batch0/1：7x16和6x16，总13点，source46d、seed86719/86720、共同48s、episode60s、无actor更新、尾界≤5、每批1800秒。原4低域加1.0/0、1.25±1.4、1.5±1.4、1.7/0、2/0、1.8±.8。保留接管/终止与age≥6稳态分层，稀疏/无稳态不能按通过；固定command未来分布与训练混合分布不同，实际return不是无条件真V证书。后退固定工况因dynamicreverse奖励需单独匹配，当前未覆盖，不能宣称全域完成。所有物理4.89/3/5.5、spring4.31、辨识D/b/C、DR.1与各通道delay同前；未新增GPU之外的环境权限，其他工作区进程只查看不干预。
+
+### 2026-11-05 在线critic命令过采样等价试验结束：有收益交换，未完成修复
+critic_command_balanced_online完成24critic更新，actor全state不变。对 archived ordinary24 的observations/actions/dones/physicalcommands/bootstrapobs/非terminalreward逐值一致；weight每轮16minibatch实际生效，actor梯度和GAE标签保持。132个稳态命令的共512ms sourcebootstrap目标里，balanced centeredRMSE仅21点优于普通；独立原4点仅.1/0改善，其余3点变差。故不能直接启用全局命令均衡，更不能以采样权重生效视作critic成功。
+新13点×16env actualreturn两批均完成48s；相对ordinary24，balanced6点RMSE改善、7点变差。最初13x16因评估器128env限制启动即失败，已按7x16+6x16完成，失败目录保留。low_mc旧4点校准在新seed4低域均优于原源，说明局部校准并非仅原seed拟合；高速/压弯未因此认证。完整artifacts/critic_broad_actual_return_split_20261105/comparison.json。
+利用同数据做13命令均衡实际return拟合（CPU58秒，25D/紧凑62信息输入各2optimizerseed，整env train8/validation4/test4，validation-only选25D seed3519），留出RMSE12/13下降，但(1.25,−1.4)回退17.95%，多个局部EV仍负。该诊断candidate未接actor、promoted=false，不能把12点RMSE下降写成12点策略晋升。
+额外审计发现长48s/episode60与原training20s采样时间窗不同：(1,0),(1.7,0),(2,0),(1.8,±.8)触发40m xy边界终止（计数16/16/18/7/9），不是物理倾倒；原环境将其定义true terminal，原return按该MDP计算没有递推错误，但25D以及现有361D均未含root相对位置，长轨迹额外引入位置/剩余边界风险。不能将这些命令RMSE当作纯动力/延迟critic证据；13点校准明确阻止进入主线。实际tilt在1.25/+1.4有2次、1.5/+1.4有6次，不能被边界解释覆盖。
+修复audit证据链：rmuc_critic_audit新增纯xy截断敏感性计算，evaluate_rmuc_grid仅auditcritic保存rawreward/terminated/truncated/boundary-only序列，以及原episodicreturn和boundary-censored尾界两个口径；不改环境终止/物理或默认验收，不把真实倾倒当timeout。8项criticreturn+commandbalance测试通过，源编译通过。本轮已完成数据无法按帧重建未存终止原因，不回填假标签；保留命令级边界标记。所有最终report/来源hash/冻结/retention/失败条件已保存，当前本轮进程均结束，goal仍未完成，后退固定dynamicreward匹配仍未覆盖。下一步须先匹配回报目标与训练继续语义、补critic所需状态，再决定故障命令的定向过采样，不能跳过critic未修好这一事实。
+
+### 2026-11-05 critic信息缺口最小修复：reward_state_v2冻结actor配对校准
+源码证实原25D及361Dcritic没有_get_rewards所用的滤波速度/滤波目标/上一拍reward动作，也没有相对位置（40m终止）、物理/指令年龄、连续命令cohort信息；不能再把“已加特权critic”当信息充分证据。新增默认queues_v1不变的training_privileged_critic_context=reward_state_v2：保留前25Dactor输入，critic追加39D奖励/位置/年龄/实际DR参数/轮反馈cache/COM状态，共400D；仅v2将原leg torquequeue除40改善单位尺度。只读、不消耗RNG、不提前读取未来命令，未声明完整Markov状态。旧361D快照量纲审计leg queue P99约19.29、轮位置P99约6.21，不编造轮位置无限增长问题。
+9项最初测试通过，补checkpointcritic上下文语义校验和metadata保存后相关25测试通过：25D零列扩展保原预测，扩展critic续训必须dimension/version一致；旧未带metadata的特权critic不静默接续。当前已启动的v2进程在metadata补丁前加载，不重启；最终若需要继续将另存带明确上下文的checkpoint，不覆写原证据。
+critic_reward_state_v2_20261105从46d97785源、actor全freeze24criticupdates，保留commandbalanced50%/上限3、原采样seed和全部rehearsal。GPU0最多1500秒，runtime actor25/critic400以及原4.89/3/5.5、spring4.31、D/b/C、DR.1/各通道delay通过；其他工作区GPU作业不干预。完成核对与ordinary/balanced25的obs/actions/dones/命令/nonterminalreward逐值相同，再按全部有样本命令比较共同512msreturn（明确仍sourcebootstrap非MC真值）。目前未修复认证、未晋升，不能只看总体EV。完整sourceSHA/command/evaluation/contract在该目录；goal未完成。
+
+### 2026-11-05 v2信息校准未胜出，CPU对照进一步定位初始化与动作历史敏感性
+critic_reward_state_v2完成24updates约590秒，SHA11db935a2b89ee56e09778bb90a1a47836771e7f6dd869f3ce985a2841157d42；actor全state不变，完整obs/actions/dones/物理commands/非terminalreward与ordinary/balanced逐值一致。共同512ms目标132点中64点centeredRMSE优于balanced，但各分部均无稳定整体收益，不接actor。另存context_bound_checkpoint仅补输入版本metadata，不覆盖原ckpt。不得把特权信息加入视作critic修复完成。
+critic_conditioning_probe CPU固定同轨迹标签、整env留出、2optimizerseed、每组1024同预算：共同GAE留出RMSE原25约163.8/167.5；输入输出联合重参数化25约490.0/307.8、400约314.5/303.5，没有支持直接归一化。即时reward留出RMSE原25约1.59/1.56、normalized400约1.96/1.65，同样不能宣称新增信息已被学会。训练标签仍bootstrap、样本窄，不能证明信息无用。
+critic_bootstrap_signal与critic_clean_state_probe复用原数据：稳态critic跨拍价值变化常为即时reward波动数十至数百倍；干净当前观测替换不能显著降低，135命令valuejump比的中位数.986。分块替换中，(.5,.3),(.75,.1),(1.25,1.4),(2,0)的historyblock所致value变化与完整跨拍变化相关约.943/.985/.984/.957。只是敏感性证据，绝非history错位/可删除历史的证明；actor输入不改。CPU真实MC拟合加history .01扰动正则强度0/1/10两seed，收益混合，仍无critic修复认证，不直接上线。
+critic_fresh_return_fit首次将boundary-free8命令真实return用相同数据/预算比较warm vsfresh critic（25D及62有效信息、各2seed、1536steps、整env8train/4val/4test）。validation选fresh25 seed3559；其留出8/8 RMSE较原源降低，待机EV.874、(.5,.3).744、1.25负/正1.4为.647/.507、1.5负/正1.4为.543/.108；.1/0为−.230、.75/.1为−1.466，仍未全部解决。数据曾被检查过，属于开发留出而非新正式认证。warm25验证平均RMSE约575/584 vsfresh231/232，提供旧初始化/优化路径的实证方向。无新actor技能或主线晋升。
+为避免fresh未覆盖域价值任意改变，CPU追加outside8命令的原critic输出保留拟合，weight1 heldanchorRMSE约500，8MC点仍优于原源；该anchor是保留代理非真值。构造actor逐值相同初始checkpoint SHA7f6da2aa5cecb69476119d7393a82e35793472f5ffd8ab4fcceb03c5ade1013e。启动critic_fresh_online_20261105：actor全freeze24、原ordinary非balanced损失、同512env/65%rehearsal/seed、1500秒，唯一critic初始化，runtime已通过。
+并行critic_fresh_holdout_mc_20261105原source46d，新的physicalseed86731/noise36731/joint46731，8无边界命令×16env、6000steps48s、episode60s、1800秒。保存原episodicreturn与纯xycensoredtail，同时补raw_actions及rawreward/termination序列，未变执行链。结束自动在全16env同标签上比较source/ordinary/freshinit/fresh24/previouslowMC，按命令×actiondelay分层，actor冻结；新seed验证尚未结束。所有物理4.89/3/5.5、spring4.31、D/b/C与DR/延迟保持，禁止宣布critic已经修好或8技能晋升；goal active。
+
+### 2026-11-05 新seed独立回报收齐：freshcritic仍未修好，局部时序拟合缺口保留
+critic_fresh_online完成24冻结actor更新约635秒，SHAa0790e306bf2d92a71bd3c15801035a8d3d5db620eaf99954f33e7850be47b5e；旧ordinary对照obs/actions/dones/物理命令/非terminalreward逐值一致。critic_fresh_holdout_mc新seed86731八点×16env完成48s，纯xy边界终止0。fresh24在8/8点RMSE优于原source、6/8优于ordinary24，但相比freshinitial待机651.7→1147.6、.5/.3为341.3→433.6、1.5/−1.4为271.2→846.2，校准收益明显被原训练目标部分抹去，不能把初始化修复当作最终成功。
+进一步同环境去均值EV八点全部负（约−3至−45）；例如待机跨envEV.804但within-env−21.21，再次验证只看聚合EV会误导。每命令、每actiondelay、每env的bias/RMSE/EV已保存在critic_fresh_holdout_mc/comparison.json，相关时间样本不是独立回合。critic未修好，无actor续训/策略晋升。critic-only继承配置tail_start=0未记录末期物理曲线，导出器正确拒绝缺失trace；记录available=false，不拿旧或重建曲线伪装本次物理数据。
+critc_value_gradient_conflict CPU精确fullrollout GAE梯度与1024样本/命令梯度方向：待机、.5/.3的各自GAE梯度与全局分别−.107/−.853；对新seed实际return的梯度与全局在待机/.5+.3/1.5−1.4为−.139/−.131/−.424。只是当前权重的一阶冲突证据，MC状态分布与训练有差别，未建模Adam；不能据此宣布唯一根因。说明全局value loss下降不保证弱域改善，进一步检查真实return增量监督而不是重复同recipe。
+审计另外发现reward-copy白名单漏了command_high_straight_alive_baseline（训练25、评估0），现已显式拷贝该非_weight字段和高度reward阈值并加回归测试。该奖励只在vx≥2.1且yaw0且非unsafe时生效，已做的≤2.0所有MC命令均不受该遗漏影响；不能错归因为当前结果差异。7项reward/return测试通过；未来2.1以上critic审计不得漏项。该修复未修改正在运行任务或策略动力学。
+
+### 2026-11-05 纯MC方案复核与奖励历史critic离线续作：未接actor
+核对确认用户提出的freshcritic+实际MC纯MSE路线此前已在critic_fresh_return_fit_20261105执行79.59秒，8/8开发留出RMSE改善但两个局部EV负；接回PPO前加域外旧价值anchor，后续冻结actor24更新实际value clipping已关闭，部分新seed误差仍退化。不能把关clipping当尚未尝试的解决方案，也不能混淆固定未来命令MC与混合未来GAE目标。
+补齐上一段上下文的工作：critic_temporal_fit增量约束降低时序误差却增大绝对误差，验证选strength0；critic_reward_memory_probe的因果过去奖励EMA在原8命令总体RMSE优于fresh24，但不是完整critic。新增默认不接入训练/部署的rmuc_reward_history_critic.py：原25D不变，加过去奖励EMA[.25,1,2]秒和年龄；原critic接管/切换回退、1–3秒过渡、仅残差学习、重置/读写严格时序。
+critic_reward_history_supervised_20261105完全CPU、26.31秒、两arm各2seed、每组1536步、全环境8/4/4切分和命令×环境均衡；既无GAE/ratio/valueclipping也无actor优化。5/8命令RMSE较fresh25好，但待机921.55→1057.61、.1直行356.71→418.11、1.25/+1.4为180.97→335.24回退；只有2/8EV≥.8，within-env全部负。promoted=false/critic_repaired=false/runtime_enabled=false。该新seed数据本次已转为开发集，后续不得当未见测试。13项因果历史/恢复/梯度/MC/采样测试通过；未开GPU、未增加仿真、未改actor/物理/验收。
+额外纠正命令过采样口径：此前equal-bin加权实际把(0,0),(.1,0),(.5,.3),(.75,.1)损失平均权重降为.699/.653/.729/.970；这不是困难命令定向过采样，失败结果不能否定后者。详细份额、分层结果、冻结与失败条件见artifacts/critic_reward_history_supervised_20261105/report.md/json；不重复启动相同warmup。
+
+### 2026-11-05 加速critic修复：排除折叠尺度假设，转为有界行为因果对照
+critic_supervised_reentry_20261105 CPU22.93秒，三种参数/损失坐标各2seed，同初始函数、同128步已存rollout、同新算GAE(.998/.99)、同minibatch顺序；仅保留没有done的环境，避免timeout回报被旧critic补值混入。raw、保留监督归一化坐标、再归一化value loss都在1.5/−1.4的MC诊断上退化，5轮重复批次最终RMSE比分别约1.31–1.39/1.43–1.48/1.30–1.33。不能把导出权重折叠导致的坐标变化当已确定根因，不接该改动。无新仿真/actor更新，完整证据与终报保留。
+纠正工作闸门：每个分层EV≥.8是诊断参考，不是actor能学习的数学必要条件；不应等所有EV漂亮才允许有界行为因果检验。新增默认关闭RMUC_CRITIC_FROZEN_UPDATES入口，仅optimizer前将critic梯度设None，保留Adam动量且逐更新检查参数不变；actor梯度/GAE公式不改。11项冻结/采样/历史测试通过，包括非零Adam动量的冻结与恢复。
+已启动critic_frozen_actor_probe_20261105 GPU0配对：control源46d97785与pureMC fresh25_3559替换critic源ab909a086847fb211a37ca3fe077c0668e279c1f90971267a3e48b4b98f72412，actor全state相同。两路都冻结critic11updates，前3覆盖期actor冻结，后8actor更新；14个允许actor张量、65%rehearsal、beta4、相同reward/seed/std.03/4.89/3/scale5.5/4.31弹簧/DR.1/各通道延迟不变。运行读回均通过。训练每路900秒、验收23点x4另900秒、异常即停，不侵犯其他工作区作业。此为校准价值是否改善减振/跟踪的短诊断，不称critic已修复，不自动晋升；完整command/contract/evaluation文件已保存，结果待定。
+
+### 2026-11-05 冻结critic因果对照已结项：不晋升，停止该候选续训
+critic_frozen_actor_probe两路11updates完成，critic逐值冻结、仅14允许actor张量变化、两路运行读回/覆盖通过；controlSHA ae26dcc94a808e93ed1204f355f9c2261ba56fd0fe1546f203e8729f0e42894d，pureMC critic armSHA b8271d3ad2bb0026f5ddcd0239b65368bd6aa23a3516cac5e11ac964416b6039。23点x4同seed闭环全部92存活；source/control/repaired严格副本18/17/18。repaired仅新增1个idle副本并丢.285279/−.068713的1个旧副本，没有新增完整通过命令。4目标均值speedMAE .014761→.015239、vx幅度.010918→.012258、pitch幅度.305290→.347232，按减振优先拒绝，不继续该候选长训。critic_repaired=false/promoted=false。
+paired_credit_signal同control轨迹预测显示pureMC在.5/.3、.75/.1的V逐拍std约107.76/176.81→42.83/51.32，但idle102.97→149.85。说明价值回归有局部收益，却未变成行为收益；8次actor更新不足以排除critic作用，不能宣布critic已好或算法无效。末期实际11.264秒训练曲线已导出并目视核对桌面RMUC训练曲线/critic_frozen_actor_probe_20261105/{control,repaired}，不覆盖部署网络。完整终报/report.md/freeze/retention/evaluationJSON已齐，所有本轮GPU子进程正常退出。
+下一项仅CPU既有MC多seed汇总：区分各命令回报方差尺度与共享critic梯度干扰。比较共享全局scale、共享每commandscale、独立commandcritic三臂，actor/环境不动；各2seed1024steps、全环境划分。此为价值函数诊断，不能当作部署actor新专家或全域认证。
+
+### 2026-11-05 命令分层纯MC监督出现可复用改善：仍非critic修复证书
+critic_command_isolation_20261105汇总既有多physicalseed、actor同46d源、8边界无影响命令，完整env分割；每命令训练16/24env、validation/test各8/12。CPU49.06秒，三个arm各2seed1024steps、batch1024、同命令/env均衡采样；全部纯MC MSE，actor不更新。共享全局scale、共享每commandscale、独立commandscale比较：隔离分支7/8 RMSE较共享全局好，另一点1.5/+1.4约4.35%高；8/8commandEV为正[.937,.573,.726,.114,.711,.727,.743,.170]，但within-envEV仍全负。每命令scale本身使6/8点RMSE下降，说明全局归一化不等于每命令误差平衡；独立head增加容量，不能唯一归因为干扰。未宣称单帧不够/critic已修好或策略晋升。
+完整report/最终结论已保存，不改物理或部署。正在仅CPU同数据对照isolated25/62/361critic输入，检查真实状态/延迟队列信息是否补剩余缺口；保持actor25D、无新仿真。
+
+### 2026-11-05 隔离critic信息对照结项：不采用扩维，仍保留critic未完成结论
+critic_isolated_information_20261105 CPU71.33秒，相同既有数据、整env划分、2seed/1024steps/每command输出归一化，比较隔离25/62/361Dcritic。25D数值复现前轮选中RMSE，最大差2.66e-5而非逐位相等；62D/361D在8/8命令留出RMSE均更差，不接在线训练，不认定真值/延迟信息无用，也不能证明25D已足够。完整报告report.md/json、sourcehash、freeze/retention已保存。
+本轮没有真正晋升的适应点：冻结critic配对92/92存活但校准版本震荡更差，停止该候选；共享critic尺度/干扰CPU诊断虽使8commandEV全部正，within-env仍负，不能称全面修好。默认关闭的RMUC_CRITIC_FROZEN_UPDATES机制和测试已完成，当前无本轮训练/验收后台作业。下一步应以按命令价值尺度与局部更新互扰为实现方向，保留实际行为判据，不再重复普通critic warmup或盲目扩维。
+
+### 2026-11-05 延迟分段权重复核：建议改为中部主分布，两端保留，尚未执行
+实际最新readback：action0/2/4/6/8ms概率10/10/20/30/30%，6–8ms合计60%、均值4.8ms；obs0/2/4/6/8均匀，wheel/leg4/6/8均匀。当前属于高actiondelay重点攻关分布，不是实测延迟分布。实测左11/右7ms为观测至开始执行路径，不能直接当成每个通道的采样中心。
+用户提出中部实测高权重、尾部低权重：认可作为主训练分布的方向。准备单变量action权重[1,2,4,2,1]（10/20/40/20/10%，均值4ms、高6–8合计30%），物理范围不缩、wheel/leg/obs先保持；4ms只是工程暂定中心，未测通道分布不能称实测。不得同时修改critic/reward后混归因。既有困难尾部不能删除：验收固定均匀，加每命令高6/8ms专项层，记录实际command×delay曝光，不用加权均值掩盖tail失败。当前仅proposal、未修改训练配置或启动GPU，artifacts/delay_sampling_review_20261105/proposal.json留证。
+
+### 2026-11-05 用户批准中心延迟采样，继续critic实现
+已新增configs/rmuc_delay_sampling_centered.json，并将artifacts/delay_sampling_review_20261105/next_training_command.json中的action权重落实为[1,2,4,2,1]；轮/腿4–8ms、obs0–8ms仍均匀，所有物理/响应/反馈年龄不变，验收均匀且保留6/8ms尾部专项。8192环境CPU采样比例10.156/19.812/40.637/19.397/9.998%，其他队列随机序列逐值相同；这是下轮生效配方，尚未开新GPU，不改历史command。
+新增rmuc_command_value.py独立命令critic模块，25D（含完整动作历史）输入不变；各command独立网络、固定归一化回报尺度、compact不重叠门控、域外精确冻结原critic回退。前向原回报单位，GAE不改单位；可选normalizedMSE梯度，未启用主线。测试检查原CPU监督结果等价、域外原预测、MC归一化梯度等价、Adam动量不移动未激活head、checkpoint契约、门控连续；与delay测试共9项通过。
+critic_command_value_reentry CPU9.74秒：可执行模块与离线oracle最大输出误差.000488（值量级数千），固定actor/同旧rollout/同初始GAE对照，隔离网络raw与normalized更新仍使数个压弯MC误差升高20–70%。说明仅网络隔离和loss尺度不足以防止MC校准被bootstrap训练目标侵蚀；不接该简单实现。正在同CPU数据上加入train-only实际MC回报约束，validation逐command不退化≤5%约束选优，test不参与选优；没有用测试标签训练。
+
+### 2026-11-06 中心延迟配比已在GPU读回生效；MC约束critic开始实际循环验证
+configs/rmuc_delay_sampling_centered.json落实到新训练，两路实际action概率均10/20/40/20/10%，轮/腿/obs采样序列逐值相同；范围、response/反馈年龄不变，当前eval仍uniform。不是通道实测置信分布，不叠加7/11ms实测端到端延迟。
+critic_command_value_replay_20261105 CPU35.88秒，固定actor旧轨迹GAE配合仅trainenv MC校准约束；validation逐commandRMSE≤初始1.05的可行解17个，选择replayweight1/seed3653/update5，GAE留出RMSE150.49；独立env测试8/8commandEV正，最差RMSE比初始1.04046，无之前20–70%退化，但不是新seed或行为证书，withinenv缺口仍在。
+新增默认关闭rmuc_command_value_training.py：训练critic独立optimizer按command回报尺度做归一化MSE，并用固定actor实际return训练子集约束；PPO使用前向原回报单位，actor输入/奖励/GAE不改。未激活命令head与fallback冻结，旧MC只给critic，不用离线actor梯度。保存checkpoint时另存完整commandcritic/optimizer/配置，标准critic_state_dict保留原fallback以兼容actor-only验收；普通resume显式拒绝丢失sidecar，不能默默退回旧critic。相关12测试通过。
+critic_command_value_online_20261105两路GPU0 actor全冻结12updates，source46d97785、共同commandcriticSHA5ae27199cc39310e67960fbc4db8d4252e3b3df52c877d51d5ac07224ad5d4e7，仅replayweight0/1对照。各900秒budget，所有运行契约读回通过；peak4.89/3thermal/scale5.5、spring4.31、PD60/2、辨识b/C/D与DR.1保持。训练rng与replayrng分开，避免replay采样改变minibatch或actor物理轨迹。结束自动检查actor/fallback冻结、同obs/actions/nonterminalrewards、逐command×actiondelay的已有MC留出；无新actor技能宣称。命令/契约/分析已齐，状态running，未晋升。
+
+### 2026-11-06 在线MC约束保住8点汇总，但全域局部critic缺口明确保留
+critic_command_value_online两路12updates正常完成：controlSHAd31fd85b0cd4aefa3ec0f794b70d65375b14e8edaad54c95495f02c7dbc1fa67、replaySHA10e77842041b9ea99e1917396ea5ee9e5172df031edced64659794ca99237fd7。actor与fallbackcritic逐值未变；同obs/actions/dones/physicalcommands/nonterminalrewards完全一致。中心delay配比运行确认。未加MC约束的8点RMSE比分别2.193/1.011/2.038/1.495/1.700/2.492/1.445/3.642；加约束全部在.947–1.036，8/8commandEV正，证明该配置下确实防住了校准遗忘。不是critic全面修好，未晋升actor。两路实际12.288秒训练图已存桌面RMUC训练曲线/critic_command_value_online_20261105。
+用户提醒不能只盯8点：已补artifacts/critic_full_domain_status_20261106/report.json/md与required_coverage.json。154历史required点本次125有稳态证据，29缺；全部稳态141命令中116局部own-GAE EV负（非独立真值）；中速直行9/9、高速直行10/10、后退6/6、低turn12/19、中turn54/62、高turn8/9。总体EV仍约.9–.99会误导，分部逐点必须保留。新critic只实际参与6个稳态中心，其余主要仍fallback；只有8点边界无影响匹配MC，不能推全域。
+尾部也未解决：test6/8ms共15有样本格中6格RMSE回退>5%，最差1.5/+1.4的6ms约30.1%，1.5/−1.4的8ms约28.3%；很多格仅1–3env，明确稀疏。分env时序EV仍负，不能用汇总保留掩盖。延迟分档仅对128步无reset且age连续env使用末拍值，其他unknown，未反填。当前所有本轮GPU进程已退出，critic_repaired=false/promoted=false。下一步必须补中高直行、后退、历史大小yaw的匹配MC，而不是重复8点；高速空间终止和后退reward契约先审计。
+
+
+### 2026-11-06 行为恢复优先：不再等待全部critic EV变绿
+用户明确优先恢复待机/高速/压弯全部历史能力、抑制震荡和后退超调。已停止计划中的新400D大批MC采集；复用已有MC校准，限定其只验证8命令，未修复中高直行和后退critic。critic有误仍可能短程改善，不保证收敛，更不能由EV变好推行为通过。
+新behavior_recovery_20261106三组并行16updates（3criticwarmup+13actor），source46d97785c52a37742c35f042c0190774227360d17f491d37b51ef3c9dfb9e42e，MCcritic12dba49de0ec9f428eb535d719df2b710d739ef3973b889001d1711afe9eec3e，各1200秒上限。直行仅alignment/straightanchor/extension/high，压弯仅turnexpert/negativejointreference，后退仅jointdelay/reverseanchor/extension/reverse，实际consumer梯度覆盖各目标；非目标保留beta4+65%rehearsal。旧保护规则把action0/2/4ms目标也锁住，新中心分布下占70%，本轮默认关闭新选项RMUC_RETENTION_TARGET_ALL_DELAYS只在这三组启用，放开目标所有delay学习，非目标保持。
+后退审计：sequenceovershoot不覆盖固定后退；当前reverse_runaway默认0，已有普通overspeed与tracking仍生效。仅后退组显式启用已有runawaycost权重2（超速+120ms继续倒加速预警），不改动作或速度外环。当前固定反向目标−.1/−.15/−.25/−.35/−.4/−.6/−.8；不声称扩到−1.5。动态10%仍旧rehearsal，本轮不是新动态能力训练。
+peak4.89/continuous3/scale5.5，spring4.31阶段、radial0，腿PD60/2±40，2msphysics/8mspolicy；辨识b/C及Dfb不变。DR.1、wheel/leg4–8ms、obs/action0–8ms、tau0–5ms、wheelage0–8ms，action中部权重[1,2,4,2,1]，验收uniform。旧MC只作为有限actor变化内价值锚：按8命令分别检查均值KLproxy，任一>.5停止，不能全体均值掩盖单域漂移。20相关CPU测试通过。
+运行命令/experiment_contract/hash/trainability/evaluationcommand齐全；结束自动做source同32×4配对（包含4反向点），记录实际超调、首episode6–12s震荡、survival/strict，以及冻结/保留。32×4仅筛查；历史154点、多seed和动态保留尚未完成不得晋升。每组末期速度/腿角差图保存桌面RMUC训练曲线/behavior_recovery_20261106。其他工作区GPU进程未干预。当前running，尚无新通过点；不得将准备工作或critic改善算策略交付。
+
+
+### 2026-11-06 行为短训终报与执行错误纠正；硬峰峰值门槛
+behavior_recovery三组16updates全部结束，source46d；straightSHA4ff852b607491edb45482496d776449ff4fafc1b31d9554abf6395031f806462、turnSHAacbec2a167722528ae188a3005aa1bcdfbea9f0982da062324597f5ffa32c899、reverseSHA8a66d6b51e2fa6456f526f4264e7a2b07878e8fb01f1a9da3820fb2780f356b9。更新tensor24/14/24，无越界冻结/buffer变化。32×4同seed初态/质量/材质/噪声对照完成：直行strict27/52→29/52但完整点6不变；压弯16/56不变；后退9/16存活/strict→12/16，−.6从1→4/4，−.8仍0/4。−.6最大超速3.6646→.82075m/s，仍明显瞬态超调，不能认证后退完成。所有候选promoted=false，主4e5587不动，未重复续跑。
+明确纠错：MCbank只覆盖8命令，高速/后退训练目标仍走冻结旧fallback；这是执行方案错误，不是已修critic的全域续训。已新增validate_actor_critic_coverage，使用此bank且actor将更新时强制target-only梯度及各目标gate全覆盖，不满足启动报错，禁止再静默靠旧fallback训新域。不能说所有旧critic必然不收敛，也不能把ownGAE高EV当独立真值。
+用户先允许小幅不影响运动的振荡，随后明确3°指“稳态俯仰max−min峰峰值≤3°”。已固化configs/rmuc_oscillation_acceptance.json与audit_pitch_peak_gate.py：首episode6–12s原始pitch、逐实例max−min、不detrend/滤波/P95替代、完整窗/存活必要，动态起停和超调单列。此前提出故障振幅减半不采用。16项相关CPU测试通过，包括尖峰不能被percentile吞掉、趋势不能去除、缺窗不能通过。
+纠正平均幅值掩盖：straight1.8的4回合去趋势P95P05均值2.633°，最差实际7.301°，rawmax−min8.5567°（source3.6097°），约1Hz持续不衰减，速度raw峰峰.21868m/s。显著失败，不是门槛太严。按新峰峰门槛+既有工程tracking/yaw/角差，source61/128、straight62、turn61、reverse64；均仅4rep筛查。reverse−.6rawpitch最差2.272°过震荡分项，但起步超调.821仍失败，禁止混算。
+signal_audit复用现有轨迹重算：env47的speed抗振项未加lateral安全mask上界平均.08106→1.05298，pitchrate项.11113→.42753；抗振项有信号且变差，不是又全为零。因未保存该窗口lateral安全mask，明确速度项是上界复算，不冒充完整reward。既有旧critic、目标变更/冻结及信用分配仍需匹配真实MC验证。
+只补确实缺失8命令MC：critic_missing_domains_20261106 high1.7/1.8/1.9/2.0，reverse−.25/−.4/−.6/−.8，source46d不变，16env/点48s，两组1800秒；actor和critic更新0。后退audit新增显式保留fixedreverse dynamictracking与runaway权重，不再把它们误置0；原默认audit仍拒绝不显式的后退口径。长高速audit空间界120m/平地320m，只用于continuingfixedcommand价值，物理tilt等终止不变，不能当原20s混合MDP精确值。同步保存25D和400Dcontext；完成自动各2seed、1024步纯MC MSE拟合，wholeenv8/4/4划分，验证集按最差commandRMSE比选优，test一次，分起步/稳态/延迟报告；不会自动回接actor。现有8命令MC保留复用不重采。
+
+
+### 2026-11-06 缺失MC已采完，25D监督拟合有实质局部进展；用户收窄延迟组合
+critic_missing_domains_20261106两组实际48s/4×16完成，400Dcontext保留，纯xy终止0，actorhash不变、更新0。两个输入档各2seed1024pureMSE、CPU12–20秒完成。25D留出RMSE/旧critic：高速1.7/.8/.9/2.0=.524/.236/.345/.513；后退−.25/−.4/−.6/−.8=1.266/.343/.614/.050。400D=.521/.301/.608/.714与1.344/.496/2.165/.060，整体不胜出。−.25不能替换，−.8只有失败起步无稳态成功样本，MC拟合良好不是学会；actor仍未放开。分新低总延迟子集多数高速只有1个testenv，保留覆盖不足，不伪造证书。
+用户据轮实测观测至开始执行7–11ms，允许降低轮/腿延迟组合并将最难尾部放宽，随后明确腿比轮略高。新增默认关闭joint combinations sampler，配置configs/rmuc_delay_measured_path_20261106.json：90%主域轮串联obs+action+wheel队列总和6/8/10/12ms，腿精确+2ms即8/10/12/14ms；主权重在轮8/10、腿10/12。10%压力尾部轮14/16、腿16/18，不作为主域晋升必过点，失败不能写通过。6/12为2ms量化包络7/11，腿+2为工程先验非实测。responseτ0–5ms、反馈年龄0–8ms、policy相位仍单列，不声称队列和就是所有闭环年龄。
+8192CPU采样主域90.21%、轮均9.819ms腿11.819ms，差逐env精确2ms；私有RNG、部分reset不扰他env、非法非整步/重复独立action权重拒绝，相关25测试通过。此前双通道同6–12的准备配置已归档before_leg_offset；没用于GPU。正在用核心配置（不混压力尾部）执行measured_delay_core_screen_20261106，同source46d/32×4，唯一delayprofile变化，其他DR/动力保持。是新授权主域的基线重建，不是新训练收益；完整命令/contract/sourceSHA可查，完成前无通过声称。3°rawpitch逐回合峰峰值不放宽，超调/倾倒与tracking要求独立。
+
+
+### 2026-11-06 腿比轮+2ms新主域实际筛查完成
+measured_delay_core_screen_20261106源46d不变、仅联合delay组合变更，32×4完成、runtime读回通过。轮主串联队列6/8/10/12ms、腿精确+2ms（8/10/12/14），不加压力尾部。124个完整回合全部rawpitchmax−min≤3°，−.8四回合倾倒不能通过。既有工程跟踪/yaw/摆角+3°合并61→71/128、完整点13→16；新增完整筛查点[[1.6, 0], [1.7, 0], [1.8, 0]]，丢失完整点[]。1.7/1.8/2m直行4/4，1.9仍2/4；多处大小yaw跟踪和待机未通过。属于用户授权缩窄延迟后的基线重建，绝非新训练收益；无全154/32rep/动态/多seed认证，不晋升、不替换主策略。后退瞬态超调另外保存，不能用尾段合并screen通过冒充起步无超调。
+当前这批GPU训练/采集/筛查与CPU拟合都已结束。下一步以新主域真实失败清单和校准覆盖续训，旧8点+新8点MC保留复用；禁止继续原独立相加重尾且旧fallback冻结的失败配方。
+
+
+### 2026-11-06 用户确认后退宁欠速不超调，四组有覆盖critic的并行适应启动
+用户确认后退专项：稳态允许欠速25%，全首回合瞬时超出目标后退速度≤.05m/s，存活与稳态rawpitch峰峰值≤3°不变；前进/压弯原tracking门槛不跟随放松。新增audit_reverse_overshoot_gate.py，不能由最后2s准确掩盖早期倒冲，也不能停着不走混过欠速判据。后退加速度使用−Δvx/Δt；不直接清零轮力矩，避免倒立摆接身动作被砍。继续使用已匹配MC的reverse_runaway权重2，含真值与滤波向后加速度共同成立时120ms超速预警；不同时改变reward令MC失配。
+covered_behavior_repair_20261106四组同source46d97785c52a37742c35f042c0190774227360d17f491d37b51ef3c9dfb9e42e：reverse−.4/−.6/−.8，48updates；idle_low0/.1，40；turn .5/+ .3、1.5/−1.4，40；high1.9，32。各前3criticwarmup、最多2400秒，512env128steps，LR3e−5/std.03/65%rehearsal/非目标KLbeta4。当前训练目标均在校准critic gate=1；没有沿用上一轮目标落入冻结fallback的错误。新reversecriticSHA7d3e8238366cd95ccf9550ca905e19a96485f662bf12bb7523b2ce3f734abe51，仅保留验证改善的3头，不替换−.25；highcriticSHAbc5b4cb50669eb1f3353d928479c809b331f059c907bf4bff079ad50b454a28e，仅1.9头；idle/turn保留12dba49de0ec9f428eb535d719df2b710d739ef3973b889001d1711afe9eec3e已有MCbank。load_replay支持manifest显式age0或6，reverse/high新数据包含起步样本，16相关测试通过，未用heldout训练。
+最新联合延迟训练配置90%主域轮队列和6–12ms、腿精确高2ms；10%压力尾部轮14/16腿16/18，不作为主域必过。responseτ0–5ms/轮速年龄0–8ms单列；peak4.89/3thermal/scale5.5、spring4.31、PD60/2±40、2msphysics/8mspolicy、辨识b/C/Dfb和DR.1不变。四组实际runtime全部通过，约29.5GiB/32.8GiBGPU0共享，其他workspace不干预。
+截至本条四组都完成4更新并已进入actor更新，冻结无越界，MC源策略KL最大约.00169/.00148/.00148/.00072；不将其视作行为改善。结束自动做新core32×4配对、原始3°峰峰值和后退全程overshoot，旧高速/大小yaw/待机/反向均包含在筛查。full154/dynamic/multiseed尚未完成，promoted=false。训练末期实际曲线仍输出桌面。已设置当前线程heartbeat automation rmuc每10分钟静默检查，只有失败/完成等可操作变化报告，处理完本轮后暂停，不重复启动同组。
+
+
+### 2026-11-06 四组并行训练进度与预算停止收尾修复
+用户催促加速，实时确认四组约23–26updates、GPU99%约30.3GiB，运行/冻结均正常，无本轮正式行为结果。当前高速32更新预计最先结束；后退48更新按共享吞吐可能先碰2400秒预算。原pipeline遇预算或MC变化边界停止会只记failed、不把最后已保存有效checkpoint送验收；这会浪费已完成更新。新增salvage_bounded_stop.py独立收尾，只在原pipeline与其报告完成后处理上述两种有界停止，绝不重复运行仍在训练/验收的组。按完整保存iteration定位，核对sourceSHA/actor允许参数/所有buffer及fallback不变、MC KL在对应更新前均≤.5，然后保留partial_completion和原failed证据，验收最后有效checkpoint，明确未跑满，不冒充训练完成。其他错误一律不自动恢复；不改正在运行的奖励、优化器、轮数或物理契约。
+
+
+### 2026-11-06 四组闭环终审：无新增完整通过点，修正更新路径和停止计数
+covered_behavior_repair_20261106四组32点×4配对完成、runtime/freeze通过；按当前reverse全首回合超速≤.05与允许欠速25%、rawpitch逐回合≤3°，source60/128，reverse60（新增0丢0）、idle58（0/2）、turn60（0/0）、high59（1/2）。此前71未含反向全程超调，不能当同口径比较。四组均无新增4/4完整命令，high丢1.7m/s完整点，promoted=false，不合并，不替换原主策略。
+−.6最大后退超速.77295→.34811m/s，稳态后退.51477–.54178、4/4存活、rawpitch最差.69663°，仍未达到.05；−.8仍0/4存活。待机rawpitch最差.85038→.08198°，但速度绝对误差.01841–.02685m/s超.01。1.5/−1.4 yaw误差.25388–.25769，未通过。high的1.7单副本rawpitch2.41721→3.56658°，拒绝退化候选。
+后退2400秒budget停止，日志完成43update，最后保存model12180实际41update；旧salvage按iter差+1误报42，已以新critic optimizer656steps/每update16独立核对并修正，原记录保留。其余idle/turn40、high32完成。
+CPU复用源轨迹查到.5/+.3的joint_delay_reference_network门控为0，真正参与该点的joint_turn_source_network冻结；turn expert仍有梯度，不能称全路径关闭。active左腿槽raw1.0399–1.0901经consumer截到1，局部姿态梯度受限。已补physics_selection对source/anchor显式选择和正确嵌套gate；真实forward偏导回归测试，相关18项通过。actor/物理/reward未改。三个末次rollout目标识别遗漏0；局部ownGAE EV不等于独立MC。完整REPORT.md/control_path_audit.json/local_advantage_audit.json保留。停止重复原四组配方；下一步必须针对实际生效路径做有界验证。full154、32rep、多seed、动态和压力尾部均未认证。
+
+
+### 2026-11-06 针对已证实更新路径问题，启动单组有界验证
+已补rmuc_physics_selection对joint_turn_source_network、joint_turn_update_anchor、straight_update_anchor、reverse_extension_anchor的显式选择与真实嵌套门控；测试用forward偏导覆盖零/全/过渡gate，相关25项通过。train.py允许显式physics分支选择配合既有rehearsal KL，不再要求全actor诊断开关。默认训练行为、actor函数、奖励、物理与consumer限幅均不变。
+turn_path_repair_20261106仅训练实际生效的两延迟残差头：.5/+.3用joint_turn_source_network，1.5/−1.4用joint_delay_reference_network，真实保存obs下各gate=1、wheel-diff参数梯度非零且critic gate=1。源46d97785c52a37742c35f042c0190774227360d17f491d37b51ef3c9dfb9e42e，critic12dba49de0ec9f428eb535d719df2b710d739ef3973b889001d1711afe9eec3e，12更新(3criticwarmup+9actor)、900秒预算、65%rehearsal/beta4，MCproxyKL>.5/冻结或读回错误即停。与旧40更新比较不是同预算算法因果结论。4.89/3/scale5.5、spring4.31、辨识b/C/Dfb、DR.1、联合delay新主域与尾部、obs25/action6全部保持。启动后runtime_verified全部通过，未新增主线晋升。结束只做相同32×4配对，full154/动态/多seed仍待验，失败不自动续训。旧四组heartbeat按要求已暂停。
+
+
+### 2026-11-06 转弯路径短验被否决；补严格域隔离，复用轨迹审查信用信号
+turn_path_repair_20261106的12更新完成，candidateSHAa27ea18d67940234552055c1a17ce84bf53eca123fb8644822c0b56d90f064cd；runtime/freeze通过、32×4配对60→58，新增0、丢1.7/1.9各1回合，无新完整点，不晋升/不续该candidate。两目标yaw仍约.19–.21和.247–.253；1.5/−1.4实际是超转，不能误称欠转。
+复用两批末次随机rollout，.5/+.3学习方向不反；1.5/−1.4新批256ms实际reward梯度方向−59、value差项+57.75、后续adv+2.86几乎抵消。单批局部证据不等于critic错或唯一根因；lambda1区间仍跨0，不直接上线GAE变更。再复用20,800既有MC稳态样本，旧延迟分布下负yaw长期方向仍不确定；未重采MC，未离线更新actor。
+确认共享source分支参与高速直行，软rehearsal仍可能丢点。新增默认关闭joint_turn_source_update_scope及checkpoint恢复：冻结原anchor，目标vx[.4,.6]/yaw[.15,.45]外逐值保留，不改残差预算、25D/6D、物理或reward。36项测试通过；完整actor16,256输入初始化/恢复逐值一致，合成更新后15,976域外及1,512高速直行输入完全不变。新source7db6c7d10da8f1a3595547a39db8bd3547a41a7b2841c5ad870dca23c944bd3d仅零训练等价准备，不是技能晋升。train.py已改为显式active_targets逐点gate核验，保留全课程rehearsal而非降低全局level。
+turn_source_isolation_20261106仅.5/+.3实际source残差头：24更新（3warmup+21actor）、1200秒、同奖励/LR3e−5/std.03/65%rehearsal与beta4、MC源偏移>.5/冻结非有限/运行契约错误即停；4.89/3/5.5、Dfb/b/C、spring4.31、DR.1和新联合delay契约全部不动。结束同32×4筛查，不自动续长训；当前已启动，结果待定。前轮报告、原始信号审计和实际修改文件清单见artifacts/turn_path_repair_20261106。
+
+
+### 2026-11-06 奖励到更新的实测审计；提高后退惩罚前同步换回报口径
+reward_credit_probe的8更新(3criticwarmup+5actor)已完成，候选f140fd43e9f9c53bfb8ddc515e625bde648233994577f53441ae2c3556c5c529，32×4对即时reverse41源60→60、增0失0；−.6最差超速.348106→.357063，没有改善，拒绝重复续训。权重2的runaway和osc均通过reward/clip/GAE归一化进入actor梯度；512样本审计中5个actorupdate前4次实际位移与两惩罚上升梯度均负余弦，第5次转正。这不是惩罚没开，也不证明单一critic根因。
+全量梯度4更新诊断在3个criticwarmup后、0个actorupdate时因均值重算差异停止。复用已有17,272目标样本GPU对拍确认TF32批量精度：512分块最大1.24e−5，全批6.17e−4；不是观测/动作错位证据。改为采样batch大小分块累计全部梯度，不放宽原断言，22项测试通过。原失败归档，取消重复4update探针。
+用户要求超调/震荡优先级仅次于存活危险约束：下个后退实验把两权重2→4，不能沿用旧MC标签。behavior_priority_20261106只补−.4/−.6/−.8匹配回报，固定reverse41等价actor f4c5e7b36da5a52c8e14e1a5114625e44700f8017bd33aa12c2194c6ab6c5a5b，最新联合delay、4.89/3/5.5、spring4.31、DR.1不变。新MC额外保存完整unclippedreward/两加权cost/unsafe，后续权重对照可直接重标，无需反复采样；critic新标签留出通过前不更新该actor。存活仍一票否决，权重数值不等于已证明词典式优先级。
+同时恢复turn_source_isolation_20261106的24更新：源7db6c7d10da8f1a3595547a39db8bd3547a41a7b2841c5ad870dca23c944bd3d，实际scope头仅.5/+.3可变，原anchor域外逐值冻结。这个点当前pitch<.5度，主要缺yaw，不无差别加震荡惩罚；转弯奖励保持旧口径与已校准critic匹配。两个startup0update失败已归档，当前才是修复后有效启动。两项均非晋升，全域恢复/部署未完成。
+
+本轮执行补记：转弯隔离训练PID3366197已通过runtime全项并进入actor更新，全目标梯度分块复核正常。后退weight4的固定actor MC PID3366156连续采样（未重启），原900秒只读采样预算按当前共享GPU实测吞吐修订，原因/旧wrapper与接续monitor PID在behavior_priority_20261106/budget_amendment.json；仅替换本工作区超时监控wrapper，保留同一采样进程，不触碰其他工作区。后续自动CPU拟合/准备；actor真正续训需新critic留出通过并核查新reward是否诱发早摔动机，再报告完整哈希和契约启动。rmuc心跳已更新为5分钟、无变化静默，跟踪两项而非旧四组；处理完终报暂停。目前没有新增晋升点。
+
+
+### 2026-11-06 隔离转弯按MC偏移保护停止，验收最后合规保存点
+turn_source_isolation实际第19次更新触发MCsourceKL=.515435>.5保护，不放宽、不盲目续训。18次有完整审计，最新保存model12156比source12139多17更新(3warmup+14actor)，criticoptimizer272steps独立对应，保存时KL=.411311；SHA6e3c387c54408e6b42e2a4fd31d653549434b898fa6bf94656ea896db918fb38。actor仅6个隔离source参数张量改变、其余与fallback逐值冻结。原失败保留，partial_completion.json明确未完成24更新预算。启动同32×4筛查，先核验低速yaw收益/全部保留，promoted=false。全目标梯度已真实运行，无TF32对齐失败；nonzero梯度不代表行为通过。后退weight4固定actor匹配MC仍正常，不重复启动，等待完成后校准。
+
+
+### 2026-11-06 惩罚2→4匹配MC完成，分层校准后启动有限后退续训
+behavior_priority新MC完成3命令×16env×48秒，无重复采样；138747条有界MC。−.6全48秒样本无倒地、reward4非终止均值+2.235、clipfloor0；−.8共401终止、均值−36.899，故不直接扩训该失败域。MC完整保存逐拍rawreward/两加权cost/unsafe，clip与实际reward逐值一致。拟合初次因部分倒地−.8yaw误差截断使obs不能还原命令而停止，已保留原错误，按productionreplay同规则过滤2743条该域样本，其他域0排除，不删除原数据、不重采。
+CPUwarmfit6.43秒，整env留出；−.6测试RMSE2505.23→475.18、entry0–3s EV.82728，steady6s+ EV−.00947且RMSE2460→426.55；没有声称critic全修复。−.4测试RMSE143.18→134.86，−.8仅短倒地轨迹拟合好而无稳态，不能误读高EV=会后退。只允许−.6有限16update(3warmup+13actor)，sourceactor参数与reverse41完全一致的新manifestresumeSHA9c30f63c368e1b2b1070aacdf8afd321f33600039ae1f5d45bdae6ef5eb11fea，匹配新rewardcriticSHAb37ac1b67a44fd80b9d1cecadba61199561805f0d4f9e10c2cee354b0287a79e。CPU实际安装calibratedcritic/retention/全目标梯度诊断通过，actor零改动。
+新权重runaway4/osc4，其他奖励/物理/25D/6D/4.89/3/5.5/spring4.31/DR.1及最新delay全部保持。900秒预算，MCsourceKL>.5/非有限/冻结或物理读回错误停；65%rehearsal,beta4，结束32×4对reverse41同源筛查，超速全首12秒≤.05、rawpitch逐回合≤3°、允许欠速25%，存活不回退。现已启动，尚无行为晋升。转弯17update保存点的32×4评估同时运行。
+
+
+### 2026-11-06 隔离转弯17更新部分结果：有跟踪改善，无新增完整点，无丢点
+同源32×4初态/质量/材质/noiseseed全部配对一致，60→60，增0失0，仍promoted=false。目标.5/+.3：yaw误差.204773→.164426（降低19.70%），vx误差.027587→.007196；4/4存活，rawpitchp2p最差.470708°，未达yaw/stable门槛。左active动作槽稳态仍100%被clip，须保留该限制，不能称全闭环已修好。隔离修复相较前次共享修复没有丢1.7/1.9，但本轮受MC偏移界限停止，不自动加长训练。partial_completion/target_review/final_report已补齐，原失败改存training_finish_failure.json避免把已处理状态当新异常。后退weight4主线16更新正在运行，等待真实runtime与行为；未重新启动四组旧无收益配方。
+
+
+### 2026-11-06 后退超调归因收口与四族60点批次
+behavior_priority的16更新(3warmup+13actor)SHA5f81567c746f49b56aa7d79bd9684417a1f218e24c1f0626ad1ba02b40a04fa5通过runtime/freeze；32×4对source41仍60→60增0失0。−.6最差超速.348106→.303998m/s，尚为.05门槛的6倍，−.4略差且−.8仍4/4失败，不晋升不重复原配方。16,505个超速样本全部受罚，13次actor更新均有runaway和osc的reward/advantage/parametergradient；实际位移runaway方向5正8负、osc9正4负。信号存在不等于实际更新有效。
+新证据 artifacts/reverse_overshoot_signal_20261106：四副本−.6超调主要发生.64–2.336s、峰值1.264–1.376s；3s后最高后退速度均小于.6。首个actorbatch82.23%目标样本在3s后，.6–2.4s仅9.57%；这个窗口平均reward−6.932而value差+6.560基本抵消，不能单凭抵消宣称critic错。逐阶段完整梯度分解：起步full-vs-runawaycos−.413，起步加权2–6反而使局部冲突更强，故未盲目上线过采样。
+独立MC邻接同回合真值复算：−.6震荡cost92.60%落在起步前三秒，50.15%落在已经超速却正在减速的样本；这类减速93.99%受osc处罚，均值1.516。两惩罚梯度cos−.221。明确存在收敛过程与稳态震荡混罚，不是已证明唯一根因。固定critic权重扫描4→6→8只能改变局部权衡，不能视为行为通过。
+新增默认关闭command_reverse_oscillation_grace_s，实验值3：仅固定直后退的前三秒暂不计高通速度osc成本，动态cohort/其他命令保持；runaway、姿态、unsafe死亡全程保持。所有行为门槛不变，尤其全首12s超速≤.05、steadyrawpitchmax−min≤3。24项CPU测试通过；scripts/rmuc_reward_audit_config.py确保MC复制同字段，绝无actor/consumer外环。reverse_phase_repair用已存全6000帧reward及done重建episodeage，与138747条MC逐值吻合，精确重标、不重采、3秒后奖励逐值不变。warmfit约6s，但target_ready=false（整体测试仅改善约1%、−.4变差），没有放宽拟合闸门启动该actor。
+用户要求待机/高低速/压弯/后退一起推进并扩到−1.5：domain_recovery_batch_20261106建立60点清单(7待机低速+7中高速直行+38双向压弯+8后退)。研究源在5f基础上只复制6e3已评估隔离转弯分支；source.pt SHAa601a86ff68151216ccc0ae92a51fa83a5a54df6d302b46b6cf886afc8675069，source_audit验证16k+同输入域外逐值不变、域内core复现turn、strictrestore相同。不是组合全域行为认证。复用3个后退MC作显式有界offpolicyanchor并核验源KL，其余57点统一补采。
+首个57×8=456env请求在0仿真步被既有128envguard拒绝，原错误归档launch_attempt_1。未改上限，拆为batch0..3共120/120/120/96env四场景并行、各48s/2400秒预算，PID3393414/3393415/3393416/3393417已实查活跃，manager3393402。4.89/3/scale5.5、spring4.31、PD60/2、physics2ms/policy8ms、DR.1与最新联合delay契约不动。新批次仅固定actorMC和当前行为读出，未actor长训；后退高失败前沿不可直接混入长训。readme/meta中旧vy/5.5目标不覆盖用户最新不加vy/峰值4.89约束。
+自动唤醒已转到这个统一批次，正常静默、禁止重复启动；后续先按各组/命令/起步与稳态分层review、校准覆盖，再准备有界分组训练及同源全154retention。之前两项已处理，不再重复原短配方；所有promoted=false。
+
+批量后处理已接通：domain_recovery_batch/postprocess.py独占监控现有manager，四组MC完成后执行review_data.py，再并行四个CPU fit_group.py（每组900秒），只生成待审critic，不自动启动actor。每个命令head独立按validation各phase选模，测试一次并保留within-env EV，避免一组最差点替其他独立head选checkpoint；无MC/phase覆盖的点明确拒绝。三点已有MC的64样本source偏移KL .01876/.06712/.19015均低于已有.5预算，明确为offpolicyanchor而非当前actor精确回报。所有拟合推荐仍须行为/覆盖审查。实际修改文件见domain_recovery_batch_20261106/CHANGES.md。
+
+
+### 2026-11-07 四族批次MC和校准完成，转入52命令长回报有界验证
+domain_recovery_batch的四个6000步采样完成，每组约1607–1639秒，共747128条新有界MC；复用3个后退命令已有数据，未重复采数。四组CPUfit分别7.3/8.4/40.5/12.1秒，推荐4/7待机低速、3/7高速、34/38转弯、5/8后退进入审查；46推荐不是46技能通过。原review错误沿用完成回合survival：48秒采集/60秒episode没有完成回合时旧字段为0；已保存原review，改用真实terminated记录计算首12秒和48秒无失败比例。多数点未倒；−1/−1.25/−1.5各8env全部首12秒失败，不能据高criticEV当可用后退。−.8已有同样缺口。
+逐点审查确认：很多总体EV良好，但steady和within-env EV仍弱，不能宣称critic全修好，也不能盲目把MC拟合推荐当训练许可。新的actor_long_return批次采用512实际policy步(4.096s)与lambda1，数学CPU验证中间TD价值项望远镜抵消maxerr1.05e−5，仅保留状态baseline和rollout端bootstrap；不是critic-free，也不是lambda已证实能恢复行为。每个允许actor目标都有按新reward拟合的commandhead，绝无未校准冻结fallback目标。
+三组：待机/0–2直行14点，双向压弯34点(abs yaw<2)，后退−.1/−.25/−.4/−.6四点，共52。每组8更新、每步512env、rollout512，无额外actorwarmup，rehearsal从65%到35%，beta4、MC偏移>.5停，2400秒预算。这是明确多项生产候选配方，不作单因素归因。回报runaway4/osc4/固定后退起步3秒grace保持，姿态/死亡及全12秒超速.05/steadyrawpitchp2p3度门槛不变。目标−1.5和yaw全包络保留于60点清单/后续分级，未宣称达成。
+为避免大组转弯再改坏直行，给现有joint_turn_source_anchor新增默认不存在的forwardturnscope(速度.1/.2/2/2.1，abs yaw .02/.05)，保留frozenanchor对直行/自旋/后退输出。初始化/restore逐值一致；合成只改训练anchor后域外逐值不变。新增source路径选择与恢复，52项相关测试通过，rewardcredit尾批填充到采样512大小防TF32变化的20项检查通过；所有组CPU实际安装retention/MCcritic/rewardcredit后actor逐值不变。
+训练源SHA：straight774080fc1c8ad37e15eb31a765c49f95788f9122665a217876dd918a99cd5b53；turna2abe22dd2d6d3d974de9caf338cddcebbe84f542f30750fcf855b817d02c782；reverse6fa7d5304ecc2079a71a4e8ef27cf6300dd05e2bc071ace68311081358edbe37。先执行同源60×4source两片各120env，再至多两路GPU进行三组训练和各自60×4配对；主pipelinePID3430231，未重启旧批次。4.89/3/5.5、PD60/2、spring4.31、physics2ms/policy8ms、DR.1和measuredjointdelay全部保持。full154、32rep、多seed、动态仍未认证。每组不晋升/不自动合并，行为结果优先。
+
+
+### 2026-11-07 长回报批次零更新启动失败修复；源筛查保留
+actor_long_return 首轮三组均在gym创建前被 Coverage guard 拒绝：require_command_coverage要求至少3次critic warmup，但准备脚本误设0；真实simulation/actor更新均0，不是训练退化。原launcher/status/日志/命令/contract完整归档launch_attempt_1。未放宽保护：新配置总11更新=3次冻结actor覆盖/warmup+原定8次actor更新，512env×512steps、lambda1、每组2400秒上限保持；首个actor梯度快照移到第4更新。准备脚本同步纠正，契约中继承的旧“actor全冻结/权重2升4”描述改为当前批次真实含义。
+run.py对已完成且checkpointSHA一致、七份验收JSON齐全的source两片直接复用；CPU模拟禁止创建子进程，已证明不重跑。18项命令覆盖相关测试通过，三组预检均要求3次warmup、176个required命令可由现有分层cohort覆盖，实际采样覆盖仍必须通过运行检查。奖励、physics、critic源、actor源都未改。
+现同源60×4源筛查为83/240副本，18/60完整4/4命令（直行9、压弯9、后退0），是扩大清单后的基线；不能与旧32×4的60/128直接称退化。详见source_screen_summary.json，非正式154点/32rep/多seed/动态认证。
+修复后manager3433625，reverse3433632、turn3433633实际存活且runtime_verified全项通过；straight排队，最多2GPU作业。当前只是进入有效仿真，尚无新候选行为结果；promoted=false。源SHA保持straight774080fc1c8ad37e15eb31a765c49f95788f9122665a217876dd918a99cd5b53、turna2abe22dd2d6d3d974de9caf338cddcebbe84f542f30750fcf855b817d02c782、reverse6fa7d5304ecc2079a71a4e8ef27cf6300dd05e2bc071ace68311081358edbe37。4.89/3/5.5、PD60/2、spring4.31、DR.1、最新联合delay腿+2ms不变。
+
+
+### 2026-11-07 修复真实采样容量错误；actor仍未更新
+第二次启动reverse/turn完成2次冻结actor的critic更新，第3次rollout覆盖检查失败；旧wrapper因Isaac退出码0误将失败表现为“actor没有changed_keys”断言，真实根因在末尾Required commands missing。straight相同配置在0更新主动停止，避免继续浪费；所有记录归档launch_attempt_2，保存checkpoint逐值核验actor完全未变。没有新行为收益，也没有把冻结训练失败写成策略退化。
+根因：512env×35%rehearsal=179slots，116个prioritystage旧helper要求每个stage在正负固定符号各占一格，需要232；容量不足就原样返回随机样本。因此启用了stratified也没真正覆盖。实际unique命令仅176（56个straight+60个turn的正负两向）。command_sampling.ensure_priority_sign_coverage新增stage metadata路径：直行只预留一次、转弯各符号一次、相同命令去重、其余保留随机权重；fullreset容量不足明确拒绝，异步小reset保留原抽样与非reset状态，不增加RNG draw、不改cohort大小。env实际调用接入。所有required点/gate保持，不删失败点、不关闭coverage。
+production方法+当前三组配置各32seed，共96CPU用例：原随机缺61–72个，修复后176全覆盖、179slots不变、RNG状态及cohort mask逐值一致；相关28测试通过。sampling_preflight.json保存。pipeline先核对实际completed updates和日志traceback，再做freeze audit，避免exit0掩盖真实失败；source60×4结果继续验证SHA后复用。
+第三次启动仅修采样，3warmup+8actor/512steps/lambda1/2400秒预算/最多2GPU保持，源和criticSHA不变。runaway4、osc4、固定后退3sgrace、4.89/3/5.5、spring4.31、Dfb/b/C、DR.1与最新联合delay全部不动。此时只完成采样修复，不声称震荡或后退通过；三组行为终报及154点/多seed/动态仍待核验。
+
+运行确认补记：第三次启动manager3654755，reverse3654770、turn3654771的首个实际512步rollout均176/176命令覆盖、missing=[]，runtime契约全过；sampling_runtime_verified.json记录。本项采样bug已在真实仿真验证修复，当前仍warmup，非行为通过。straight队列未启动，自动接续；本轮结束再做同源60×4行为对照。
+
+
+### 2026-11-07 三组长回报终审：小幅改善，没有后退超调突破
+actor_long_return三组均完成11update=3warmup+8actor：reverse8198ce0461cf7d64ca20d914f4a0c1bdc5327e7e4b5f217d775b9b2d64e81d09，turnf01909efceb46a958348fca7fd484a79149322b88b76a7b0adfbb04715455fd7，straightd86227b6dd456261014cf2611f6317c6653c9071ba4ce6a59197b63dbaaa0c35。实际runtime/176命令coverage通过，重新读取checkpoint确认参数冻结边界/旧fallback不变、iter差11、新critic optimizer176step。各maxMC源KL .09348/.03392/.00962均未触.5。
+同源60×4筛查：source83/240、18/60完整点；reverse84/240增1失0、完整18；turn83无增失；straight86增3失0、完整19，唯一新增完整点是待机短窗screen。复算连续10秒[2,12)s，straight待机速度MAE四副本全≤.01，但漂移.0554/.0609/.0130/.0804m，仅1/4≤.05，原source亦1/4且副本交换，因此不能声称正式待机过或全条件无退化。1.7pitch最差5.913→4.421°仍超3；1.9仅1/4screen。
+后退4目标16副本全部存活、稳态pitch全过；−.25pitch1.623→.891改善，但最大超速−.1为.05562→.05151、−.25 .09019→.08872、−.4 .13129→.13273、−.6 .31536→.31572，无新增完整后退点。压弯34目标135/136存活，无新增完整点；.5/+.3最差yaw .18861→.16482仍不过。所有candidate不晋升、不合并、不续同配方。
+复用首actor快照/8次更新信用日志：61052后退超速样本全部受罚；−.6主超调窗.6–2.4s仅占该点12.22%样本，平均runawaycost3.065、osc0。−.6实际更新与runaway局部梯度余弦3正5负；是多目标/优化更新冲突的继续证据，不是唯一critic根因或加权一定有效的证明。全局adv归一化导致局部零成本命令也可能有counterfactual非零梯度，不能误称前进被reverse处罚。lambda1+512steps本轮没有解决超调。
+最终REPORT.md/final_report.json、各failed_conditions、phase_and_idle_review记录完整证据。三组桌面实际训练曲线已生成；full154/32rep/multiseed/dynamic/最终DR与弹簧/部署均未认证，−1.5和历史全域目标保留。按指令处理完本轮后暂停rmuc唤醒，长期goal不标完成。
+
+
+### 2026-11-07 用户追责复盘：停止用信号接通代替核心行为产出
+用户指出七天没有有效恢复，复核承认训练设计/执行及止损不足。已证实的历史问题包括osc目标盲区、实际可训练路径/critic目标覆盖不一致、warmup错误和179槽对232重复符号需求的采样错误；修复这些基础设施不能算后退技能交付。本轮−.6起步超速.31536→.31572仍未改善，稳态pitch约.31°并非该点当前主要失败；1.7直行仍4.42°震荡，两类问题不再混称。
+runaway2升4、起步osc宽限+lambda1长rollout均未证明足以解决超调。当前是加性折扣回报，未实现“存活→起步峰值≤.05→跟踪”的约束优先级；非零梯度不足以批准下一批相同训练。MC偏移停止未触发，后退末次outputspace retention/PPO梯度范数比约2%，也不能直接认定retention锁死。局部critic误差、探索、更新约束各自的因果贡献仍未被唯一定位，不再宣称critic或25D为已确认根因。
+process_postmortem.json记录事实/被否定的充分性判断和下一批准入：复用现有数据，先在同初态/同延迟对照下证明起步峰值下降且不增倒/稳态震荡，才准扩成大批；禁止继续把采样、拟合EV或梯度审计报成行为进展。本次未启动GPU，当前批次及自动唤醒均保持结束/暂停。
+
+
+### 2026-11-07 现有网络方向对照有明确起步改善；斜坡独立检验
+复用savedtrace检查−.6：实际jointdelay和reverse_extension_anchor均gate1，consumer六维未裁剪，jointdelay轮tanh导数约.97–.99，仍有约.09–.11action双向余量；不能称完全冻结或无控制权限。8次actor更新在超调主窗轮meanabs变化只有.00093/.00083action，steady改得更多，说明原轨迹几乎没被改动。startup_action_audit.json保存。
+新reverse_startup_direction_probe源8198ce0，仅改变已有joint_delay_network末层两轮bias±.15/±.30，其他参数/buffer不变；4096forward/idle输入逐值保持。4候选同原30×4布局、原初态/质量/材质/首delay与噪声种子，4.89/3/scale5.5、spring4.31、DR.1/核心联合delay不变。无新PPO/MC。−.6源最大超速.31572，delta−.15=.18480、−.30=.08615（均4存活）；delta+.15=.59073（4存活）、+.30=3.68515（全倒）。−.30steady .486–.506≥.45、pitch最差.416°；−.25超速降至.04914、−.4 .05598，−.8仍倒。明确存在现有网络中的可行改善方向，但未达全域gate，不晋升，不下发固件bias。
+用户提出命令斜坡、速度相关机理和奖励门控：同源额外0.3/.5秒负向直行斜坡诊断已准备并开始（reverse_command_ramp_probe），不改网络；速度和峰值看完整12秒而非0.5秒，原峰值1.26–1.38秒。新增默认关闭diagnostic-reverse-ramp-seconds，obs只生成一次，reset0、负直行外不变，动态结果不能冒充阶跃pass；9测试过。当前轮为IdealPD加固定限幅/显式损耗/响应延迟，无反电动势速度降额实现，不能把仿真高速震荡认定为EMF。关闭tracking存在“不动最优”退化，分阶段仍须75%速度下限和到达/存活约束；门控奖励不自动是硬约束数学保证。
+
+
+### 2026-11-07 用户斜坡方案实际对照完成；不改变gate声称全过
+reverse_command_ramp_probe同源8198ce0、网络零修改，0→负目标.3/.5s斜坡两组30×4已完成，physical/首delay/噪声初态配对。-.6完整12s最大超速：阶跃.315715→.3s .103804→.5s .050230，均4存活；.5s steady .5367–.5651m/s、pitch最差.3523°。严格.05只有3/4，保留微超数值不改gate。-.25 .3/.5分别.04465/.03311且4/4screen；-.4 .09567/.11469仍失败、.5并非更好；-.8及更快仍倒。不能用前.5s窗口排除约1.3s的峰值，也不能关案全域。
+新增rmuc_eval_commands.ramp_reverse_commands及evaluate_rmuc_grid默认关闭诊断入口，9测试通过、无固件改动、未开新PPO。后处理原初态比较把有意变化的obs6/7也要求相同而失败；已原样保存before_command_aware_check记录并离线修复比较，物理初态/其他23维/其他工况25维均完全一致，无重跑。policytrace poststep年龄与preaction输入对齐后，ramp实际obs7误差≤1.2e−7。完整REPORT/final_report/scheduleaudit归档。
+用户提出门控分阶段可借鉴，但tracking全部清零会产生不动退化，不能称数学禁止超调；至少保留75%速度下限与到达维持，按存活/峰值/pitch约束选优。现仿真没有back-EMF速度降额，不能拿高速震荡直接坐实EMF。当前是两条独立改善证据（现有网络轮bias方向与commandramp），未合并/晋升/覆盖桌面部署。
+
+
+### 2026-11-07 已验证轮通道方向纳入教师参数优化，连续后退域取得实质收益
+用户要求将有效轮参数扩大到训练域；reverse_domain_parameter_training_20261107采用真实rollout约束选优的有界零阶参数优化，不是PPO轮数，也未依赖未校准critic。warmstart为ec6348b411ecd7886317271124ecd219a431cb1ce30e685ed01d6d1d28bd3ccd（此前−.30wheellogit候选），继续沿同一现有jointdelay末层2/5槽方向形成总−.40/−.50两个候选。其余权重/buffer完全不变、无新增外环，8192组forward/idle输入逐值保持。18个负直行点−.1至−1.5及10个正向/待机/压弯保留点×4，3组都runtime通过、初态/seed/材料/质量与首delay配对。
+总−.50候选SHA56c35dd7f5e330fa6a3071747d4229c0282bf90f9c766df48fae0200261031a3被约束选优选中：−.1至−.6每.05一个点共11×4=44，全部通过存活/首12秒超速≤.05/steady≥75%target/rawpitchp2p≤3，warmstart同域33/44。该域最大超速.10189→.033265；−.6 .07765→.011189，steady .4593–.4781m/s满足≥.45，pitch最差.314°。同域全部pitch最差2.203°。10保留点无原通过副本丢失。
+上述是用户当前优先的运动门槛，严格加入原yaw/摆角后仅25/44、5/11完整点，不冒充严格全通过；−.1有摆角/yaw问题，−.6角差未过。−.65最差超速.08738、−.7 .17338（均4存活），−.75及更快仍倒，前沿不忽略。未新增MC或PPO，已有参数直接保存教师selected_research_checkpoint.pt，promoted=false。
+32rep同源动态验收准备：0→−.15→−.4→−.6→−.25→0（17秒），不加斜坡。本目录select.py与stdlib同名导致0步失败，已改select_candidate.py；随后半秒边界不满足8ms整数拍被拒绝0步，已调用实际validate_sequence对齐为1.504/4.496/7.504/10.496/13.504。两次失败原样归档，不伪造动态结果。第三次manager3712588（warmstart3712611/candidate3712612）实际开始，结果待核验。当前4.89/3/5.5、PD60/2、spring4.31、DR.1和core联合delay完全保持。
+实际四副本速度/pitch/双腿角差曲线已保存桌面RMUC训练曲线/reverse_parameter_domain_20261107/static_speed_pitch_leg_comparison.png并目视检查：低速仍可见周期分量，虽p2p≤3不能写零振荡。严格32rep/多seed/动态及更大负向域尚未完成。
+
+
+### 2026-11-07 后退动态保留完成，立即推进快退前沿
+reverse_domain_parameter_training_20261107选定56c35dd7研究教师，与ec6348b4 warmstart同源32rep动态17s对照完成：两者32/32全程存活。新候选0→−.15最大超速.01158，−.15→−.4和−.4→−.6没有越过更快目标；以±max(.05,.25|target|)带宽计算进入并留住时间最差.464/.440/.544s。减速−.6→−.25从新目标计算的初始误差.2422不等于加速失控（旧目标本来更快），最差settle2.872s仍慢；停车31/32最终进入±.05，1副本尾速MAE.05372，未正式动态通过。
+用户催促−1.5扩域，立即从已改善56c35dd7出发对现有reverse_reserve_network轮bias做有界参数优化（delta−.75/−2），不是重新扫全reward。其scope[-.8,-.65]在vx≥−.65完全0，前进/待机/低速8192CPU输入逐值保留；−.75逐渐生效，−.8至−1.5全生效，原budget.1不变。原初始前1s仍有.058–.098action负向余量，本次尝试利用既有权限，不改变motorcap或增加外环。
+artifacts/reverse_frontier_reserve_20261107：sourceSHA56c35dd7f5e330fa6a3071747d4229c0282bf90f9c766df48fae0200261031a3；reserve075SHAbe997731581ee1dd5c5034676d7e2a66090ae7dfd77e54a5e8a3993369260791，reserve200SHAbd86edd0bb10717eb96d3a80ba19a1567fc7960bdf27565fdce273ba3dce3d34。复用28×4同源布局和已完成bias050 baseline，18reverse含全部−1/−1.25/−1.5失败前沿，10retention；每路900秒，最多2GPU，等动态结束后manager3714917启动。4.89/3/5.5、PD60/2、spring4.31、DR.1/corejointdelay保持。首要存活+速度下限，再峰值/steady pitch；不是承诺−1.5必过，不把研究点写正式交付。
+
+
+### 2026-11-07 快退独立轮分支推进到−.8存活，−1以上仍需姿态学习
+reverse_frontier_reserve两候选完整28×4完成，runtime/initialpaired全过。reserve200的−.7共4rep全过存活/超速≤.05/欠速≤25%/pitch≤3（最大超速.02114，steady .5324–.5482，pitch最差.573°），但yaw/legangles仍不过，不称完整严格通过。−.75、−.8从原0/4存活变为4/4，最大后退超速0，pitch最差.962/.679°；steady仅.529–.542/.545–.556，欠速不达75%，是可用学习起点而非技能完成。−.65及更慢/前进/压弯原函数按scope保留，paired保留结果记录各retention_audit。
+−1.0在reserve200下最大后退超速仅.0195却仍4/4倾倒，失稳末期vx约−.024至+.282、pitch约+86°，说明在更快域仅压制轮加速并不足以平衡，不能继续把所有倒地归因超调。−1.25/−1.5仍0/4。原-.8之前症状一度超调狂退，现已切成“能站住但欠速”与“更快姿态失稳”，必须继续训练腿/轮配合，而非宣传−1.5即将必过。
+立即准备reverse_frontier_learning_20261107匹配新策略MC：sourcebd86edd0bb10717eb96d3a80ba19a1567fc7960bdf27565fdce273ba3dce3d34，5cmd[-.7,-.75,-.8,-.9,-1]×16env×48s6000steps，GPU0预算1200秒，随后CPU逐命令fit最多900秒，actor冻结，自动脚本只做到review不盲目launchactor。需要新样本是因为参数改变远大于此前小步，旧actor回报不能直接套用；其他MC全部保留复用。源旧critic显式提取source_critic.pt，后续必须新匹配head，不绕过冻结fallback限制。
+训练准备仍4.89peak/3continuous/scale5.5、PD60/2、spring4.31、physics2ms/policy8ms、DR.1、90%core轮6–12ms/10%tail14/16、腿+2、response0–5/feedbackage0–8。manager3719680已启动。后续训练模块选择应仅reverse_network及reverse_reserve_network（新低域exactpreserve），保留jointdelay里的低速有效−.5改动；必须先核验MC存活/标签/留出再接actor。未给−1.5完成时间承诺，目标仍保留。
+
+
+### 2026-11-07 快退匹配MC完成；后退摆角按最新授权放宽，接续腿轮训练
+reverse_frontier_learning的5cmd×16env×48s采集及CPU拟合真实结束、PID已退出，runtime全部通过。-.7/-.75/-.8各16/16连续48s无物理终止；-.9首12s仅2/16、48s1/16，-1首12s0/16。MC不等于确定性技能验收，-.75/-.8仍欠速。局部steady/within-envEV仍弱，不称critic全修好。reward_risk_review记载三稳定点平均reward=-2.686/-5.620/-6.616，终止成本20、highalive25仅vx>=2.1；这是潜在提前终止激励风险，不把跨命令或虚构立即摔倒当因果证明。本轮只选择有稳定轨迹的三点更新，未改reward、没有复用旧actor标签。
+新actor/reverse源bdeb1552ea80618c63af5f280a673971fcee00d209d5cc73f2b5995951a03a94，与父bd86edd0 actor逐值一致，显式绑定新三head critic0c3866b1bc96e24f45e95381470c951b129858f17941aba5f6b59198b0a2315b；旧rmuc_command_value已摘除，loader/coverage/replay检验通过。只训练reverse_network/reserve_network，jointdelay有效轮bias保持；8192输入证明vx>=-.65在模拟更新后原函数不变。3warmup+8actor、512env×512step、lambda1、35%rehearsal、beta4、KL>.5停止、2400秒预算。32seed CPU生产采样全176覆盖，实际首rollout亦coverage全过，runtime验证全过。manager3767875、trainer3767886；源28×4复用，结束后自动同布局评估，不重复MC。
+未启动的初版准备文件nargs列表写错及错误纳入-.9/-1已在CPU检查发现，原稿归档cpu_prepare_attempt_1，0GPU/0update；实际启动只含-.7/-.75/-.8。-.9至-1.5保留评估前沿，不能按fit推荐盲训高失败点。
+用户最新允许后退摆角放宽：采用后退直行active/hip各P95<=4deg，保留original_2deg_leg_pass；前进gate、yaw、survival、全首12s超速<=.05、欠速<=25%、steady rawpitch每repmax-min<=3不变。audit_reverse_overshoot_gate新增可明确覆盖的leglimit及output参数，6项相关测试通过。历史原report不覆盖，reserve200另写reverse_angle4_gate.json：-.3/-.35/-.4/-.45/-.5/-.55/-.6/-.7各4/4screen；-.1至-.25仍少数yaw失败、-.65超调仅1/4、-.75/-.8欠速全失败。新增pass只是门槛口径变更，不能称新训练收益或完整32rep认证。
+并行reverse_leg_direction_20261107只对既有fastreverse四腿bias作正反小幅对照[.15,.4,0,-.15,.4,0]，轮参数不动，低域/forward逐值保持。两次串行，各900秒；源bd86，candidate fbcbe6a1d56edf8c32e80e4048809140e5e7e8e1322d1451db61a48430458beb及7ded8cbd95fc4b6c7085e0afb0072539fa67d1f1695a32385299cb0c1e493b70。现manager3768642、首eval3768661，与actor合计2GPU。只用于确定腿轮配合方向；角差放宽后不因2deg门槛追加无谓实验。offset_oscillation_audit复算-.6/-.8为约-2.3/-2.9deg固定偏差且p2p较小，-.1则约5Hz周期分量/pitch最高1.86deg；偏置与周期振动分开判断，不能宣称调bias消除了所有震荡。
+物理仍4.89/3/5.5、PD60/2、spring4.31、2ms/8ms、DR.1、90%轮总串联队列6-12/10%tail14,16、腿+2、response0-5/feedbackage0-8单列。所有候选promoted=false，-1.5/全154/32rep/multiseed/dynamic/最终物理/部署尚未完成。
+
+
+快退两腿参数方向终报补记：正方向把-.8角差从约3.1降至2deg，但steady约.55降至.50，-.7丢2rep；反方向-.75达到新4deg门槛4/4(steady .572-.585,pitch最差.885,noovershoot)，却-.7新增超速.0583、-.8丢3存活并pitch失败，两个整体均不采用，不与PPO自动合并。该结果说明固定对称修正不等于平衡推进最优，不能只看角差或总通过数42→44忽略存活丢失。finalreport明确lost_survival/lost_pitch。
+新的reverse_frontier_ramp_20261107仅同源bd86命令0.5s负向斜坡，网络/物理/奖励均不改，28×4同布局900s；与单GPUactor并行总2GPU。manager3774552，结果待核验；动态接入诊断不是阶跃认证。当前actor已完成3warmup并开始actor，实际命令覆盖/运行检查过；rewardclip/signal及freeze后验仍需终审。
+
+
+### 2026-11-07 快退腿轮训练与斜坡终审；改用已获改善方向做有限步长检验
+actor/reverse完成11更新(3warmup+8actor)，950秒，候选9eedb9768d47c10123eaa0f4d9902a24098f2dca60d7c263073cf4323bd06153。32seed采样、actualruntime、freeze、11update/176criticstep、8192actual低域/forward逐值保留均过。同源28×4、后退同4deg口径42/72→42/72，0新增0丢，survival/pitch/前进保留无丢。-.75steady从.529-.542到.536-.548、-.8从.545-.556到.552-.564，仍低于.5625/.6；-.8pitch改善至.184-.319deg。-1仍0/4存活，不晋升、不原样追加长训。MC源KL终值最大.05134<.5；已匹配critic和有效梯度不能冒充速度达标。已存实际训练尾图。
+reverse_frontier_ramp0.5s完成，参数/网络不改，-.65阶跃超速.08738→0、斜坡4/4，-.75/.8稳态欠速仍同原约.53/.55，-1仍全倒；不能把起步斜坡称全域解决。后处理numpybool无法JSON序列化的错误已归档serialization_failure，统一checks转Pythonbool，仅复算现成trajectory，未重跑仿真；全物理配对与obs7实际斜坡时序误差<1e-6通过。
+依用户继续逐步往-1.5推进，reverse_joint_step_20261107从bd86源沿真实8actor更新得到的9eed参数变化方向作4倍/8倍有限步长检验，仅已有reverse_network/reserve_network权重，不改预算/接口/物理。其余权重及vx>=-.65的8192输入逐值保留；候选decde1dd4fd46d63bf2a881fcf193a688a6dcee98af1d693c0c8d66ad27bbabf与b55d990f4ce23fd394dd35e489372514256c44c05ba602cadfc9d61bfba89821。这是直接参数搜索的真实闭环对照，不是PPO扩学习率、不是绕过MC KL继续用旧标签训练；候选若要回PPO须重新审查matchedcritic。两路GPU各900秒同源28×4，完整保留-.1至-1.5及10forwardretention，失败不自动续。目标选择仍存活/超速.05/pitch3/速度>=75%优先，后退摆角4deg；不会为角差2deg卡扩域。
+
+
+### 2026-11-07 联合参数步长有实质改善；只追加一个必要近门槛验证
+reverse_joint_step_20261107沿已完成腿轮PPO变化方向作4/8倍有限参数搜索，两个真实28×4评估全部runtime通过，复算同4deg源42/72：4倍42/72无新增无丢；8倍46/72新增4无丢，survival/pitch/forward均无丢。8倍-.75=3/4，末副本steady.5624848距>=.5625仅1.52e-5但数字照实；-.8=1/4，其余steady.59319-.59573，最高.60214，pitch最差.89158；-.7仍4/4超调.03872。仅示范可行方向，不称完整技能/正式32rep通过，不用MC拟合替代行为。
+用户要求只做必要最快工作：不再续同配方长PPO、不再采MC，只从bd86沿9eed真实参数变化验证10倍一档。reverse_joint_step10_20261107，候选4d6ee0f9beaba9518e3651f7409fbfb1de47d4e3ba877fd714878526471ba37a，8192vx>=-.65exact；同28×4覆盖-.1至-1.5及10retention，预算900秒，manager3787440。若存活/超调/pitch退化即停止扩大此方向。物理/DR/奖励不改；有新过点再做必要独立32rep和中间速度验证，不把4rep选优样本当认证。
+
+
+10倍联合参数方向验证已结束：同源28×4、同4deg后退口径源42/72→50/72，-.75及-.8均从0/4到4/4，共增8rep，0旧通过丢失/0存活丢失/0pitch丢失/0forward丢失。-.8steady .60579-.61812、pitchp2p .335-.393、角差<=.724deg、最大超速0；-.75steady .57338-.59477、pitch<=.350、无超速；-.7仍4/4但最差超速.046384接近.05，因此停止继续加倍。-1/-1.25/-1.5仍失败，不能夸大成全域解决。
+立即仅做必要独立32rep验证reverse_frontier32_20261107：sourcebd86与candidate4d6ee0新seed86773/noiseseed87873，4commands[-.7,-.75,-.8,-.85]×32env=128，各1600steps、900秒，2GPU同源；-.85是下一前沿，不能按插值预设通过。不新增训练/MC；配对物理/firstdelay与所有gate保持。manager见launcher，完成review.py汇总，再决定扩域。
+
+
+### 2026-11-07 独立32rep取得三档快退通过；-.7边界超调仍阻止整体晋升
+reverse_frontier32_20261107新seed86773/noise87873，sourcebd86/candidate4d6ee0各[-.7,-.75,-.8,-.85]×32env，同物理初态/材质/质量/首delay、runtime全过。候选-.75/-.8/-.85分别32/32同时通过存活、首12秒超速<=.05、steady>=75%target、steadyrawpitchp2p<=3、yaw、后退legP95<=4。实际速度分别.57022-.59115/.60249-.62981/.65377-.68172；最差pitchp2p1.53795/.73066/.71448；最大超速0/0/.02083；最大角差.649/1.031/1.419deg。源同三档0/32。这是明确静态新seed32rep快退能力产出，不称全154/动态/全DR/部署认证，实际速度仍允许欠速25%。
+-.7源29/32，candidate28/32，超调4rep最大.092902> .05；同源丢3获2，无存活/pitch退化。总29→124/128不能掩盖边界退化，候选整体eligible=false/promoted=false。不因三档成功擅自覆盖部署或拼接网络。较低vx>=-.65原函数exact且旧28×4retention已留；-.65原阶跃超调缺口也没忽略，0.5s斜坡诊断能修复但不是阶跃认证。
+本轮所有训练和有限参数对照、独立32rep均已结束，禁止重新启动旧MC/fit/PPO。可复用快退候选4d6ee0作研究能力源，下一步应优先修-.7过渡起步超调、保持-.75至-.85，再探-.9附近真实边界，目标-1.5不变。不能无限加倍参数或原样延长无收益PPO。当前研究已展示轮腿参数联合方向有效、单独对称偏置和仅斜坡不足；根因不能笼统称“PPO学不会/都是阻尼”。
+
+
+### 2026-11-07 接续抑制后退起步超调：先修既有轮分支过渡，并隔离已过快域
+读取最新32rep证据并核对所有旧PID退出，无重复训练。4d6ee0在-.7的4个超调env8/18/23/30峰值均发生1.12-1.168s；超速最大.09290，steady未持续狂退。现reverse_reserve_gate在-.7仅.25926、-.75=.74074；轮head tanh约-.97，继续加bias可用余量很小。采用单个已有过渡参数试验，不新增MC/PPO：reverse_reserve_domain[-.8,-.65]→[-.8125,-.625]使-.7gate=.352，-.75中心gateexact；源4d6ee0→ceb2ed003f46a26ea6b931c9d75dadf289ef5149ab64681c761affc892eb18b8，所有权重不变。
+同源4point×32实跑结果：-.7由28→32/32，最大超速.036294，steady.5299-.5561仍>=.525、pitch<=.539；-.75/.85维持32/32。但-.8 gate由1轻微降为.98726，产生1rep pitch3.022148>3，整体124→127仍不晋升，绝不把近门槛3.022偷偷通过。
+随即做最小checkpoint-opt-in过渡隔离：scripts/rsl_rl/rmuc_physics_adaptation.py为既有reserve新增可选preserved_transition；通过smoothstep在-.75至-.725间混合，vx<=-.75精确保留旧gate，vx>=-.725精确采用已验证新gate；边界一阶导连续。rmuc_command_adapter.py恢复可选buffer，旧checkpoint无该buffer计算不变。tests/test_rmuc_physics_selection.py增加旧输出保持/新输出匹配/门控state审计一致/边界梯度/非法元数据校验，相关34tests过。没有添加新MLP/反馈外环/观测/电机律，只有旧轮分支作用比例局部调整。
+reverse_brake_scoped_20261107候选9b06675c3bdaad07695da2d3010f2990acb75c63bd6b8f43e49baa27bfbd844a，CPU8192fast/forward/idle输入与4d6exact、4096slowtransition输入与ceb2exact；重载和参数冻结通过。单GPU同源4×32/900s已启动，完成才算行为；受影响中间域-.65/-.675/-.725/-.775和动态后退切换仍要核验。4.89/3/scale5.5、PD60/2、spring4.31、2ms/8ms、DR.1及核心联合delay不改；不原样PPO长训，不用旧MC标签训练变化后actor。
+
+
+局部过渡隔离32rep终审：9b06675c同源四点128/128全过，源124/128，新增4、0旧点/存活/pitch丢失。-.7超调.09290→.036294、steady.5299-.5561、pitch<=.539；-.75/.8/.85的32rep完整轨迹指标与4d6逐值保持(pitch最差1.538/.731/.714)。不再把-.8那一个3.022deg近门槛硬算通过；已真实恢复旧快域输出并在仿真验证。
+接续仅必要补验reverse_brake_validation_20261107：中间-.65/-.675/-.725/-.775各32rep，新seed86775；动态source4d6/candidate9b066各32rep20s序列0→-.4→-.7→-.85→-.65→-.25→0，实际8ms拍对齐validate_sequence已过。共3作业最多2并行各900s，manager见launcher。没有新PPO/MC，冻结权重/物理/奖励，动态减速时区分既有旧速度和继续越界加速。准备脚本初次用系统python缺torch在0GPU阶段失败，立即用既有issaclab解释器完成，未重复任何仿真。全部过后仍不等同全域/最终DR/部署完成。
+
+
+### 2026-11-07 中间域/动态复核：主四档通过保留，发现较慢接入剩余超调
+reverse_brake_validation三项真实完成，无重采/重跑。中间-.65=26/32、超调max.104059(6fail)；-.675=31/32、max.050955(1fail)；-.725及-.775各32/32；全部128存活/速度下限/pitch/yaw/4deg角差过。runtime比较最初把显式新noise_seed87875与旧87873误比为失败，已保存原readback并按command的声明seed校验，唯此差异，离线修复未重仿。
+动态源4d6/candidate9b066均32/32全20s存活，实际obs7与(age-1)的时序断言全部通过；0→-.4最大超调.048886、后续加速至-.7/-.85无目标超调；减速阶段没有超过前后两端较快指令的额外后冲。但减到-.25仍反复摆动，末.8s pitch最差3.317→3.305，进入±max(.05,.25target)并留住只有2→11rep；停车只有30/32最后留在±.05，tailMAE最差.06016，不能声称完整动态通过。-.7动态settle最差.528→1.536s有所变慢，安全换较保守响应，明确保留缺口。
+尝试CPU离线提前制动方向拟合：复用127508条savedobs，冻结hidden及腿，只拟合existing jointdelay两轮输出rows；三个ridge均能拟合早制动标签，但快域heldout最大动作改动.0077-.0082，未过预设.002保留准入。因此没有生成候选、没有启动无谓GPU训练，见reverse_early_brake_fit_20261107/offline_report.json。
+改用一个可精确保留已过主点的现有门控斜率试验：reverse_brake_lower_20261107，源9b066→候选ccf74a85690b9346d6321724897716bc3ff28d23fe1fa842096b2fe2ad19be26，只将domain拓至约[-.85,-.6]，保留之前preserved_transition。float32端点选择保证-.7gate逐值仍.351999908；-.65gate.04859→.1039999，-.675 .1754→.216；vx<=-.75和>=-.6原函数8192inputs exact，权重/外环/动力学均不变。单GPU同源4intermediates×32/900s开始，不重复PPO/MC；过线看实际行为，不能靠超调罚/总分宣称进展。
+
+
+较慢过渡单档结果已完成：ccf74a同源中间4×32由121→127rep通过，新增6、0原点/存活/pitch丢失。-.65由26→31/32，maxovershoot.104059→.069694，steady.49162-.52115仍>=.4875，pitch<=.5604；-.675补齐32/32、over.02883；-.725/.775仍32/32。唯一失败是-.65 env22，峰值t=1.104s、vx=-.719694，steady-.51807正常；该拍obs/action/wheel/leg队列分别4/0/6/8ms，轮总10ms，属于核心，不能改称尾部豁免。
+-.7与快域以及vx>=-.6已由actualactor8192CPU函数逐值保留，此为功能保留证据，不将不同checkpoint旧验收拼成新部署证书。动态ccf74a尚未重测，之前9b066动态仍有减速震荡/停车慢问题，不自动传承动态通过。
+剩余一例不继续整体加刹车挤掉欠速余量，复用已验证有效的参考命令斜坡作必要单次接入验证reverse_brake_ramp_entry_20261107。网络ccf74a完全不动，only0→negative0.5s斜坡，四中间点32rep同源900s；结果必须叫“斜坡接入”，不能掩盖原阶跃1例失败或声称固件已改。未开新训练/MC。
+
+
+### 2026-11-07 起步斜坡补验完成，剩余较慢接入一例已条件化通过
+reverse_brake_ramp_entry_20261107网络ccf74a不动，0.5s斜坡四中间命令各32rep，实际obs7=(age-1)*dt时序核验<1e-6，runtime全过。直接阶跃127/128→斜坡128/128，无丢失；-.65超调.069694→0、pitch最差.512°；-.675超调0/pitch.799°；-.725超调.03406/pitch.461°；-.775超调.04234/pitch1.233°。后两点峰值比阶跃增加但仍过线，不能推广成斜坡永远更优。速度>=75%、yaw、reverse4deg角差同门槛，非放宽过线。
+仅条件化起步通过，不称阶跃学会/固件已改/动态通过；ccf直接阶跃-.65仍1例失败，9b066已测减速停车缺口保持。原contract继承了旧训练字段和旧targets列表，实际command/trace正确；以contract_metadata_amendment显式修订元数据，未重跑。下一步同一教师检查-.85/-.875/-.9/-.925/-.95各16，配对直接起步与0.5s斜坡，定位未测边界，不盲目PPO/重采MC。
+
+
+后退前沿接续已启动reverse_frontier095_20261107，manager3895930、step3895934/ramp3895933（以实时PID为准）。同一ccf74a网络5cmd[-.85,-.875,-.9,-.925,-.95]×16，两路仅起步阶跃/0.5s斜坡不同，各900s，source SHA与命令/physics preflight核验通过，freeze无权重变化。当前reverse和reserve门控在-.85至-1.5均为1，已离线读取并存frontier_gate_readback，不能再把快域失败泛称“门没开”。首回合事件审计将区分超调先发生或姿态先失稳；不自动增加刹车、不重复MC/PPO。所有门槛及物理与上一轮相同，16rep仅前沿研究，未认证32rep/动态/部署。
+
+
+### 2026-11-07 快退前沿到-.875的16rep筛查通过；统一斜坡在快域被否决
+reverse_frontier095_20261107两路真实完成，runtime/初态/首delay/实际obs7时序核验全过。同一ccf74a直接起步：-.85=16/16，-.875=16/16(maxover.03530、steady .67466-.69943、rawpitch p2p<=2.0795)，-.9=9/16且13存活，-.925=0/16仅5存活，-.95=0存活；-.875只是16rep前沿筛查，尚非32rep晋升。0.5s斜坡分别10/3/1/0/0通过，统一快域斜坡明确拒绝，不能把之前-.65修复泛化到全域。
+第一回合事件审计failure_phases显示快域所有倒地均先越超调线，但-.9另有无超调而steady pitch失败，不能说只需压峰值。reverse/reserve门控全开、早期wheelraw未饱和；-.925及更快部分腿随后饱和。优先保留-.875及以下已好行为，下一次针对快域小幅有界轮支路参数对照必须精确隔离旧域；不继续同配方PPO、不采无关MC、不自动更新部署。
+
+
+快域小幅轮残差额度对照reverse_frontier_wheel_budget_20261107已启动manager3905088。只在既有reserve新增checkpoint-opt-in frontier_budget/domain，低于-.875才启用，-.925全开，.10分别试.09/.11；不改网络权重、PD/电磁律/25D6D，不是外部速度反馈。当前sourceccf74a、candidate8281accb55aa8dcc350c53d2c02439810d31407399b786bb129a24e240a364bb及b382e5415d80609ae1890194811dd88dedcbb72153e6197133e364241a0528e6。8192输入证明vx>=-.875原函数逐值保留，4096快域输入腿输出不变且轮动作差<=.01；所有旧state值不变只加两个buffer。新metadata由rmuc_command_adapter恢复，correction_bound计入最大预算但不改变动作限幅；42tests通过，旧checkpoint不optin则原输出。两路同已完成5cmd×16source布局各900s，runtime/freeze/非有限/超时停止，任何旧通过/存活/pitch丢失不采用。该探针是确定既有轮支路方向，不认为越大越好；未新PPO/MC，完整32rep/动态/-1.5仍未完成。
+
+
+快域轮额度两侧对照完成：.09候选8281accb总41→34/80、丢7旧rep及6存活，拒绝；.11候选b382e541总41→42/80，新增1、0旧通过/存活/pitch丢失，-.85/-.875实际轨迹保留16/16。-.9存活13→16且全部速度下限过、整体9→10/16，最大超调.4456→.05908但steady pitch仍5rep失败；-.925存活5→12，-.95存活0→7，均0/16完整通过。显著存活改善不等于速度域达标，尤其不能报-.9通过。
+沿已证实改善方向仅追加.12一档reverse_frontier_wheel_budget12_20261107，sourceb382e5415d80609ae1890194811dd88dedcbb72153e6197133e364241a0528e6→da0d0f3f5b6ac21a4151bf19c65557f0bb3a1eb8e74817f7e9b19b36a250a986；仅frontierbudgetbuffer变化，权重/腿/低域exact，同5×16单GPU900s，manager3908776。结束若仍无完整点改善，不无限加额度；需分析稳态腿轮振荡与欠速权衡，保留有效教师，不重复旧PPO/MC。
+
+
+### 2026-11-07 轮支路.12终审：-.9起步超调/存活全部过，剩余稳态振荡已单独定位
+reverse_frontier_wheel_budget12_20261107候选da0d0f3f完成5×16配对，runtime/freeze通过，源.11的42/80→45/80，新增3、0旧通过/存活/pitch丢失。-.85/-.875各16/16保持；-.9完整12/16，16存活、16超调<=.05(max.020567)、16速度>=75%(steady .6820-.7134)、yaw/角差全过，4个失败均只有rawpitch6–12s峰峰值，最差8.252°。-.925完整1/16，16存活、无超调，但欠速10、pitch12、角差7失败，worstpitch15.196；-.95存活13/16仍0完整。不能把16/16存活或无超调称命令域通过。
+已查看真实曲线：-.9最差副本震荡逐渐衰减但6–12s仍超3°，-.925有持续约.67Hz周期振荡；频谱仅描述未替代rawgate，不能改窗口到最后2s假通过。图保存桌面RMUC训练曲线/reverse_frontier_wheel_budget12_20261107/reverse_frontier_speed_pitch_leg.png。该轮把起步超调与稳态振荡拆开：禁止再只加刹车，.12为当前有限搜索最后档；NEXT明确稳态学习必须新策略/奖励匹配critic，旧MC不能直接冒用，无新PPO/MC。已更新3记录与REPORT/NEXT，promoted=false，-1.5/全历史域/32rep/multiseed/dynamic/部署仍未完成。
+
+
+### 2026-11-07 稳态震荡路径分解，避免削弱正在抵消波动的后退腿分支
+复用da0d0f3f保存的25D轨迹离线重放与rawaction误差<5e-5。reverse_steady_signal/decomposition显示-.9/-.925主动摆角输出模态std约.23/.38、基础MLP std约.25/.41，相关~.999；近期reverse腿分支std仅.01/.019且与总变化负相关-.84至-.89，physics合计也在部分抵消。不能因腿动大就削弱新reverse分支，主要动作变化来自原基础MLP。该归因是输出路径事实，不等于闭环因果已证明。
+必要有限对照reverse_base_leg_response_20261107：源da0d0f3f，在vx<-.875以smoothstep至-.925的区域，对baseMLP四腿输出围绕源已通过轨迹last2s中心作gain.8/1.2（delta最多.06action）；轮通道、传感器/PD/动力学不改，不过滤gx，不添加taskouterloop。候选54310c1980e86ce40a233c02bb81ddcf942bca95be385b30ec32872a0f1cc6df和b61e12f95f6fd399c68372c637ea2608140bf93335f0d24a3c2d232011e7f0df。新功能checkpoint-optin，旧checkpoint无buffer原输出；8192旧域exact、4096快域wheel exact，50tests通过，center get_latent与原25D逐值对齐。两路5×16、900s、manager3917156，全部物理/DR与上一轮一致，候选任何旧pass/survival/pitch损失即拒绝；不是PPO/MC或部署更新。
+
+
+### 2026-11-07 闭环证实基础腿响应增强有效，不应盲目压腿输出
+reverse_base_leg_response两路完成并runtime全过：gain.8退化45→38/80、丢7旧通过及30存活，拒绝；gain1.2(b61e12f9)45→65/80、新增20、0旧通过/存活/pitch丢失。-.9从12→16/16，超调0、steady .68225-.71319、rawpitch最差8.252→1.956；-.925从1→13/16、全存活无超调，剩2欠速与1pitch3.020417(不放宽3°)；-.95从0→4/16、全存活无超调但欠速/振荡残留。-.85/-.875各16/16实际轨迹保持。腿输出与震荡高度相关不代表应削弱，较强腿响应改善闭环恢复，说明原路径至少在该域恢复能力不足；不宣称已消除全域延迟根因。
+立即接续独立32rep reverse_base_leg32_20261107：同b61e12f9，4cmd[-.85,-.875,-.9,-.925]×32，新seed86779/noise87879，绝对验收不冒称配对增益；同时reverse_base_leg_gain14_20261107只gain1.2→1.4，候选664a51ee1a067efe1b8bb59c941c2141b841fce0c123e4b77fe1beba99490948，5×16同源。两路各900s，不新PPO/MC，门槛与物理均不变，旧域exact与轮不变检查过。物理读回补充：质量scale±2%与独立inertia_shape_scale±2%相乘形成总惯量scale，不能把总惯量范围仅写±2%；未改变DR配置。结果仍待验，不自动晋升/部署。
+
+
+### 2026-11-07 -.9已获得独立32rep通过；腿1.4使-.95振荡也下降到门槛内
+reverse_base_leg32独立seed86779结果：gain1.2的-.85=32/32、-.875=31/32(1例over.051409严格失败)、-.9=32/32(maxover.019121/pitch1.577/steady .68264-.70606)、-.925=22/32(9欠速+1pitch3.236)。不把-.875近线豁免，不把范围中有洞说全域完成。与此同时gain1.4同源5×16从65→76/80、新增11且0旧pass/survival/pitch丢失；-.9=16/16,pitch.903，-.92514/16,pitch1.115，-.9514/16,pitch1.959，后两失败均仅2例轻微欠速，全部80存活无新超调。候选664a51ee1a067efe1b8bb59c941c2141b841fce0c123e4b77fe1beba99490948仍promoted=false，部署未动。
+下一必要对照reverse_speed_balance32_20261107：固定gain1.4，仅快轮reserve .12→.115以回收一点制动余量，候选bf5d5b8bf8ddc2852d6f1c3a5f8b49aa914a7f4fc6d591ff31f6137367aff04c；source/candidate同新seed86781/noise87881，[-.9,-.925,-.95,-1]×32，各900s2GPU，manager3928504。这是针对当前主要剩余欠速的微调及-1边界核验，不是重复旧“只加刹车”配方；所有gate不变，vx>=-.875原函数保持且其已知1例超调仍记缺口。没有新MC/PPO或改变奖励/动力学。
+
+
+### 2026-11-07 32rep微调补欠速有效但快域存活受损，改为局部修复并保留快域
+reverse_speed_balance32配对完整结束。source664a51ee：-.9=32/32、-.925=24/32、-.95=22/32，后三32全存活无超调、pitch全过，后两仅欠速；-1=0/32且29存活。全快域wheelbudget.115候选bf5d5b8b：-.9=32，-.92531(唯一欠速.692931<.69375)，-.9529(最小.709123<.7125)，但-1存活29→23、丢6旧存活，尽管总78→92/128无旧完整pass丢失，整体明确拒绝。不能用全通过总数遮盖快域退化。
+接续reverse_speed_scoped32_20261107，仅局部frontier轮额度.112并在[-.975,-.95]smoothstep恢复旧fastbudget.12；-1及更快原输出精确保留，腿1.4/所有weights/执行器不动，源664a51ee→383f26eb9e16b97c99c3c386678c2d009cd1a776b19fd0ef7fe349820c249cc5。新增两个checkpoint-optin preservationbuffer与loader/bound支持，51tests通过；8192zero/nonzero yaw输入证明vx<=-.975或>=-.875exact。单GPU4×32同seed86781直接复用source，900秒，manager3933102。只检验有界局部欠速修复，仍按超调.05/pitch3/25%欠速等门槛，不新PPO/MC或自动部署。
+
+
+局部轮修复383f26eb已完成：-.9=32/32、-.925=32/32、-.9530/32(全速度下限过但2pitch3.757)、-1与source664a行为完全一样29存活0完整，runtime全过，总78→94，但丢原-.95两个pitch通过，整体仍拒绝，不用总数掩盖。
+现成轨迹复算frontier_authority_report：原gain1.4/legdelta.06在-1的3s后两条腿约40%/53%时间触修正限幅，-.9/.925低，-.95右主动约9%。这只是权限不足候选证据，不认定增加必有效。最后必要对照reverse_leg_limit32_20261107，仅在vx<-.925平滑至-.95将legdelta限制.06→.08；已有gain1.4、center、轮局部.112与fast.12保留，旧weights/25D6D/PD/IMU不改。源383f→17f10590f1ad8880c17d425924f179b178b484652c00cb4737d6e94ae53008ec；8192vx>=-.925exact、4096fast wheel exact、额外动作差<=.02，52tests过。单GPU4×32同源900s，manager3936519；需同时对383直接源及664a更早源检查旧通过/存活/pitch，不能把前一退化当新基线洗掉。所有物理与DR/gate不变，不新MC/PPO。
+
+
+fastleglimit.08真实闭环被否决：17f10590相对直接383源94→91/128，新增0/丢3pitch通过、-1丢5存活，对历史664a还丢5pitch通过。-1限幅利用率高并不等于应该扩大限幅；不能把反例擦掉或继续加量。旧52tests保证结构正确不保证行为正确，所有候选promoted=false。
+本批最后收束reverse_local_consolidation32_20261107：以source664a合格研究源，保留gain1.4/limit.06，取已证有效局部轮.112，但恢复fastdomain收窄到[-.95,-.925]，vx<=-.95精确保留旧.12，vx>=-.925精确保留383的局部修复。候选8635906cd8e3a53f5b3af0782240c56cad484d1c64b7e5b2f69fccb706991ddc，8192oldfast/slowexact+4096localexact，weights不改/新leglimit.08未安装。同4×32新candidate单GPU900s直接复用source，manager3939591；完成才报告同一checkpoint通过与保留，不以函数拼接替代运行认证，不再追加无效参数探针。-1.5目标、-.8751例近线、-.95欠速及-1振荡仍保留缺口。
+
+
+### 2026-11-07 本轮收束成功：同checkpoint -.9/-.925各32/32，零同源退化
+reverse_local_consolidation32_20261107最终candidate8635906cd8e3a53f5b3af0782240c56cad484d1c64b7e5b2f69fccb706991ddc实际4×32完成、runtime/freeze/全部配对通过。source664a78/128→86/128、新增8，0旧完整pass/存活/pitch丢失。-.9=32/32,maxover.006338,rawpitchp2p .78273,steady .68253-.71077；-.925=32/32,maxover.008089,pitch1.45336,steady .69701-.72888；这是用户允许后退欠速25%的口径，不宣称10%精度。-.95保持原22/32，32存活无超调/pitch2.572全部过、10rep仅欠速；-1精确保留原29存活0完整，不能说-1已学会。-.875独立1例over.051409、-.925~-.95中间transition未测、动态停车/全历史域/multiseed/最终DR/-1.5/部署仍未完成。
+final_checkpoint.pt为同一candidate的workspace内链接，selection.json选作研究接续、promoted=false。本轮不新PPO/MC，旧critic未对新actor校准，不能直接套旧MC标签。52相关tests过，最终网络不含被拒绝的fastleglimit.08；改动文件rmuc_physics_adaptation.py/rmuc_command_adapter.py/tests/test_rmuc_physics_selection.py，旧checkpoint默认不启用。桌面verified_speed_pitch_leg曲线覆盖所有32速度范围并按worstpitch选择代表副本，不筛最好看视频。REPORT/NEXT列明方向证据和全部残余。本轮结果处理完暂停唤醒，长期goal不暂停。
+
+
+### 2026-11-07 用户要求加速到-1.5，启动一次当前教师匹配的扩域MC批次
+reverse_expansion_mc_20261107源8635906c原样冻结，6cmd[-.95,-.975,-1,-1.1,-1.25,-1.5]×16env×48s6000step，总96不超过128guard，GPU0预算1200s；完整policy/leg/world/critic rewardtrace均保存。manager3945848，真实采样PID以status核对，禁止重复。当前actor已历经有效腿轮修复，与旧bd86 MC源明显不同，因此不拿旧回报冒用；所有现成当前轨迹用于CPU分解，历史MC资产保留。
+物理4.89peak/3continuous/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/B/C不变；DR.1、90%core轮6–12ms/10%tail14,16且leg+2、response0–5/feedbackage0–8保持。采样仍reward runaway4/osc4/fixedreverse3sgrace，与之前训练口径一致；不先调reward再沿用旧标签。只按真实terminated判断first12s与48s存活，不重复48s未满60s的survival0误读。采样结束CPU仅拟合first12s存活>=75%且有足够样本的目标(最长900s)，全失败远端只保留数据/失败原因，不自动接actor。拟合需whole-env train8/val4/test4、command/entry/steady分层，不能用未覆盖fallback驱动actor，fit本身非技能通过。下一步同步核对实际可训练头饱和/梯度路径，准备有界快退扩域训练，-1.5未完成。
+
+
+### 2026-11-07 扩域MC及存活奖励对齐完成，接回隔离快退PPO
+reverse_expansion_mc完成6cmd×16×48s，-.95/-.975各16全48s存活，-1为14/16，-1.1/-1.25/-1.5首12s全失败，不将远域盲混长训。53项分支隔离/梯度测试过；reverse_network在-1腿/轮均无tanh饱和且有明确梯度，reserve轮biasJacobian仅约.0044，因此训练已有联合reverse_network，冻结reserve和base腿增益；新fastupdateanchor迁移actor逐值不变并保护vx>=-.95，旧skill不靠softretention碰运气。
+奖励审查：原-.95/-.975/-1 meanreward=-3.855/-4.141/-8.256，可能使提前终止相对有利，非“故意摔倒”证据。新增默认0的command_reverse_alive_baseline仅直退vx<=-.95非unsafe给10，终止帧0、前进/慢域/转弯0，原runaway4/osc4/grace3与死亡成本保留；现成6000完整trace精确重标67200样本，无新sim，age逐值对齐、tailbound不变、训练目标无上限clip，新mean6.145/5.859/1.744。包含旧奖励历史的privilegedcontext已置空标失效，25D拟合不混用。新reward audit白名单同步、相关64tests过。
+alive10校准CPU3.93s完成。-.95局部steady within-envEV仍负，排除actor目标；只选-.975/-1，test总EV.799/.564、within-env.819/.669，-1entryEV-.071/within.319仍弱，不宣称critic全修好。采用lambda1/1024步使末端bootstrap因子约.129，有界3warm+8actor总11、LR1e-4、512env、35%rehearsal、beta4、MC source KL>.5/运行/冻结/非有限立即停、2400秒。reward与MC完全匹配且critic有实际对应head，不用未覆盖fallback。相邻命令间隔.025，critic halfwidth显式.01防重叠；32seed真实sampling CPU176全覆盖，预热实际覆盖仍需核验。
+训练源d8456e4c83b07c97eaeec4d00aee9697689166bb8bc84ee2aaa84a24c50ee184 actor等价8635906c，新critic4cc3e34783360d6b1119155712711a375b776cd1651918e5301a22f67eae1896。actor/run.py已启动，parallel frontier源4cmd[-.975,-1.1,-1.25,-1.5]×32新seed86785/900s；合计2GPU0。主源[-.9,-.925,-.95,-1]×32已完成直接复用，训练结束主+frontier配对验收；旧通过/存活/steadyrawpitch失败不能晋升。物理4.89/3/5.5、PD60/2、spring4.31、Dfb/B/C/DR.1及90%core+10%tail腿+2/response0–5/feedback0–8不变。当前只是训练启动，-1.5未完成，不能将MC/critic通过写成行为通过。
+
+
+扩域actor现运行契约全通过，3warmup真实完成/176rehearsal全覆盖，无missing。frontier源[-.975,-1.1,-1.25,-1.5]×32已完成，分别11/32、0、0、0；高段0存活而非暂未完回合。其后处理唯失败是runtime新默认字段command_reverse_alive_baseline=0在旧JSON缺失(另新noise种子已声明)，已原样归档postprocess_attempt1，显式旧缺省0后离线复算全过，没有重仿/没有放宽物理。通用与实验local配对validator也仅此schema归一化，训练配置未动。
+已补actor/review.py主4×32+frontier4×32同源行为/冻结/实际更新计数/旧域8192exact终审，需训练与两评估实际完成再运行；不能把训练status完成当全域通过。新fastupdate_scope/routing实际梯度匹配，53tests；存活baseline加入后64tests通过。
+
+
+### 2026-11-07 22:26 有效腿轮修复保留，快退actor实际已更新2次
+当前manager3961755/trainer3961761仍活跃，3critic warmup+2actor实际更新，model12212已保存；旧腿响应gain1.4/limit.06与局部轮额度.112/快域.12均冻结保留。此次只更新隔离reverse_network的-.975/-1协调，不把此前有效参数路线废弃。已有源-.9/-.925各32/32，-.95为22/32仅欠速；-1与更快仍未完成。旧gain/轮预算/斜坡探针的失败证据保留，不据单一试验否定全部斜坡方案。
+实际reward→clip→GAE→梯度→optimizer已核验：首actor更新仅6个reverse_network参数变化；第二actor更新-.975的runaway/osc实际方向cos为+.0342/+.01735，-1为-.02234/+.04715，说明局部抑超调与其他目标仍有小冲突，不能把非零梯度说成已全部对齐或行为通过。最新MC源KL约.00139/.00152<.5，无冻结fallback变化。证据actor/first_actor_signal_audit.json与progress_signal_update5.json；不因训练loss改善晋升，保持2400s上限、训练后同源32rep验收，不无界追加PPO。当前未改训练参数/未重复启动。
+
+
+### 2026-11-07 22:46 扩域训练按预算收束，进入同源32rep验收
+训练manager3961755达到2400s预算后停止trainer3961761，保留model12216，SHA65b1ef046d5196a3630d79635f41de319645c2d4d3305fb85c04b948be4e30d4。实际保存9总更新=3criticwarmup+6actor，虽然log有10更新，不能把未保存更新计入交付checkpoint，更不能说满11。runtime/freeze通过，仅既有reverse_network六参数tensor改变，旧legresponse1.4/limit.06与轮修复保持。主[-.9,-.925,-.95,-1]×32同源验收运行，之后已有frontier源配对，不重复source/MC。
+现成stochastic轨迹按command/entry/steady复算写training_progress_audit.json；训练代价下降但实际optimizer方向局部仍有冲突，且训练尾图仍有周期性波动，不能把平均指标改善当逐回合pitch<=3或全速通过。桌面训练图已保存并检查reset空隙保留。此时主验收已见-1一例倾倒，只作未完成记录，须等完整验收才计算新增/丢失。
+
+
+### 2026-11-07 23:00 周期震荡仍未过线；21副本新增及俯仰奖励缺口修复
+reverse_expansion_mc/actor已终审：保存9总/6actor的65b1ef04源可研究接续。两配对网格97→118/256，新增21副本无旧pass/survival/pitch丢失；-.975 11→26/32，-1 0→6/32且29→30存活，-.9/.925各32及-.95原22均逐值保留。不是21个命令点，-1.1/1.25/1.5仍各0/32存活。-1最差p2p12.124，25rep未过pitch(含2不存活)，不能把衰减快/平均代价下降说成无震荡。
+已查当前dense pitch-rate项仅abs(vx)>=1：-.975漏覆盖；1档容差.15rad/s与3°p2p目标也不等价。通用姿态及速度震荡罚仍有效，不泛化为所有信号断了/唯一根因。新增reverse_stability.py默认关闭训练cost，仅vx[-1.5,-.95]且yaw0/age>=3s，物理pitchrate .04deadband/.20scale平方限1，试验weight2；接口/动作/补偿不改。cfg/runtime校验、reward audit whitelist、reward_credit按启用项记录clip/GAE/grad/实际optimizer，新helper及rewardcredit回归共22tests过。
+新reverse_pitch_response_20261107源65b1ef04固定，仅-.975/-1×16env48s6000step采匹配MC，manager4002258；当前actor改变，不能把旧actor MC回报冒充本源，旧全6000trace和本次deterministic已用于诊断复用。仅2点补采不重跑6点/154点，900s采样+900sCPU拟合，不自动接actor。物理4.89/3/scale5.5，spring4.31，PD60/2，2/8ms，DR.1及measuredjointdelay腿+2等均不变。完整command/experiment_contract已落盘；需逐命令phase wholeenv审查、奖励风险/冻结再决定有界actor。
+
+
+## 2026-11-08 后退命令扩到-1.8，并覆盖实录-1.7速度状态
+用户明确确认：后退直行命令扩至-1.8m/s，暂保留稳态速度>=75%目标；超出目标后退速度<=.05m/s、完整存活、6-12s每回合原始pitch峰峰值<=3°、后退active/hip角差P95<=4°不变。command=-1.8下实际-1.35仅满足当前欠速线，不能宣称实际-1.8巡航。
+用户补充此前Ozone狂退最大约-1.7m/s（本轮未重新估算原CSV）；需另验实际heading vx=-1.7附近，零命令/较小后退命令下的稳定制动、额外反向加速、制动时间距离与俯仰。这与静态命令跟踪是两类证据，不能互代。原reverse_domain[-1.7,-1.5,-.02,0]在目标-1.7时gate0，但gate依赖obs7目标命令、不是实测速度，不能据此断言它是历史零命令狂退的决定性根因。
+当前gain1.5教师793535aaa06f218e99b925b41f31097c387d5ffc623fc7cd4ccb312bdf05abb8完整收束：两网格118→131/256、新增13副本，0旧pass/survival/pitch丢失；-.9/.925各32/32，-.95=23/32、-.975=28/32、-1=16/32/31存活，-1最差rawpitch7.861°，-.975最差3.288°仍失败。-1.1/1.25/1.5各0/32存活，不声称-1.8已会。frontier报告sourceSHA曾误取被测candidate的命令字段，已从实际baseline evaluation恢复65b1ef04并归档原报告，指标未改。
+已生成reverse_domain180_20261108/source.pt SHA ddd0677e0c5eb1bc1cec7ff25f61d2dcdf2197e6a8789c444a1277bb047626ee，只迁移reverse_domain到[-2,-1.8,-.02,0]，fullsupport覆盖-1.7/-1.8；16384样本证明目标vx>=-1.5原actor输出逐值相同，所有weights/25D6D/执行器物理不变。扩展loader允许边界、反向序列守卫到-1.8、可选alive/pitch训练reward作用域到-1.8，97项tests通过。runtime_verified明确pending_simulator，不把CPU gate通过写成行为通过。当前仅准备新域，未启动新GPU、未用未覆盖critic训练远域。
+此前reverse_pitch_response采数完成；配置EXTRA漏传alive10导致原始标签为alive0/pitch2，已固定actor完整6000trace精确重标44800MC，无重仿，物理/终止/age/tailbound核验，修复配置复制并28测试通过。全网络fit和只输出层ridge均未保留独立wholeenv test RMSE，明确不接actor、不重复采样或拟合；保留资产。新pitch cost默认关闭未行为认证。详见reverse_gain150 combined_final_report、reverse_pitch_response final_report和reverse_domain180 target_contract/NEXT。长期全历史域、延迟鲁棒、-1.8、最终弹簧/DR/部署均未完成。
+
+
+### 2026-11-08 当前源斜坡被否决，腿响应有界推进
+reverse_ramp_current_20261108同源无斜坡103→0.5s坡67/128，无新增/丢36旧pass/10存活/21pitch。每拍obs7时序maxerr<1e-6，物理runtime全过；不是运行失败而是实际行为退化，拒绝，不扫斜坡时长/不部署。存活-1副本10-12s rawpitch0.342-1.673度、6-8s最大7.861，保留6-12原gate不后移窗口；不能说无震荡。
+当前reverse_gain170_20261108研究源ddd0677e（命令支持-1.8、旧>=-1.5输出exact），候选7d045ed1fee1529cc5d470dbaa5f00a86d663e94b0bafd4083beb004b419e757只神经baseleg增益1.5→1.7，独立delta限制.06不扩大、物理PD60/2不动。旧1.5只是此实验参数检查上界，不是硬件上限，显式允许至2.0并测试1.7/2.0仍守动作限幅/隔离/加载，56相关tests过；旧checkpoint输出不受validator上界改变影响。两原32rep网格并行GPU0各900s、manager4029057，禁止重复；runtime/freeze/retention完整才选，不因数值gain大就预设有效。-1.8与实录-1.7制动状态仍未认证，目标不缩减。
+
+
+### 2026-11-08 后退-1已32/32通过；继续向-1.1及-1.8推进
+全域gain1.7候选7d045ed1：两网格131→147/256，新18但丢2旧-.975通过（欠速/摆角），故整体不晋升；-1达到31/32/32存活/maxover.004588但p2p3.05577严格失败，未放宽。直接复用已有数据发现主失败在起步后的衰减，10-12秒小不等于6-12秒过；拒绝改变窗口。
+局部fastgain1.8候选d8cdc823738522ce7c2ff4df695d48d0dfbc5939cc9753af28b75936f77d95f7从已验gain1.5/门控扩域源ddd0677e起，新增可选reverse_base_leg_fast_gain/domain两buffer，命令[-1,-.975]smoothstep、delta±.06不变；16384old输入exact、4096fast轮输出exact、原state全部exact，57tests过。主4×32从103→119新增16无旧pass/survival/pitch丢失；-1首次32/32全过、maxover.0107167、rawpitchp2p2.274916、steady .75057-.78598，当前25%欠速口径不是实际-1巡航。-.9/.925各32、-.95原23保持；-.975及更慢原函数逐值保留，旧28/32并非新32/32。当前final_checkpoint/selection只研究接续promoted=false。
+下一唯一GPU0作业reverse_frontier110_20261108，manager4032688，同d8cdc8冻结网络，新命令[-1.025,-1.05,-1.075,-1.1]各32、900s，全部physics/核心delay/DR保持。source physical readback+新seed86786/noise87886绝对验收，不说同源增益，不重采MC/critic。新命令-1.8和实际-1.7制动状态目标继续保留。旧-.8751例超调、-.95/-.975欠速等缺口、全域/动态/多seed/最高DR/最终弹簧/部署未完成。
+
+
+### 2026-11-08 相邻扩域四档已完成，当前能力边界有据可查
+reverse_frontier110_20261108已完成、manager4032688及eval4032690均结束；runtime/初态/质量材料/delay/obs7逐拍审核通过。当前同checkpoint d8cdc8：-1.02520/32通过31存活，最差p2p13.382；-1.051/32通过20存活；-1.0750/32/2存活；-1.10/32/0存活。不能将新目标绝对验收说成新的训练提高，也不因-1的32/32外推-1.1或-1.8。本轮主线有实际-1命令新通过，且源较慢域exact保留；所有全域/动态/多seed/部署项仍未完成。
+当前可复用失败数据已包含policy/leg/world/delay和原始pitch；较快主动腿动作截断先于大倾角是候选机制证据，不是因果定论，不直接提高PD/执行力矩/动作权限。下一修复从此证据及剩余-1.025起步摆动入手，保护已过-1，不盲续原配方。桌面最新图reverse_fast_gain180_20261108/paired_speed_pitch_leg.png保留原始稳态波动、起步与旧源倒地；实际稳态速度.75057-.78598，75%门槛口径显式保留。
+
+
+### 2026-11-08 快退扩域：按实际时序纠正归因，只延展已有轮分支
+复用reverse_frontier110全部失败轨迹作逐帧actor分解（reverse_frontier_mechanism_20261108/report.json）。-1.1有30/32副本先发生超过目标.05m/s的超调、约1秒后才出现腿raw action截断；-1.05有13个同样顺序。腿截断早于大倾角不等于早于超调，不能据此扩大腿权限。现有快轮reserve在1-2s常接近-.117/.12幅度上限；这是有界轮幅度对照的依据，不预判加刹车一定有效。
+新reverse_wheel_extension_20261108源d8cdc823738522ce7c2ff4df695d48d0dfbc5939cc9753af28b75936f77d95f7，保留已经32/32通过的-1。仅增加可选reserve extension两buffer，vx[-1.05,-1]smoothstep接入.13或.14幅度，旧.12、所有weights、腿gain1.8/limit.06、PD和物理都保留。16384合成与192000已录主域输入证明vx>=-1输出逐值相同，58相关tests通过。候选14923b93(.13)/1773befa(.14)分别4命令[-1.025,-1.05,-1.075,-1.1]×32同seed86786/noise87886配对验收，manager4054734，最多2GPU0各900秒，禁止重复。两候选分别计数，不把合计当一个网络的能力。
+4.89peak/3continuous/scale5.5、PD60/2、spring4.31、2/8ms、实际Dfb/B/C、DR.1保持；本轮评估core轮6/8/10/12ms腿+2，response0-5/轮速年龄0-8分别保持，非完整tail训练。启动前清理继承的旧PPO/2400s/KL停止字段，metadata_cleanup记载；actor/critic均0更新，无新MC/拟合。超速.05/75%速度/rawpitch6-12s p2p3deg/后退摆角4deg不变，旧pass/survival/pitch丢失即拒绝。-1.8命令和实际-1.7稳定制动、全域/多seed/动态/最终DR/部署继续未完成。
+
+
+### 2026-11-08 轮增幅抑制冲动有效，但两候选整体拒绝
+reverse_wheel_extension两组4×32完成、runtime/配对/freeze通过。源21/128：.13候选10/128、0新增丢11旧pass/1pitch；.14候选7/128、1新增丢15旧pass/1pitch；均无旧存活丢失。不得把存活提高说成晋级。.14在-1.05/-1.075各32/32存活且无超速，源20/2存活；但pitch分别9.809/10.953°、速度普遍低于75%，完整通过仍0。-1.1存活0→21但0完整。两者均拒绝替换当前d8(-1的32/32)；promoted=false。
+复用该批轨迹做leg_response_audit：-1.05/-1.075晚期10-12s最差pitch仍7.175/9.191°，非仅短暂起步；腿gain1.8→2离线每维动作最多差.012、仍受±.06修正上限，不加PD/力矩权限。仅准备一组gain2与wheel .12/.14的有限配合对照，沿此前实际有效腿响应方向验证；保护vx>=-1原函数，尚未声称行为改善。不再单独继续增加轮刹车。
+
+
+### 2026-11-08 腿轮配合有限对照已启动
+reverse_leg_wheel_coordination_20261108，manager4057393，GPU0最多2个任务各900s。源d8cdc8：leg200候选0950f9db5fb41e7e2a81af8072a88049da82c02e36908b98441012970d30e909仅在vx[-1.025,-1]将fast腿响应1.8平滑到2.0，轮.12；leg200wheel140候选68e5645625efb5db267723db2122650f7b7f7c00248c700fbcfe7e693761bd6e再配已验证能提高存活的wheel.14。分别复用同源4×32基线，且第二组可与前轮.14结果比较隔离腿变化；不把两个候选相加。59tests、16384合成与192000实录保护vx>=-1逐值不变；原weights逐值不变，只有optinbuffer，腿delta仍.06、PD60/2及物理/DR/门槛不动。当前已通过-1研究教师保持，不用未经验证候选替换。两组各900s有限验收，无MC/PPO或未校准critic；旧pass/存活/pitch丢失则拒绝。
+
+
+### 2026-11-08 腿增益有收益但仍有退化，仅补一次中间轮幅度
+leg200(.12轮)由原21→35/128新增14无旧pass丢失，但丢2旧存活：-1.02520→27/32、-1.051→8/32，整体仍拒绝。leg200wheel140由21→17/128新增7丢11旧pass，存活/pitch无丢失：-1.05/-1.075都32存活无超调，但pitch7.287/8.959且欠速，整体也拒绝。不能只报新增14。已保存桌面真实配对速度/pitch/角差图，含失败、完整gate数。
+基于两端明确的超调与欠速权衡，reverse_balance_midpoint_20261108只补wheel.13单一中点，leg2/limit.06固定；候选0a1eda096eaf6bbd372776360c264ad7cfbbc4021bbf221c873bae68beac0fc0，直接源68e56456，canonical仍d8检查旧保留。manager4059243，单GPU0同4×32/900s；只两个wheelbuffer槽变更，16384受保护输入exact，原weights/25D6D/物理/DR/gate不动，不新MC/PPO。此中点结束收束，不再无界扫gain/刹车；-1.8和实际-1.7制动仍未完成。
+
+
+### 2026-11-08 固定参数探针收束，转入稳定快退源的配合学习准备
+reverse_balance_midpoint完整4×32：21→33/128，新16但丢4旧pass，存活/pitch旧通过无丢。-1.02528/32、32存活无超调，余3欠速和1pitch6.667°；-1.055/32/31存活；-1.075/-1.1均0。三处欠速虽接近75%仍未放宽，candidate0a1eda09不晋升。此轮固定gain/轮幅度扫描正式收束；保留已过-1的d8源。
+已启动reverse_coordination_learning_20261108，manager4060985，只用研究源68e5645625efb5db267723db2122650f7b7f7c00248c700fbcfe7e693761bd6e（leg2+wheel.14）在-1.025/-1.05/-1.075各16env48s6000step采匹配MC，48env<128guard。三点均曾32/32存活且无超调，但欠速/pitch失败；故仅作可学习起点，不是整体晋升或洗掉旧d8保留基线。actor固定，原d8不替换。物理4.89/3/scale5.5、4.31弹簧/PD60/2/2-8ms与DR.1不变；90%core轮6-12+10%tail14/16、leg+2、response0-5/feedbackage0-8分列。采样1200s+CPUfit900s，禁止重复启动。reward明确runaway4/osc4/alive10/grace3/pitchrate2，旧collector漏alive问题已修且本manager强制readback alive10/pitch2。此actor和3点没有匹配MC，不能把旧MC标签假当新数据；全部确定性轨迹复用于归因。
+结束自动复核source/实际physical/reward，按真实terminated审查first12s/48s，仅first12s>=75%且MC>=256的命令拟合；16env按整环境8train/4val/4test。拟合不自动接actor，必须复核各command/entry/steady/withinenvEV与RMSE，明确绑定新head并在后续actor更新保护vx>=-1，不能使用未覆盖冻结fallback。未来fullpaired仍超速.05、rawpitch6-12s p2p<=3、速度>=75%、原yaw及reverse腿4°。-1.8命令、actual-1.7制动、全域/动态/多seed/最终DR/部署全部未完成。
+
+
+### 2026-11-08 匹配MC和critic有限校准完成，训练隔离可用
+reverse_coordination_learning采样6000步完成，runtime全部通过包含alive10/pitchrate2实际读回。-1.025/-1.05各16环境48s全存活；-1.075为15/16，累计2次终止在同一环境，不能称16全存活。每点约22400MC；3个whole-env独立head CPU拟合3.57s完成，全部满足既定相对RMSE准入。test总体RMSE比旧参考分别.208/.507/.313，EV .770/.248/.128；-1.05起步EV仍-.607，其他局部steady/within-env亦弱，不宣称critic全修好。
+新增reverse_coordination_anchor/domain默认关闭，[-1.025,-1]只允许vx<-1更新；source_scoped.pt SHA76f43eefc6621a8dc3aacf1aefa7b244625126cc22418430c4c0876acfd9b7da，16384全域合成与192000记录输入初始逐值相同、保存加载一致，真实optimizer更新目标改变而vx>=-1输出exact且梯度gate0。原actor state全部保持，新增冻结anchor。60physics/selection+20training_contract/reward_credit=80tests通过。审计两次CPU错误归档attempt1/2：子集重batch与state_dict视图被测试更新，均已修成同完整batch和snapshot deepcopy，精确门槛未放宽，无GPU训练浪费。
+准入仅有界7总更新=3criticwarmup+最多4actor，lambda1/1024policy步、LR1e-4，最长1800秒，继续训练已拟合新head，不用未覆盖fallback。新head halfwidth<=.01防命令间.025重叠，旧source自带commandcritic须显式移除并绑定新sidecar；不是直接绕loader。训练后必须同时对研究源68e5和canonical d8查新增/保留/丢失，不能洗掉前候选退化。当前仅准备，GPU未启动，待完整SHA/runtime/命令报告后启动一次。
+
+
+### 2026-11-08 奖励提前终止风险已用原数据修正，启动4更新有限actor
+启动前审计发现alive10仍使-1.05/-1.075存活回报大量负值（mean reward-.141/-1.616）；不能直接沿用旧拟合。复用完整6000trace将alive10→20、upperclip20→30精确重标68149MC，无新仿真；终止奖励原样、tail bound/episode age一致、含旧reward-history的privileged/context剔除。存活未终止环境的MC负回报全部消失；余805负样本均来自实际失败环境。上限随alive平移避免再次抹掉罚项，实录runaway/osc代价移除效果未减；pitch项在总rawreward中，PPO专门梯度审计仍需检查，不误称MC有独立pitch列。
+重标后MSE拟合3.38s。-1.025采用已匹配head的解析存活value平移并对新标签wholeenv验证（各phase RMSE近乎逐值保持），不是旧未校准fallback；-1.05用新MSEfit，entryEV-.723仍弱；-1.075发生失败的验证环境导致解析平移校准变差，新fit也丢稳态RMSE，故不作本轮actor目标，保留配对泛化检查。其实际失败队列为10/12ms核心，不甩锅最难尾部。
+新训练源4bb7522026b38d0a412c116b2b0fca87cd920f0788ccf9eaa57a593d279ef570、critic30f1efde0edba1ba936d3e94f1d6d000b6e88d020f8113f3d85952683c588a6a显式sidecar绑定，仅reverse_network学-1.025/-1.05，vx>=-1由coordination anchor精确保留；原wheel/leg参数固定。7总=3criticwarmup+4actor，512×1024、lambda1、LR1e-4、35%rehearsal/beta4；CPU32seed均覆盖176旧命令/179槽，80相关tests通过。manager4067259，单GPU0训练预算1800秒、MC KL>.5/契约/冻结/非有限即停，合规partial才可验。完整命令与预告已输出；4.89/3/5.5、spring4.31/PD60/2/2-8ms、DR.1与原联合delay不变。训练runtime新增逐项匹配重标后的奖励契约，只有固定reverse不生效的sequence成本及play审计标记明确排除。
+结束自动同seed4×32，必须同时对研究源68e5和canonical d8报告新增/旧pass/存活/pitch损失，不自动晋升或接续长训。-1.8命令与actual-1.7制动、动态/多seed/全域/最终DR/部署未完成。旧alive10已准备但未启动的actor整目录归档actor_reward10_prelaunch，未训练浪费；MC与CPUfit已完成不再启动。
+
+
+实际启动复核：actor manager4067259/trainer4067280存活且runtime_verified全部通过，137项作用于固定reverse的实际reward参数与重标MC一致；当前3次critic-only warmup，尚无新增行为通过结论。rmuc自动接续已更新到新actor，旧MC/fit不再启动，结果处理后暂停。
+
+
+### 2026-11-08 短训首个有界行为收益：-1.025振荡门槛全过，速度仍缺10例
+reverse_coordination_learning/actor完整7总(3critic+4actor)更新结束，1185s，db8ccb445b9e9931ca2b63adeb4cb48c3ed5d766c9935a69887babc627768859。只reverse_network六张量变更，旧fallback未变；137项实际reward与重标MC一致；176rehearsal全覆盖。真实首actor checkpoint13763组vx>=-1输出exact，最终源KL.007461/.006832<.5。当前counterfactual奖励信号进入adv/gradient/update，但局部方向曾有小冲突，零超速时tiny梯度是数值效应，不能称惩罚作用强。
+同源4×32：研究源68e5 17→23新增6，无旧pass/存活/pitch丢失。-1.02517→22/32，全32存活无超调、rawpitch最差3.479→1.837全过、yaw/角差全过；剩10例仅75%速度未达，steady .75871-.79132。-1.050→1/32、全32存活无超调，p2p7.287→6.414，仍29欠速/18pitch；-1.0750/32但32存活无超调，p2p8.092仍未过；-1.1存活21→26但0完整。与canonical d8比较21→23新11丢9旧完整pass，均未丢旧存活/pitch，因此不晋升、不合并掩盖继承的欠速。d8(-1命令32/32)仍保留。
+训练尾曲线已保存并查看桌面RMUC训练曲线/reverse_coordination_learning_20261108/actor/reverse，保留reset缺口和瞬态角差；正式配对报告见actor/REPORT.md。db8仅选作有收益的研究接续，下一步复用现有MC和当前critic而不重采/重拟合，继续补速度及-1.05震荡；完整-1.8命令、actual-1.7制动、动态/多seed/全域/最终DR/部署仍未完成。
+
+
+### 2026-11-08 有收益后直接续训，复用当前critic与旧MC预算
+actor_continue源2e62ab5589b06d74ee8d1d4978874b5f6b65aec0f324b6f3a2b747137a17435c，actor逐值等价刚验db8；提取当前训练后critic为sidecar9ceedb5a8a47ee93e9bc0f2df0da997ffeee1b40dfd52c3b09dc15e1dce7829f，显式迁移旧command-value字段，不回退到未校准fallback。无新MC/无离线fit；replay及policy reference仍原68e5匹配alive20数据，不能把旧数据改写为db8采集，初始KL .00746/.00683在.5有限复用预算内。当前critic权重保留、optimizer按现有训练入口显式fresh。
+只提高actor LR1e-4→2e-4，训练目标仍-1.025/-1.05；scope锁vx>=-1，wheel/leg参数固定。11总=3criticwarmup+8actor，512×1024/lambda1/35%rehearsal/beta4，2400秒，KL>.5/契约/冻结/非有限即停，合规partial才验。8192全域迁移输出exact，CPU32seed全覆盖176rehearsal，source/critic/命令均已报告；manager4073356，单GPU0，旧actor批已终审结束不重启。物理4.89/3/scale5.5、PD60/2、4.31弹簧、2/8ms、Dfb/b/C、DR.1及90%core6-12+10%tail14/16 leg+2/response0-5/feedbackage0-8完全不改。
+训练后自动4×32，分别对直接db8和canonical d8判保留新增丢失；已完整通过的-1教师d8仍保留，-1.025只抗震荡全过而非速度全过，不能升格。目标-1.8与actual-1.7制动继续保留。当前源已有行为收益才续这8次，并非原失败配方无界延长；无改reward或gate。
+
+actor_continue实际trainer4073379已启动，runtime全项通过。rmuc自动接续已切至此批；旧actor与MC/fits均结束，禁止重复。上轮正式配对速度/pitch/腿角图已保存桌面RMUC训练曲线/reverse_coordination_learning_20261108/actor/paired，图中分别标示research continuation与overall promotion，后者false。
+
+
+### 2026-11-08 续训期间复核命令通道，无硬速度平台证据
+actor_continue运行中，复用db8现成稳态轨迹，每点4096输入；目标-1.025/-1.05实际obs7分别-.5125/-.525，obs6未触±2clip，reverse_network训练gate全部1，前进position-authority gate全部0，reverse tanh及rawconsumer各槽稳态饱和比例0。联合扰动目标dv=.01时obs6同步2.1dv、obs7同步.5dv，全部样本动作响应非零。故当前欠速无证据是命令硬截断、门控关闭或稳态tanh饱和；不能由开环输入敏感性推断闭环必过。证据actor_continue/command_sensitivity_audit.json，未改运行中配置/未新增GPU。
+
+
+### 2026-11-08 8次actor续训新增32副本，-1.05抗震荡门槛全过
+actor_continue完成11总=3warm+8actor，2000s，25714c6ff836a5617e86faa8099e5fe858cfae4fc1dcefba3e387e7a6ea6ee4e。同源db8完整23→55/128，新增32，无旧pass/存活/pitch丢失。-1.02522→31/32：全存活、无超调、rawp2p最差.570°，唯一speed.7680616<.76875差.0006884，仍未放宽；-1.051→16/32，全32存活无超调、rawpitch最差2.868<3全部过、yaw/腿角差全过，剩16欠速。-1.075未直接训练也0→8/32，全存活无超调但16pitch/13欠速；-1.1存活26→29但仍0完整。canonical d8 21→55新36丢2旧完整pass（欠速），无存活/pitch损失，故整体仍promoted=false、2571仅研究接续，已过-1的d8保留。
+最终state仅reverse_network6张量改变，16384保护vx>=-1输入对db8和d8全部exact，真实11保存更新/critic176step，fallback不变；最终MC源KL.05901/.05134。完整报告actor_continue/REPORT.md与final_functional_retention.json，桌面训练/配对图均保留瞬态和最差副本，不能把32新增说成32个命令点。当前两个近前沿已在所有32rep克服原始pitch震荡，剩余速度问题仍明确。
+
+
+### 2026-11-08 速度补齐与新域MC并行推进，最多2GPU0
+actor_continue2源0f2dc2832dc4c6a57fe6ddb6d9091a502e0fa1b0569591d42b7546a6fb72d59d逐值等价2571；critic1d7dba2b2dc73fbd37cfd815d172911d3638ca5f2f0d503b0254a15e5c10a9a2从当前训练后权重提取，不新拟合，MC仍原68e5/alive20标签与policy-reference(.059/.051初始KL)，不伪称新source采样。只LR2e-4→3e-4，11总3warm+8actor、512×1024/lambda1/35%rehearsal/beta4、2400秒；scope保护vx>=-1、物理/reward/门槛不变，KL>.5/契约冻结即停。manager4081302，CPU32seed176coverage全过，8192迁移输入exact。研究源已有32新增副本无直接源退化才继续有限批次，不是原失败配方原地长训。
+并行reverse_next_frontier_mc_20261108，manager4081303，冻结25714c6ff836a5617e86faa8099e5fe858cfae4fc1dcefba3e387e7a6ea6ee4e，仅新3cmd[-1.075,-1.1,-1.15]×16env48s6000step，48env<128guard，1200秒采样+900秒CPUfit。旧-1.025/-1.05 MC不重采；-1.075旧actor标签不冒充2571，直接利用其新核心32存活和-1.1的29存活建立下一档数据，-1.15只筛可学习前沿；fit需first12s>=75%与wholeenv留出，无自动actor。reward保持alive20/clip30/runaway4/osc4/grace3/pitch2，并实际readback。
+两个GPU均峰4.89/持续3/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/B/C原值、DR.1、90%core轮6-12+10%tail14/16、leg+2、response0-5/feedbackage0-8分列。旧actor_continue及eval均结束，禁止重复，其他workspace不干预。目标命令-1.8与actual-1.7制动仍保留，未称新域学会，父本d8仍保留-1全32。结束分别处理真正结果，不自动合并/晋升。
+
+并行启动实际复核：actor_continue2 trainer4081346 runtime全部通过；新frontier collector4081347已进入仿真，两个manager4081302/4081303存活。rmuc唤醒已更新到两任务，旧actor_continue/eval不重启。
+
+
+### 2026-11-08 为后续联合扩域补齐按命令复用MC校验，不改运行中配置
+已有近域MC来自68e5、新域MC来自2571，不能全局换一个reference就混用两份标签。rmuc_command_value_training.py新增默认关闭mc_policy_references：每个目标命令明确归属一个冻结源、SHA验证、逐命令KL核对；load_replay新增commands筛选和dataset checkpoint源SHA核对，防止旧数据里未准入的-1.075标签混入新head。旧单source配置路径保持原执行方式，当前actor_continue2未启用此功能，不干预运行中训练/采样。
+10项command-value测试通过（旧路径、新显式来源完整更新/保存、数据交叉污染、缺源/重复源/错误hash拒绝），新mode仅作后续数据复用准备，未声称新域通过。生产改scripts/rsl_rl/rmuc_command_value_training.py，测试tests/test_rmuc_command_value_training.py；新功能必须用已有实际数据源manifest验后才接入GPU。
+
+
+### 2026-11-08 更快域MC完成，下一批扩到-1.1具备学习起点
+reverse_next_frontier_mc源2571固定采完3×16×48s，runtime/reward全过。-1.07516/16全48s不倒；-1.1首12s13/16、48s12/16；-1.15首12s1/16、48s0/16（124次终止），不直接混入长训。前2head wholeenv拟合完成，test总体EV.700/.562、entryEV-.312/-.056、-1.1steady within-envEV-.966，局部弱不能说全修好。存活未失败env负MC均0，负MC来自实际终止轨迹，alive20无须再次凭空加权。-1.15低至6/8ms核心也失败，不怪tail。
+已完成joint_replay_preflight：旧68e5/新2571的数据按命令显式选择，旧两点-1.025/-1.05、新两点-1.075/-1.1；旧未准入-1.075、新-1.15均排除，不混标签。sourceSHA/每命令reference/KL/whole-env训练样本核对通过，使用新增默认关闭multi-policy校验接口；不启用到正在跑的actor_continue2，不新采或重fit。后续等待其实际验收再提取更新后的旧2head并组装4目标有界训练，不能两份共享reverse_network并行训练后盲合并。MC本批已终审，status=review_complete_waiting_parallel_actor，禁止重启。
+
+最新核验：MC manager4081303/collector4081347已结束，actor_continue2 manager4081302/trainer4081346存活，3warm+1actor更新完成、KL.06765/.05780。rmuc唤醒已更新：新MC不重启，等当前actor验收再刷新旧head组装四目标。
+
+
+### 2026-11-08 -1.025首次完整32/32，但共享分支远域损失需隔离
+actor_continue2已完整3warm+8actor/2300s，542fe0a2099b701bb8020cbfe7299f0f1ce08f72e21d637b3f66a5e0a134d816。直接源2571完整55→87/128、新32、0旧pass/pitch丢失；-1.1却丢2旧存活122/124，整体不直接晋升。-1.02531→32，32存活无超调、rawpitch.519°、steady .77962-.81492按75%门槛；-1.0516→26、全存活无超调/pitch1.538全部过，剩6欠速；-1.0758→27，全存活无超调、2欠速/3pitch3.812；-1.10→2完整但29→27存活。不能用总数或canonical更早源无丢失掩盖近期存活退化。最终16384保护vx>=-1对2571及d8逐值相同，只6张量变，实际11更新/critic176step。
+新增optin reverse_frontier_anchor/domain：vx<=-1.1恢复已验2571 reverse原输出，vx>=-1.075保持542近域收益，之间smoothstep；不是把两个失败候选硬拼成认证，仍做同源闭环。新增对应loader/实际梯度门控校验，81physics/trainingcontract/rewardcredit tests过。未来4目标训练需显式选择reverse_network与frontier_anchor两个不重叠主域分支；-1.1不再被近域共享参数更新默默改变，oldvx>=-1仍冻结。保留当前待验新scope，未修改已运行任务（此时均结束）。
+
+
+reverse_frontier_preservation候选493d89a474e0b5b0d0719af76c9de6d8c923b718a8495c778a026478ad26a754准备完成。源近域542fe0、快域2571，16k全域随机输入端点精确保留；实录144000近域与542exact、48000快域与2571exact。原542 state全保持，仅增加domain与冻结2571网络副本，无actionbudget/PD/physical改变。单GPU0同4×32(86786/87886)900s，manager4090676，主比较源为最后无退化研究源2571，并额外比较canonical d8；不以被拒绝542的远域2个新通过当必须保留覆盖近期两例生存损失。完成后实际闭环验证才选，不自动晋升。当前actor_continue2与MC/fits均结束，不重复。
+
+
+### 2026-11-08 收束成功：近域新收益与远域旧存活同时保留
+reverse_frontier_preservation实际4×32完成，493d89a474e0b5b0d0719af76c9de6d8c923b718a8495c778a026478ad26a754相对最后无退化2571源55→85/128、新30副本，旧pass/存活/pitch均无丢失；canonical d8也无旧损失。-1.025完整32/32，无超调、rawpitch.519、steady .77962-.81492；-1.0526/32（仅6欠速），-1.07527/32（2欠速3pitch），-1.1原29存活/0完整恢复。近三档轨迹指标逐值复现542，快档逐值复现2571；不因组合CPU证明直接认证，已经实际闭环核对。selected_for_research_continuation=true、promoted=false，final_checkpoint.pt指向此候选，未宣称全域/动态/多seed/最终DR/部署。
+后续4目标准备从此同一checkpoint起，旧2critic提取当前训练后的head，新2critic来自已完2571匹配MC；按命令源校验与KL，不重采/不重fit。两个可训练模块为near reverse_network与far reverse_frontier_anchor；中间smoothstep，旧vx>=-1全冻结。目标-1.8命令和actual-1.7稳定制动仍继续。
+
+
+### 2026-11-08 四目标联合扩域正式启动，复用两来源MC
+actor_joint4源b3102f09bd93eee4a693163dd5c77658adc245331382052538b48aa630886760 actor逐值等价493d89有效研究源，critic9967b64c11154ea409f27d2a7928311f1e682c951151b8cf02325c488f2eac86：旧2head提取542训练后权重，新2head由新MC拟合，不用fallback。4targets[-1.025,-1.05,-1.075,-1.1]，near reverse_network/fast reverse_frontier_anchor两模块显式选择，各target非零实际梯度；6881个保护vx>=-1输入在两模块模拟更新后仍exact。每点11200训练样本，旧2源68e5、新2源2571，数据集commands筛选与源SHA均核验；初始分点KL.141157/.121943/.022105/约0，阈值.5；未重采/未重fit。
+11总3warm+8actor，512×1024/lambda1/LR3e-4/35%rehearsal/beta4、2400秒，manager4092523，单GPU0，旧任务全结束不重复。reward仍runaway4/osc4/alive20/clip30/grace3/pitch2，物理4.89/3/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/B/C/DR.1和90%core6-12+10%tail14/16 leg+2/response0-5/feedbackage0-8不变。CPU32seed全部176覆盖、81physics/contract/rewardcredit+10commandvalue tests，四点均匹配head与phase全龄MC。-1.1局部EV仍弱，有限试训非critic完全修好。
+结束自动冻结/partial/桌面训练图及同源4×32，对493d89直接源与canonical d8查新增旧pass/存活/pitch；不自动晋升，不用新throughput或模型fit代替行为。更快-1.15未直接训练因存活差，命令-1.8与actual-1.7稳定制动继续目标。此批不再两份共享网络平行更新盲合并，near/fast分域保持当前认证的旧输出边界。
+
+四目标实际启动复核：actor_joint4 trainer4092551存活，runtime包括两模块选择、4target、137reward、物理DR均全过。rmuc唤醒已切到manager4092523；旧actor_continue2/preservation/MC/fit不再启动。
+
+
+### 2026-11-08 四目标首actor信号与归一化联动已区分
+actor_joint4首actor(update4)实际更新完成，4点都有独立匹配MC reference。-1.075速度/pitch项与实际更新方向同向，-1.1速度/pitch项小幅负cos（-.0166/-.0143），保留真实轨迹检查，不把非零梯度冒充正确更新。
+复用reward_credit_snapshot精确分解normalized advantage：前三近域runaway局部weightedcost=0且局部GAE=0，仍出现约.0019-.00214的normalized effect，来源是全batch归一化均值/方差变化；不是局部惩罚、也不能一概当数值误差。直接项+均值联动+方差联动复原误差约1.26e-6；-1.1真实超速罚active1.122%、GAE RMS77.47，normalized effect.11194。此前将零罚下微梯度统一解释为数值效应的说法不完整，已纠正。该审计是现有PPO的精确反事实记账，不证明全局归一化是根因，不改运行中奖励/算法。证据actor_joint4/normalization_coupling_audit.json。
+
+
+### 2026-11-08 四目标近快分支实际更新核验
+复用首actor snapshot按真实参数展平顺序拆分梯度：-1.1对near reverse_network的完整/超调/速度震荡/pitch梯度全部为0；对fast reverse_frontier_anchor完整梯度norm.388、实际参数位移norm.03259，说明选中并真实训练快分支。首轮fast速度/pitch梯度cos实际位移-.0207/-.0178，局部冲突确实存在，不能把参数在动等同行为改善。near更新norm.02442但不改变该命令端点，符合分域设计。证据actor_joint4/branch_update_audit.json，无新采样或改训练。
+当前目标外retention每步loss/grad均0：因目标外输出已冻结，且target_all_delays=true排除全部四目标，不是beta4限制目标学习。当前7总更新完成=3warm+4actor，四命令MC KL约.216/.188/.056/.0054，均未触.5停止线；等待完整同源行为验收。
+
+
+### 2026-11-08 四目标批次有效：前三档96/96完整，-1.1全存活抑超调
+actor_joint4完整11总3warm+8actor/1990s，cbb996b026e53347a962e69948fff963f8d2d5d106a030078f482d790817ba15。实际4×32相对493d89 85→105/128、新20、副本旧pass/存活/pitch均无丢失；canonical d8亦无丢失。-1.02532/32，maxextra.006497、rawpitch.426；-1.0526→32/32、无超调/pitch1.147；-1.07527→32/32、无超调/pitch1.451；前三共96/96严格按当前75%速度门槛。实际steadybackspeed范围分别.7907-.8286/.7931-.8330/.8116-.8518，不说实际满命令巡航。-1.1首次29→32存活且全无超调，0→9/32完整，余7欠速/18pitch最差11.270/2腿角差，仍未全过。
+最终仅near与fast两模块12参数张量改变，16384保护vx>=-1对直接源/d8输出exact；保存11更新、critic176step/fallback不动，分命令MC KL .29327/.25291/.09509/.01782<.5。训练桌面图已改为每目标第一环境展示全部4点，不能漏最难-1.1；正式配对图与REPORT记录最差副本。selected_research=true，promoted=false，full-domain/动态/多seed/最终DR/部署未认证。
+后续先锁near已过三档，单独更新existing fast frontier分支修1.1，继续goal扩-1.8。并行只补当前cbb新源在-1.125/-1.15/-1.25的缺MC，按存活准入；不把旧failed远端反复长训。不重采已过近域MC，不再用near梯度影响fast/反之。
+
+
+### 2026-11-08 锁定前三档，仅fast1.1续训并行新前沿MC
+actor_fast110 source17670ffaf83e2fc4bfabfa5e42c6bcbe4394c6fafc7974afc1e99f0dbf15525b，actor逐值等价cbb；critic3572b9d111e3d23e8dc28ee1e4fc82a059270db8dc3e085840126130dae9cd91提取当前1.1head，不重fit，不fallback。仅reverse_frontier_anchor训练，near全部冻结；16384合成vx>=-1.075输入模拟实际参数变更后exact，保护新32×3已过档。复用2571来源1.1 MC11200训练样本，初始KL.01779<.5。11总3warm+8actor、512×1024/lambda1/LR3e-4/35%rehearsal/beta4、2400秒，manager4100536；结束自动4×32对cbb及canonical d8。
+并行reverse_frontier125_mc_20261108 manager4100537，固定cbb996b026e53347a962e69948fff963f8d2d5d106a030078f482d790817ba15，新增[-1.125,-1.15,-1.25]×16env48s6000step，48env，1200秒采样+900秒CPUfit，存活不足目标不自动actor。只补新actor新域无匹配MC部分，旧近域与1.1不重采。新fork1.15是否改善看实录，不能沿用旧2571失败直接判新cbb全败或全过。
+两个作业都保持4.89/3/scale5.5、PD60/2、spring4.31、physics2ms/policy8ms、Dfb/b/C原值、DR.1，90%core轮6-12+10%tail14/16、leg+2、response0-5/feedbackage0-8。reward alive20/clip30/runaway4/osc4/grace3/pitch2不动。最多2GPU0，不干预其他workspace；旧四目标及eval已结束不重启。严格75%速度/.05超速/6-12rawpitch每rep3°/原yaw/腿P954°保持。目标-1.8与actual-1.7制动未完成；本轮结果处理后暂停当前唤醒，接新批时显式更新。
+
+最新实际启动复核：fast110 trainer4100578/manager4100536存活且runtime全部通过（单fast模块/1target/物理DR/reward）；frontier125 collector4100576/manager4100537已进入采样，最多两GPU0。旧四目标/eval已完成不重启。桌面正式配对图明确paired retention eligibility与deployment_promoted=false，不把局部研究选优称部署晋升。
+
+
+### 2026-11-08 -1.1源振荡阶段复核：主要是起步后衰减慢，窗口不后移
+复用cbb的first12s32rep原始轨迹，-1.1全部存活无超调；6-8s有18例rawpitchp2p>3，8-10s降至4例，10-12s仅2例。最差p2p依次11.270/8.031/5.579，正式6-12s仍18例失败。此分段是诊断而非改gate：不能把10-12s小误判全6-12通过。多数缺口是更早消振，少数仍长周期残余；不据此添加未训练滤波或修改部署外环。证据actor_fast110/source_oscillation_phase.json，无新增仿真/参数修改。当前fast训练2warm完成，原fallback未变，MC源KL.01782保持；新frontier125MC仍正常采样。
+
+
+### 2026-11-08 新前沿采数成功但准入拒绝，禁止误重启
+reverse_frontier125_mc冻结cbb完成3cmd×16×48s/6000步，runtime/reward全部通过，完整轨迹和MC保存。-1.125首12s与全48s均11/16，8次真实终止；-1.151/16、69次终止；-1.250/16、272次终止。均低于既定首12s>=75%(12/16)，run_mc在采集完成后抛准入拒绝，未开始CPUfit或actor。原finish_failure保留，明确是行为guard拒绝，不是GPU/环境故障，不重采同配方或反复fit。status经人工终审为reviewed_no_training_admission，final_report/REPORT记录。
+1.125已有可用存活轨迹但仍未达准入，不偷放宽门槛；等待当前actor_fast110的1.1消振实效，再评估更快域。命令-1.8和actual-1.7制动目标仍保留，不硬混0存活目标长训。
+
+
+### 2026-11-08 fast1.1改善完成，新增用户速度曲线审查要求
+actor_fast110完整3warm+8actor/2305s，a778603af0c970383093df03067dd73f5f2c500fa6f1a491f17eef5925bdcc22。对cbb同源4×32原数值gate105→126/128、新21无旧pass/存活/pitch丢失；前三96/96不变。-1.1为9→30/32，全部存活无超调/pitch/yaw/摆角过，2欠速最差.823604略低.825；rawpitch最差11.27→2.567°，稳态速度去趋势P95-P05最差.34946→.04155m/s。16384保护vx>=-1.075 exact，仅fast6张量变，完整11更新/critic176steps，KL.06766。
+用户明确正常小幅波动允许，但明显前后震荡/反复大幅加减速不可接受。全12s图仍见起步多次回摆，不能把旧gate126/128说成已完全克服震荡；保留旧数值证据，新增视觉缺口说明。阶段目标命令-1.8(75%steady)及实际-1.7制动均未完成。
+效率反思：单点训练不会自动学到远域，逐.025反复完整训练/评估造成过细推进；旧cbb在1.125/1.15/1.25采样失败不能直接代表新a778。下一唯一对照reverse_wide_entry_20261108用同a778同时筛[-1.1,-1.125,-1.15,-1.25,-1.5,-1.8]×8，直接阶跃和1.5s起步斜坡两组，冻结权重、相同seed/physics。旧.5s斜坡已失败不推广；本次新源/明确慢斜坡仅有限机制对照，不假定输入整形必优，不部署、不自动训练远端失败域。
+
+
+### 2026-11-08 宽域对照确认起步瓶颈：无训练首次推进-1.25筛查
+reverse_wide_entry_20261108固定a778教师，step/ramp1.5s各6×8，physics/readback/同seed/初态/23非command观测/首拍delay及obs7时序全过。直接阶跃-1.25为0/8存活；1.5s斜坡-1.15/-1.25均8/8完整数值门槛，全部无超调，pitch最差1.868/.668°，实际steady速度幅值.866-.901/.945-.987。前沿不是只能逐.025重新学习：此范围的稳定运动已有基础，起步激励过强挡住了验收。-1.1斜坡7/8(1腿差)、-1.1256/8(2欠速)保留缺口；-1.5/-1.8两入口均0存活，不能宣称到目标或继续盲推。
+用户放宽“正常小波动允许”，速度审图不追求绝对零噪声。所有轨迹保留原始值：阶跃明显周期加减速，1.5s斜坡1.15/1.25最差副本无明显反复顿挫；.1m/s多峰标记只是诊断辅助手段，不擅自设成最终数值gate。8rep不冒充32rep/多seed/动态/部署；控制器和网络均未改。旧.5s失败不能否定新已验证1.5s。
+后处理初次因intentional noise seed87888与旧87886全字典比较误拒，原failure/runtime保存postprocess_attempt1，按实际command修正离线审计，无重仿。下一步沿有效入口一次4×32检查-1.125/-1.15/-1.25/-1.35；不再默认逐点长训。桌面曲线RMUC训练曲线/reverse_wide_entry_20261108/wide_entry_speed_pitch.png。
+
+
+### 2026-11-08 快速路线独立验证：-1.25命令1.5s入口32/32
+reverse_ramp135_validation_20261108单GPU4×32结束，source a778不变，seed86789/noise87889。-1.12531/32(一例欠速.000311)、-1.1531/32(一例腿角差)、-1.2532/32、-1.3526/32(六例腿差)。128/128存活且全首12s无超调，四点pitch最差1.363/1.015/1.248/2.049°；steady实际速度幅值.84344-.88132/.86292-.90470/.94487-.98849/1.02183-1.05813。遵守75%速度门槛，不称实际满命令速度。
+全32条原始速度/俯仰轨迹已显示，-1.25正常小波动，未见之前明显反复大幅加减速；最差稳态速度p2p.04690m/s。-1.35有较明显残余周期波动(.07761m/s最差)及六腿差，不判全通过；辅助.1m/s多峰flag=0也不能替代审图。新entry_profile.json明确只用于静止到固定负目标的1.5s入口，观测obs6/7与reward必须一致，未来训练须同步，未改固件/网络，不是直接阶跃/任意换向/制动认证。
+这次从1.1附近推进到1.25单点32/32，主要收益来自改善起步路径而非再堆40分钟PPO；旧.5s失败不能推广成所有斜坡失败。后续成组覆盖1.25–1.4，以稳定入口修1.35腿差/小振荡，再向-1.8推进；不再机械每.025做整轮长训。旧域function/权重保留，但新命令整形的全动态/全域retention尚待验。图保存在桌面RMUC训练曲线/reverse_ramp135_validation_20261108/all32_speed_pitch.png。该批结果全部处理完成，暂停本条唤醒，不重复运行；长期goal未完成。
+
+
+### 2026-11-08 接续成组1.3–1.4：共享入口与旧域冻结保护
+用户继续加速后，当前旧批均已结束，无重复训练。新增默认关闭command_reverse_entry_ramp_s；训练和evaluation在_current_command里用同一1.5s线性入口，_acquisition_command_age保持observation/control/reward/done同一拍；训练只对active固定负直行cohort施加，旧rehearsal与动态序列不变，25D/6D不改。CLI --reverse-entry-ramp-seconds显式启用共享路径；不混旧diagnostic wrapper。CPU测试证明与已验1.5s命令逐值一致，独立reset与physics前后age正确。
+新增默认关闭reverse_frontier_update_anchor/domain[-1.3,-1.25]，只冻结保护当前fast源的较慢命令，后续仍只训练现有reverse_frontier_anchor。scoped_actor SHA383e934579ff6c0a24f77c6b3b6e7a3f9fe2444a183bdb4a1e5aced25c312547初始actor与a778在16384随机及192000实录obs上逐值exact；模拟改fast权重后14581个vx>=-1.25随机obs仍exact。loader/state_network_gate/真实autograd方向测试通过。已有1.25收益不会被新fast更新改掉，但动态跨域切换仍须闭环。
+actor/credit/retention在开启sharedentry时统一exactcommand1e-5，排除1.4斜坡经过1.2992被旧1e-3错误归为固定1.3目标；critic新增默认关闭on_policy_exact_commands_only同样排除中途混标签，旧实验默认保持。本轮相关89项初测+修正后81项通过；无门槛放宽。
+当前reverse_ramp_group_learning_20261108固定a778，仅补[-1.3,-1.35,-1.4]×16env48s/6000steps匹配MC，manager4163964/collector4163998，1200秒采集+900秒CPUfit，不自动actor。旧MC不能用作新入口/新源的标签，旧行为轨迹继续复用。并行baseline4x32[-1.25,-1.3,-1.35,-1.4] sharedentry，同源候选后续配对直接复用，manager4165221/eval4165223。第一次baseline在0仿真步因play默认reward_contract_by_command=false被正确guard拒绝，已归档launch_attempt1，显式sharedentry CLI打开按命令reward并校验，其余默认entry0行为不变；MC本来已true未受影响。
+物理4.89/3/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/b/C/DR.1保持；训练MC为90%核心轮6–12/10%尾14/16、腿+2，response0–5与轮速年龄0–8单列，baseline核心配对。reward runaway4/osc4/pitch2/alive20/clip30/grace3不改。存活不足或MC局部留出不合格的目标不自动训练；先审分命令entry/steady/wholeenv，再做有界成组actor。
+
+
+### 2026-11-08 共享入口基线新增-1.3通过，保护边界相应扩大
+reverse_ramp_group_learning/baseline独立seed86791完成4×32，actual sharedentry1.5s与runtime合同均通过；-1.25/-1.3各32/32，-1.3526/32(6腿差)，-1.413/32(19腿差、5pitch)，全部128存活无首12s超调。-1.3实际steady幅值.98588-1.02320、worstpitch1.552°、worstspeedp2p.06359；原始全32曲线显示小幅单次扰动后收敛。-1.35/-1.4明显连续周期波动，仍需修，不能凭平均跟踪或pitch局部过线当平稳。
+既然-1.3已经有效，不再把它当必须改变的目标。新增scoped_actor_preserve130.pt SHA2b30b42e6e0f5096a1ed26e1f1417e39a5b7fc748823a76dea77c5e081448070，scope[-1.35,-1.3]，初始与a778所有16384随机+192000实录obs exact；模拟更新后14745个vx>=-1.3仍exact。原scope383e保留历史不使用。本批MC依然一次性3目标完成，1.3数据可作保留/值函数资产，不重复采样；actor实际目标仅资格通过的1.35/1.4。actorprepare已改保护1.3，fallback不用于未覆盖actor。
+新增on_policy_exact_commands_only单元测试模拟近邻斜坡：32样本中8个仅接近目标会排除，24固定目标保留；MC replay固定标签不变、actor/fallback冻结不变、保存恢复正常，10项commandvalue测试通过。
+
+
+### 2026-11-08 1.35/1.4成组actor已启动，保护新通过1.3
+共享入口MC完成6000步：1.3首12s/全48s16/16；1.35为14/16、13/16；1.4为13/16、8/16，随机训练含10%较难tail与stochastic动作，不能与确定性core32rep存活直接混算。obs7时序最大误差1.58e-7、物理/reward读回全过。3head CPUfit4.18秒完成，全部资产保留，1.3已经通过因此actor不更新。1.35 testEV.705但steadywithinenvEV-8.26；1.4 testEV.489、valentryEV-6.64、teststeadyRMSE3225/bias2021，局部critic仍弱，不能宣称彻底修好。平均reward9.79/8.54/6.91，所有未曾失败环境MC均无负回报，负回报均来自失败轨迹；保持reward不凭空再加权。
+actor source cfc475621648735b2ec8332ae37721f8f14a8c14bc8b57789ae593a60fbeaad3，actor等价a778，critic f7dc7b9b73876ba2a715f1cf9575acd1674162ebd4e46818a81a23c70e182117；匹配当前source/entry的新1.35/1.4 head，单独显式sidecar迁移，不用冻结fallback更新未覆盖target。MC训练样本10073/17187，初始KL约4e-12；trainable现有reverse_frontier_anchor，新的frozenupdateanchor保护所有vx>=-1.3，14745随机实际参数probe+192000实录初始化exact。实际采样CPU32seed覆盖全部176rehearsal，179槽，无静默回退。
+actor/run.py manager4168091开始，单GPU0；3warm+8actor、512×1024/lambda1/LR3e-4/35%rehearsal/beta4，2400秒/MCsourceKL>.5/契约/冻结/nonfinite停，合规partial需明确说明。入场目标1.35/1.4成组，不再逐.025；同1.5s入口仅active固定负cohort，旧rehearsal/dynamic不变。actor/credit/retention exactcommand1e-5，critic onpolicy exactcommand同样排除ramp中途混目标。实际效果看源4×32(32/32/26/13)配对和原始速度图，不能critic拟合或梯度非零替代通过。完成后运行父目录review_actor.py及视觉审查，桌面训练尾图保留，原始候选不自动合并/部署。
+
+
+### 2026-11-08 成组actor终审不晋升：消振收益换来了固定腿角偏置
+actor完整3warm+8actor/2370.38s结束，02020f1633560ecb8279805e3dad5a4e3008162373ec80d59c58ffea2fc1cd48。源4×32完整103→98，新8丢13；无旧存活/pitch丢失，-1.25/-1.3仍64/64且闭环逐值exact，16384保护输入exact。-1.35为26→23、-1.4为13→11，当前全部失分是腿角差。128全存活无超调、速度/yaw全过；-1.4pitch3.724→2.188°、速度p2p.14406→.08857，多峰标记11→0，但仅自动flag不能称零震荡。
+离线真实q分解：-1.35固定角差均值中位约3.25→3.52°、std约.35→.24–.26；-1.4均值3.38→3.60–3.63、std.56–.59→.28–.29。波动下降而静态偏置增大，令部分原pass压过4°。重算alignment罚mean .311→.411/.369→.453，证明有罚但优化仍接受该权衡，不是继续堆更新数的理由。拒绝晋升，保留a778已验证源；020作为研究证据保存，不自动合并或部署。完整报告actor/REPORT.md、leg_offset_decomposition.json、alignment_penalty_readback.json，绘图路径错误离线修复未重仿。
+用户要求吸取长训坏结果教训，已加可执行保护：reverse-entry+commandcritic课程每阶段最多2actor更新，warmup另计；超过立即拒绝。新保存checkpoint携带pending paired review标记，续训必须有同SHA报告、无旧point/survival/pitch/overshoot丢失且visual_review approved，才能继续；不靠reward/EV代替行为。scripts/rsl_rl/rmuc_short_behavior_stage.py+train.py接入、tests/test_rmuc_short_behavior_stage.py；13项测试通过，旧3+8配方今后会拒绝，原始已完成证据不改。该机制限制发现退化前损耗，不保证每轮必有益。
+本批训练/MC/fit/基线/候选/终审全部完成，无本工作区GPU任务。停止原配方盲续，暂停本条唤醒；长期目标未完成，下次基于固定角差偏置的明确修复方向短阶段验证。
+
+
+### 2026-11-08 更快域短筛完成，先区分超速与非超速倾倒
+reverse_ramp_frontier_screen_20261108固定a778/020研究候选各5×8，1.5s入口，完整同seed/初态/delay/runtime/obs7时序通过。-1.45存活3→5/8但幸存者均腿差未过；-1.5/-1.6/-1.7/-1.8两源皆0存活。全12s原始图已查看，保留失败，不重复这批或把候选020当晋升。更快命令不是均有超调：-1.5约2.4s超速、3.2s pitch20；-1.6至-1.8先姿态失稳而未达到超速。不能只统一加刹车。离线fasthead可行动作区间审计仅说明部分1.5腿槽冻结继承网络后纠偏权限不足，1.7/1.8无同样clip；不认定硬件扭矩为根因。
+下一唯一reverse_leg_offset_probe_20261108：source020 SHA02020f1633560ecb8279805e3dad5a4e3008162373ec80d59c58ffea2fc1cd48，候选5a073706fb2da50106502fb713ac7b6792b4b64e6ce5c5975f1aafbb1c04d625。只现有reverse_frontier_anchor最后bias一张量4腿值改变[-.118018,-.6,0,+.141357,-.319743,0]，CPU记录states上targetactive/hip差平均减少1.000/.973°，hip1标量求解达到预设-.6边界所以不称精确1°。相同obs轮输出exact、16384vx>=-1.3输出exact，无外环/PD/物理改动；只是parameter方向对照，PPO更新0，不冒充训练完成。单GPU同4×32/900s，manager4186659/eval4186680，结果看对020与a778两源的全gate无丢失和原始速度图；不自动采MC或长训。
+
+
+### 2026-11-08 拒绝腿偏置，并找回轮腿参数路线的快域覆盖缺口
+reverse_leg_offset_probe完成：5a候选-1.35存活29/32、-1.4仅11/32，比020共丢24存活；全128完整98→97但净数掩盖严重退化，拒绝。保护-1.25/-1.3的64rep闭环与16384随机输入exact。实录rawspeed图显示明显往复波动，visual审批false，未继续此方向。
+当前真实checkpoint保留base腿gain1.5、fast1.8、extension2.0、delta±.06，wheel reserve.1/局部.112/fast.12/extension.14，不是此前较旧gain1.4参数。均为神经响应参数，不是PD60/2。审计新发现joint_delay_domain=[-1.5,-1.4,-.1,0,.01,.05]：-1.45原已学delayhead gate=.5，-1.5及更快为0，退回冻结reference。离线同obs延伸范围[-2,-1.8]在-1.5改变轮action平均-.0574/-.0477，腿变化小；只证明响应丢失和可修作用范围，不证明闭环必好。
+下一唯一finiteprobe reverse_delay_scope_extension_20261108只改该domain两端，原weights/腿增益/轮额度/入口1.5s/物理/DR/gate全部保持；先同源5×8原frontier配对，已有baseline复用。扩合法负域下限至-2，54 tests通过，旧scope不变；不能因曾经有效推断未训域全适应。
+
+
+实际启动reverse_delay_scope_extension：manager4189197/eval4189199，只jointdelay负域buffer变化，候选c5e8dc2ca6e7465c5c1a76df81898bd23000b4ce88feb2a4a409080b79ba20a0；GPU0单作业900s。已测192000实录与16384随机vx>=-1.4 exact。完整command/evaluation/contract/freeze在目录内，结束只review新结果，不重旧baseline；promoted=false。
+
+
+### 2026-11-08 轮腿旧修复快域接回有实测收益：-1.5存活0→6/8
+reverse_delay_scope_extension候选c5e8dc2c，只变joint_delay_domain两端。16项同源物理初态/seed/延迟/控制读回全过，5×8原source020配对：-1.45存活5→6、完整0→1；-1.5存活0→6但完整0，7pitch/8腿差；-1.6至-1.8仍0存活。无旧pass/survival/pitch/overshoot通过丢失。全首回合图已审，-1.5周期加减速仍明显，visual=false、promoted=false。覆盖旧分支有益，不等于根因全部解决。
+之前腿响应及轮参数并未撤销，真正遗漏是旧jointdelay修复在新命令范围退回reference。不能只审参数存在而不审各门控的实际有效范围，也不能把扩域失败全当reward/critic或硬件能力上限。当前新增的是研究存活起点，非-1.5严格验收。
+下一唯一reverse_scope_entry3_20261108，冻结c5源，仅共享入口1.5→3.0s，同5×8/900s/单GPU0，所有轮腿参数和物理DR不变；沿原始曲线区分更慢起步能否克服-1.6以上首段失稳。未训练、未新采MC、不改gate，原1.5s已验profile保留，不能称部署已有3s入口。
+
+
+### 2026-11-08 保留轮腿修复、3秒入口：-1.45/-1.5各8/8存活，仍有振荡缺口
+reverse_scope_entry3同c5/5×8：-1.45与-1.5存活各6→8，均无首12s超调/yaw失败；-1.45剩7腿差，-1.5剩1欠速/5pitch/8腿差。完整总1→1、新1丢1，不能晋升。原始曲线已看，1.5仍明显反复加减速，visual=false。1.6–1.8全0存活，较慢入口仅推迟失稳，不继续无界拉长。
+用户追问的腿响应/轮参数路线一直在，当前有效base/fast/extensiongain1.5/1.8/2、limit.06、轮.112/.12/.14；新发现并修正旧jointdelay响应在-1.5退回参考的覆盖缺口，有实测存活收益。这是策略内部覆盖/协调问题证据，不是调物理PD或增加任务外环。
+下一reverse_scope150_mc_20261108固定c5e8dc2ca6e7465c5c1a76df81898bd23000b4ce88feb2a4a409080b79ba20a0，仅缺失两命令-1.45/-1.5×16env48s6000steps，1200秒采数+900秒CPUfit、无自动actor。训练分布90%core轮6–12/10%tail14/16、腿+2，response0–5/feedbackage0–8与物理DR.1不动；先按真实terminated看首12s/48s，不误用未结束60sepisode。值函数固定目标过滤实际obs7 exact1e-5，独立wholeenv8/4/4，3s入口后新增acquisition3to6层，steady6plus；旧数据保留复用但不能冒充新actor/entry的MC。后续actor最多2更新后paired审查，禁止旧criticfallback推动未覆盖目标。
+
+
+### 2026-11-08 新MC已完成，批次只准2actor试训再验
+reverse_scope150_mc完整6000step2×16×48s，runtime全过；-1.45首12/48s=16/16、14/16；-1.5=13/16、7/16，真实终止2/11。neverfailed环境MC全部正，平均reward7.321/5.487，无重采重拟合。CPUfit2.76s：testEV整体.633/.669，但1.45acquisitionEV-1.068/within-7.241、1.5acquisitionEV.255/within-3.472，明确局部critic仍弱，不称全修好。
+已显式审阅后准备actor_short：source33958c7fad3a2255a593d013003f307c40c9c67fe934432baf5178bff7daea12（actor等价c5），critic563b754804cce4198a05e4dc60013c32eae9d62c909f284d8aa830745ae63903；2target匹配MC9953/18456训练样本，KL约4e-12。3warm+2actor=5总更新，512×1024/lambda1/LR1e-4/1500秒，reward/物理/DR/3s入口不变。仅现有reverse_frontier_anchor，原轮腿响应参数冻结；vx>=-1.3实际参数probe14745输入exact。32seed预留179槽完整覆盖176rehearsal，无随机回退。不是重跑此前8actor无收益配方。
+完成同时核验3s新域5×8与1.5s旧域4×32，对应既有source直接复用；保护1.25/1.3闭环必须exact，1.35/1.4若丢失也必须记录拒绝，不用局部净增洗掉退化。partial需合规freeze/criticstep和budget说明，后续续训需要同SHApaired+visual。
+
+
+实际actor_short manager3806/trainer3829已启动（PID回绕），61项runtime全过、137字段MC-reward匹配；单GPU0，最多2actor。结束自动新5×8与旧4×32两候选验证，已准备review.py与桌面raw对照图，需人工visual后方能决定接续；不自动晋升。
+
+
+### 2026-11-08 两actor短阶段终审拒绝：波动略降，近域角差继续退化
+actor_short完整3warm+2actor/1065.25s，9e80a69e66de558e24f4eb05e275bd5c3f9596bb4021afb0fbdd7d60f82fdd08；仅fast6张量改变、critic80steps/fallback不动，末MC KL .001300/.001409。61runtime/137reward通过。新域3s入口-1.45/-1.5各8/8存活无超调；1.5pitch4.965→4.205°、speedp2p.1985→.1765，但5pitch/8腿差，明显周期加减速仍不通过。1.6–1.8仍0/8。
+旧1.5s近域完整98→92/128、新4丢10，全丢腿差；1.35=23→20/32、1.4=11→8/32。历史a778103→92另列，不能洗基线。1.25/1.3仍64/64闭环exact、16384函数exact。全部新旧源存活/pitch/超调无新增失败不能抵消完整gate丢点。visual=false、promoted=false、selected=false，所有作业结束，不续该候选，不扩大训练时长。
+必要归因：抗震荡奖励末更新active75.6/83.6%，clip→adv→梯度作用存在，真实update对speed项cos.100/.044；非零不等于合格。明确缺口是新近域静态保留没有随目标扩展：实际headgate在-1.35/-1.4=1，旧required176rehearsal没这两点（仅含后退到-.8），保护边界只有-1.3；采样器没漏声明列表，是列表未覆盖新技能。下次先完整函数隔离这些域或显式加入匹配静态retention，不能原样重复。critic局部弱与reward权衡仍须保留，不认定单一根因。本批报告/metric_summary/retention_gap_audit与桌面两张raw对照已保存，暂停本条唤醒。
+
+
+### 2026-11-08 继续有效轮腿路线，先隔离已有消振收益再单次轮幅度微调
+不重复刚才2actor训练。新增checkpoint-optin reverse_frontier_retention在旧scope之前混合，保留c5完整旧函数（含旧130过渡），仅vx[-1.5,-1.45]平滑引入9e已训fasthead。A候选41386accd0ad4ec1c6c29f019d4095cc56cf0eee7f575c8be933f4e0a9774540：235063实录+16384随机保护vx>=-1.45 exact，8192快域对9eexact；保持pairedreviewrequired，不能靠重打包绕过续训保护。
+沿已有轮参数路线再唯一小步：B1c4927e52a26e68fdca6213b13bec124cd338931fa0ab6fa9c501358bcfb26f6，仅把extension轮幅度.14→.145并同域保护原值；8192fast四腿输出exact，轮动作变动max.004933，16384保护输入exact。61测试覆盖loader、真实梯度/state gate、旧域/旧过渡带/限幅上界。未改PD/控制律/奖励/延迟/弹簧。
+基腿gain2不是被撤销：保存轨迹显示1.5四腿修正达到.06限幅占55.5/99.35/99.7/36.5%，因此不能认定再提gain必有效，也不复用失败的limit.08或静态腿bias。当前只A/B两短eval，5×8各900s，原c5基线复用；原有效gain1.5/1.8/2、limit.06、轮.112/.12/.14继承，B只快域.145。结果需分源新增/丢失与raw速度审图，仍promoted=false。
+
+
+### 2026-11-08 保留隔离已生效，轮参数正向小步被拒绝
+reverse_frontier_preserve145两case均完成/实际runtime全过。A413相对c5新域完整1→1/40，无旧pass/survival/pitch/overshoot丢失，1.45八副本gate逐值保持；1.5speedp2p最差.19848→.16912，全8存活无超调/欠速但5pitch8腿差仍失败。保护vx>=-1.45完整原函数，修复了上轮非目标近域被改变的问题，不声称新增通过。B轮.145反而让1.5speedp2p.16912→.28363、新3欠速和1pitch失败，拒绝。保留原轮.14与有效腿响应，下一只一次反方向.135以完成有依据的方向判断；不盲加刹车/腿gain或长训，不重复旧MC。
+
+
+### 2026-11-08 有效轮参数方向保留：.135减振，停止继续扫参，锁旧域短训
+reverse_wheel135_direction同413源，ecfdf11d只快域wheel.14→.135。1.5八副本全存活无超调/欠速，steady1.16166–1.18931，pitch最差4.279→3.550、speedp2p.16912→.14768，pitch失败5→2，腿差8/8仍未过。1.45逐值保留、无其他旧gate丢失；远1.6–1.8仍0存活。相反.145加量已明确退化，不能盲加刹车。所有原始曲线已看，ecf视觉仍非技能合格；只以减振有益且无旧域丢失批准bounded研究继续，promoted=false。
+新reverse_wheel135_learning/actor_short仅1.5，source0b8b55835db8b5975950700e3ae06b82c1c0f75d1d21c38155328065f9311e4c与ecf actor逐值等价，critic9e5698ed4690c099154b36c0090816ace0302b506f78bc2e0715dc818bf28422提取现成1.5已校准head；无新MC或fit。现成c5训练MC18456明确原source，当前KL.00620<.5；不是把旧标签谎称新策略回报。仅fasthead可训，新增retention使vx>=-1.45全函数冻结，实际参数probe15237输入exact，不再依赖旧rehearsal列表碰巧保留1.35/1.4。完整32seed coverage176/179通过，无missing。
+3warm+2actor=5、512×1024/lambda1/LR1e-4/1500秒，物理/DR/reward/entry3s不变；候选reviewrequired元数据保留，source_paired_review仅经actor逐值等价将已审ecf绑定到critic元数据新SHA，不移除保护。训练后5×8同源核心验收，1.45闭环必须exact、16384近域函数检查、raw审图，未通过不晋升。原全域/动态/多seed/最终DR/部署及-1.8/实速-1.7制动均未完。
+
+
+实际启动reverse_wheel135_learning manager21644/trainer21648：61项runtime及137奖励字段全过，单GPU0。旧MC/fit/前面三个eval均已结束不重启；新轮参数方向继续2actor资格验证，保护范围已落实到forward和实际梯度门控。
+
+
+### 2026-11-08 KL报告口径纠正，运行停止线始终正确
+发现reverse_wheel135_learning离线preflight将6维动作平方差取了mean，而运行mc_policy_drift按sum计算Gaussian KL。此前.00620是每维均值proxy，不是6D KL；训练样本正确总KL.03720，运行64固定探针初始.0366485、首actor后.0381794，均远低.5。已修prepare和两份readback报告，原版本归档reporting_kl_correction；运行训练/阈值/MC标签/权重均未改或重启。3criticwarmup期间KL完全相同且freeze/buffer无变化，首actor后仍正常。不能用报告口径差冒充训练漂移或新技能。
+
+
+### 2026-11-08 轮.135短阶段终审：旧域保住，部分改善但无新增完整点
+reverse_wheel135_learning完整3warm+2actor/1035.24s，4fa08e7788e49fed2b7ad3cbb09427bc60e98d5c436dc2a620008c94631aab8e。仅fast6张量改变，critic80steps/fallback不动，61runtime/137reward通过，最终运行6D KL.046793<.5。没有新MC/fit。
+1.5同源8rep存活/无超调/无欠速仍8/8；pitch失败2→1，最差3.5503→3.4936仍>3；speedp2p中位.11124→.08747，但最差.14768→.14895基本没变；active/hip角差P95中位5.335/5.436→5.156/5.211，8/8仍超4°。实际steady幅值1.1748–1.1982，不称实速1.5。完整0/8未变，整体5×8仍1/40，远1.6–1.8全部0存活。
+1.45八副本首回合闭环逐值保持，16384near输入exact，无旧pass/survival/pitch/overshoot丢失；新增retention确实修复近域退化。但未新跑near4×32，不外推全域行为。raw全部图已审仍有周期加减速，visual行为验收false，promotedfalse，保留研究checkpoint，自动续训false。暂停当前唤醒，不盲加同配方轮数。后续只针对最差实例/角差权衡提出可检验改变，复用现成数据；command-1.8/实速-1.7制动/全域/动态/多seed/最终DR/部署未完。
+
+
+### 2026-11-08 复用历史腿轮联合方向，有限两档验证
+用户要求加速但不能重复无效训练。复查20261013直行角差成功路线：独立腿偏置改变速度，联合腿轮方向后才得到有效学习起点。这里只迁移方法，不假定旧域参数可用；当前4fa仍1.5完整0/8、8腿差失败，不能称只差最后一个pitch副本。
+新reverse_coupled_alignment_20261108固定4fa08e7788e49fed2b7ad3cbb09427bc60e98d5c436dc2a620008c94631aab8e，仅改已有reverse_frontier_anchor.4.bias。两档同状态腿目标差平均-.75°，两轮动作分别-.012/-.024（使孤立腿修改可能引入的加速得到配合制约）。实际raw及clip后delta匹配，非物理PD或新外环；候选a60ad0a8324f65d2ab4b61fb58196cfcc5682fb3fd87ca33dd68ff4d0b565012、840239b028d7125410648dee3922da1b559e203afb50cb6e69fd7cb67f4bcbfe，旧vx>=-1.45共16384输入exact，完整scope/gain/轮幅度保留。旧孤立legbias5a已失败，本轮只有两档，不盲目沿该孤立方向扫参。
+无PPO、无新MC/fit。manager33505，eval33509/33510，最多2GPU0，每档900s、同5×8 seed86792/87892 sharedentry3s，复用4fa已存baseline。验收仍runtime物理/DR完全一致、首12survive/overspeed<=.05、75%steady、6-12rawpitch逐rep<=3°、reverselegP95<=4°、原yaw、明显周期加减速不准通过。旧点/存活/pitch/超调有损失即拒绝；1.45八rep闭环需逐值exact。未晋升，requirespairedreview元数据保留，不自动actor。原command-1.8/实速-1.7制动/全域/多seed/dynamic/部署仍未完成。
+
+
+### 2026-11-08 联合偏置短筛失败与方向纠正
+reverse_coupled_alignment_20261108两eval均完成，无PPO。负轮bias-.012/-.024使1.5存活8→7/0，pitch旧通过7例全部丢失；两档拒绝，4fa保留，1.45八rep全70列1499帧仍exact。原始图已显示明显加速减速放大，不能晋升或续训。postprocess汇总对倒地后缺失angle数组报错仅离线修正，未重仿。
+审查发现本轮方向判断错误：此前wheelhead幅度改变的闭环效应不能直接当成常量action bias制动极性。当前轮执行tau_drive=-5.5a、后退稳态omega约+19.8rad/s；负bias直接增加后退力矩+.066/+.132Nm，不能称制动补偿。两变量同时改动也不能断言失败全是轮侧；需正确符号后再看闭环。
+reverse_coupled_sign_check_20261108固定同4fa仅两档反向wheel+.012/+.024，腿targetdiff-.75°保留；单轮directtau变化-.066/-.132、同状态功率变化为负，polarity_preflight通过。候选05602165778eedd7ff861e935d3cc142d0fd9b067cc50acf76cb785b410bdde8、d5b9f2aca8206917bbbaca15e46dc7b2b81d99149d627a61e6dc346074de1ed8；16384保护输入exact，同5×8 sharedentry3s/coreDR各900s。无MC/fit/PPO，物理PD/奖励/延迟不改。符号校验只说明直接轮通道，绝不代替闭环晋升。若仍退化停止此bias路线，不无限扫参数。
+
+
+### 2026-11-08 正确轮侧方向有真实减振收益，补独立32副本
+reverse_coupled_sign_check两档结束，实际契约全过，1.45八rep70列×1499帧exact。+.012候选05602165778eedd7ff861e935d3cc142d0fd9b067cc50acf76cb785b410bdde8在1.5保持8/8存活无超调/欠速/yaw失败，pitch最差3.493553→2.567620、失败1→0；speedp2p最差.148952→.079004，稳态幅值1.26758–1.31019（原1.17478–1.19824）。全8原始曲线已审，稳态速度波动下降但部分3–6s入口瞬态较大。腿角差仍8/8失败，P95最差active5.799/hip5.743，不能称完整晋升。没有旧pass/survival/pitch/overshoot丢失。更大+.024虽存活8/8却新增env12pitch失败/最大speedp2p.234，拒绝。
+这个对照再次说明直接轮力矩极性与长期机体稳态速度不是同一因果口径：直接减少后退驱动力矩后闭环反而跑得更快更稳，不能再凭单点平均速度推断控制器符号。腿targetdiff-.75并未在闭环带来P95过线，原因仍需实际动作姿态协同，不虚报对齐已修好。
+仅保留+.012研究方向，不继续扫bias或盲训。validation32独立seed86793/noise87893，单目标-1.5原4fa与候选各32、各900s，物理/DR/sharedentry3s相同；不重扫全倒远域。所有门槛原样，重点核原始曲线/最差副本。现仅8rep方向收益，full32/全域/dynamic/multiseed/deploy未通过；command-1.8及actual-1.7制动未完成。
+
+
+### 2026-11-08 独立32副本证实运动改善；摆角仍0/32，不冒称晋升
+reverse_coupled_sign_check/validation32已结束。候选05602165778eedd7ff861e935d3cc142d0fd9b067cc50acf76cb785b410bdde8对4fa，同-1.5×32/新seed86793和noise87893/sharedentry3s/coreDR：双方存活/无超调/75%steady/yaw32/32；pitch31→32，最差3.276917→1.903868；speedp2p最差.139707→.081582、中位.074809→.035686；actualsteady幅值1.26507–1.35393（原1.16255–1.22861）。motion新增1副本无丢，但腿P95门槛双方0/32，因此完整通过仍0/32，promotedfalse。全部32原始图已审，小波动仍有，但速度周期摆动明显减弱；无滤波/去趋势，保存桌面同名validation32目录。
+静态腿偏置未兑现为闭环角差修复：8rep代数分解直接active/hip目标变化-.730/-.688°，状态改变后原网络响应+1.605/+.756°，净+.875/+.068°，实际均值+.484/+.442°。这是响应分解，不是单一子网络/物理根因证明；不再继续硬加bias。冻结保存运动改善候选，后续必须针对闭环角差并保运动，不复用盲长训配方。
+独立32首次postprocess仅noise seed87892→87893有预期差异，已归档并显式核验seed、其余契约逐值一致；没有重仿或改gate。没有PPO更新或新MC/fit。1.45先前8rep首回合逐值保持，32不是全域保持认证。全154/dynamic/finalDR/deployment及command-1.8/actual-1.7制动仍未完成。终报reverse_coupled_sign_check_20261108/REPORT.md及final_report.json。当前有限批处理结束，暂停唤醒避免重复空转；未经明确新方案审查不自动续训。
+
+
+### 2026-11-08 快速角差路径审计与一次监督拟合，不使用未校准critic
+当前source056运动已独立32通过但角差32失败。CPU镜像审计严格复用train.py已有25D/6D镜像函数（二次镜像exact），发现网络对称输入仍有active/hip目标角差约3.03/4.19°。此项只证明网络不具镜像一致性，不证明真实硬件完全镜像或该监督目标必正确。
+一次尝试只改existing fast输出层以同时保共同腿模式/修角差，发现右hip约99%训练样本的期望值超出现有tanh×.15权限，needed最小-1.463；fit_probe在CPU拒绝，未采样未PPO。这说明该特定修正目标在当前冻结结构下不可达，不等于所有可行姿态不可学，不能把它夸大为所有训练失败的唯一根因。
+新增checkpoint-optin reverse_alignment：25D输入/2输出MLP拷贝现有隐藏表示，仅ridge拟合末层；成对leg输出[active,hip,0,-active,hip,0]、只直后退[-1.5,-1.45]，轮和共同腿动作不改，原所有tensor冻结；安装保存RNG状态，缺字段loader显式拒绝，correctbound计入新预算。67tests通过。旧checkpoint没有新字段故行为不受影响。保留短阶段requirespairedreview，不拿旧critic推进actor。
+一次CPUclosedformridge对旧8rep6train/2valwholeenv+镜像，独立32seed不参与拟合；target角差RMSE.135°，原tensor全不变、16384慢域和4096fastwheel/4096nonzeroyaw exact。full候选7fd580491ab5300bf970ee28a3750f53298ec5b5137d204b0d4480481b2c5f70新增leg预算.12，无PPO/MC/criticfit，32rep契约通过但存活仅6/32、motion3/32、完整1/32；明确拒绝，静态拟合不等于闭环轨迹正确。
+只再一次quarter信赖步，预算.03，其余新head参数不变，候选bdfa7b7dc828d4986fcb608d135ed70d2c59e2d24003dd0c9c84cfd02127a7cf。同32seed86793/noise87893复用source056，不再新采base。首次准备缺PYTHONPATH和旧lock在0仿真步拒绝，归档scaled_prepare_attempt1；已修显式env和独立lock，实际manager45705。仅此一次有界缩幅验证，不无限scan/不再盲长训，任何motion丢失拒绝。4.89/3/scale5.5 PD60/2 spring4.31 2/8ms Dfb/B/C DR.1 corewheel6-12leg+2 response0-5 feedback0-8/sharedentry3s和所有门槛保持。
+
+
+### 2026-11-08 镜像监督路线终审拒绝，新增核心分支撤回
+reverse_alignment_equivariance_20261108完整residual评估motion3/32、survival6/32、full1/32；quarter预算.03仅一次缩幅检查，survival32/32但motion31/32、pitch最差4.079742>3、speedp2p.236191（source056 .081582）、腿32失败/full0。两候选均拒绝，不能凭完整residual一例通过晋升。没有PPO更新/新MC/critic拟合，没有改物理DR/reward/gate。
+结论是镜像构造标签不能直接作为当前延迟动力学的正确动作监督：原hip权限不足只针对该目标；加权限后targetRMSE小仍闭环失败，不证明唯一根因是critic或单帧上限。停止该方向扫描/加权/长训，source056原checkpoint保留。
+新增默认off reverse_alignment核心代码及6测试已精确局部撤回并归档artifacts/reverse_alignment_equivariance_20261108/archived_optin_implementation（可复现patch），没有继续给主框架叠新头。回滚后原61测试通过，source056重放4800输入对原GPU raw动作maxdiff3.576e-7，源SHA不变。终报REPORT.md/final_report.json，全部32raw曲线在桌面同名目录。所有本轮进程已结束，暂停唤醒避免重复；当前没有新的晋升点。command-1.8/actual-1.7制动/full154/dynamic/finalDR/deploy仍未完成。
+
+
+### 2026-11-08 用户放宽后退腿差，主线转向-1.8；修复遗漏的嵌套旧门控
+用户最新允许放宽后退腿摆差。采用明确P95<=6°（不删除有限性/关节安全，也不改前进/转弯规则）；首12survive/超调<=.05、75%steady、6-12rawpitch逐rep<=3°和原yaw保持。原056独立32源离线按6°重审32/32，max腿P95active5.79457/hip5.72739；旧4°报告保留，新reverse_gate6.json单独存。仅当前-1.5固定3s入口/coreDR可作为课程通过，不声称动态/全域/部署。
+快域失败首先发生在尚未达目标速度时：旧-1.6 pitch20约3.56s，实速仅-.67至-.73，并非追求超速。CPU逐模块反事实发现先前只看新reverse/jointdelay/reserve gate遗漏了nestedlegacy：静态abs速度gate1.5->1.7退出，深层旧物理修正每轮+.35action在-1.7归零（约1.925Nm驱动项差）。这是确定的门控不连续覆盖，不证明所有物理失稳均仅因此。
+新增checkpoint-optin legacy_reverse_gate_extension，仅深度1/2/3旧物理残差在直负命令扩plateau至1.8/fade2.0，原窄update_scope不放宽，forward/非零yaw不改，所有网络真实输入/权重/预算/PD不变。候选501a0a1f97e2f6059f606a3cfc4c171e634da48e07da4bff882ea59c8a998fd2，对source056仅3新buffer；48000条-1.5实录、16384random保护域、8192负turn均exact。65测试通过，边界导数/嵌套预算/loader/gate一致验证。测试初次仅0.49999982浮点与0.5精确比较失败，调整测试数值容差1e-6，不动行为gate。
+单GPU0一次5×8同源seed86792/noise87892/sharedentry3s验证，原source复用，无新MC/fit/PPO。物理4.89peak/3cont/scale5.5 PD60/2 spring4.31 2/8ms Dfb/B/C DR.1、corewheel6-12leg+2 response0-5feedback0-8不变，900s预算，任何旧pass/survival/pitch/overshoot损失拒绝。命令-1.8和actual-1.7制动仍待结果，禁止把门控修复当行为已过。
+
+
+### 2026-11-08 嵌套门控修复已得到快域收益，接一次入口4s验证
+501a同5×8/source056：-1.45/-1.5各8/8通过6°门槛，70列1499帧逐值保持；-1.6存活0→6/8、完整0→4/8、survivorsteady1.376–1.416/pitchmax2.112，-1.7存活0→1/8，-1.8仍0/8。无旧pass/survival/pitch/overshoot丢失，新增4rep，非完整速度点晋升。raw全图已审，有益修复保留研究。
+新失败类型已变：-1.8不再旧3.2s欠速前倾，而约4.6–5s先加速至-3.3/-3.5再pitch<-20°，超调在倒地前出现。不能称只腿差或放宽pitch。只一次既有sharedentry3→4s验证，模型501a完全相同、5×8同seed、DR/物理保持，budget900s，manager见reverse_final_entry4_20261108/launcher。源501aentry3复用，不重采MC/无PPO。此时gate修复后新轨迹与之前未修gate的长ramp不同，所以一次有因对照；若无收益停止延长入口，不循环扫参。旧4°报告保留，6°明确作为用户当前后退gate。
+
+
+### 2026-11-08 入口4s缩小起步失败；从真实新快域轨迹接续，不再延长入口
+501a entry4相对entry3：-1.6存活6→8/8，motion8/8全过，steady1.373–1.419/pitchmax2.328/speedp2pmax.12085，但6°腿差5例失败；-1.7存活1→4/8，其中2例pitch>3，-1.8仍0存活。-1.5 motion8/8保持，1例腿差超6（entry不同不再逐值）；因此entry4只是更快目标的可学习起点，不全局替换已验慢域entry3、不声称晋升。停止加长ramp。用户放宽幅度的async询问仍待答，当前6°只是暂定，不把腿门槛取消。
+启动reverse_final_frontier_mc_20261108，固定501a actor和entry4，[-1.6,-1.65,-1.7,-1.8]×16env×48s6000steps、64env<128guard；新gate补回旧动力修正后无匹配MC，不使用旧c5/056标签。原reward4/osc4/alive20/pitch2/clip30/grace3保持，仅采集1200s+CPUfit900s，按actualterminated看first12/full48；first12>=75%才valuefit，不自动actor。训练DR含90%核心轮6–12/腿+2和10%14/16尾，response0–5及反馈年龄0–8单列，4.89/3/scale5.5、PD60/2、spring4.31、2/8ms及其他DR不变。旧behavior源全复用；不重采过去已覆盖点。本轮新数据只为真实回报与训练资格，不算技能通过。源SHA501a0a1f97e2f6059f606a3cfc4c171e634da48e07da4bff882ea59c8a998fd2，manager见launcher。
+
+
+### 2026-11-08 真实新MC完毕，隔离保护后接两更新，角差软奖匹配放宽
+fixed501+entry4四域MC全6000步已完成：首12survive-1.6=15/16、-1.65=9/16、-1.7=4/16、-1.8=2/16；全48分别6/1/1/0。只-1.6达75%admission，不能把远域直接混入长训。原1.6CPUfit testoverallEV.606但acquisitionwithinEV-8，未称critic修好。
+复用全部384000步（6000×64）poststep/pre-reset q和rewardtrace，确认全部episodeage与MC索引一致，将仅reverse_alignment_scale3→6重算位置角差cost/rawreward/clip/MC return；runaway/osc/termination逐值不动，原数据另存，含rewardhistory的privilegedcontext置None。newdataset见relaxed_alignment6，原actor/actions未变。报告oldreward视图别名初次误计已修正（标签计算正确），无需重仿。新fit1.6整体testEV.604、steady.590、acquisitionwithin-12.21仍弱；只有有界2actor行为试验资格，不冒称全critic修好。
+新增默认off reverse_frontier_progress scope[-1.6,-1.5]在旧retention之前混合原fasthead副本，保证旧1.5及所有过渡带不退回更老teacher；初始全输出exact，真实参数修改后15401保护输入exact，69测试和32seed production采样176/179全覆盖过。pendingpatch现在正式应用（所有采数已结束），没有热改collector。
+actor_short准备源ee658e79496fb55453f7c62e93b6254b5d8e8690bf1d8e216da36336759d8bce，actor等价501；critic6679ef241b14bb5f9f8855086e8576947bb405bf00561093746645114a813fd7；新匹配MC15975训练样本、初KL0。仅reverse_frontier_anchor可训，3warm+2actor、512×1024/lambda1/actualactorLR1e-4、35%rehearsal/beta4、1500s/KL>.5/冻结契约nonfinite即停。物理4.89/3/scale5.5 PD60/2 spring4.31 2/8ms Dfb/B/C DR.1 train90%core+10%tail、motor0-5/feedback0-8不变；entry4只新fixedactive，旧动态/rehearsal保持。actor目标仅-1.6，评估同独立seed86796两命令-1.6/-1.65各32以测已知边界/泛化；source基线已存在不重跑。保护oldvx>=-1.5，2actorreview不绕。启动PID见launcher。未晋升，-1.8和actual-1.7制动未完。
+
+
+运行核验补记：reverse_final_frontier_mc/actor_short manager59374/trainer59379活跃，61runtime检查及137reward字段全匹配；source/critic/物理/entry4/reversealignment6一致。旧MCcollector/fit/core32eval全部已退出，不重复。source1.6独立32为29存活/motion29/full6°19；1.65为25存活/motion19/full2，全部速度raw图已审，仍有少数后加速倾倒和1.65周期。新actor结果尚未知，不能提前晋升。全部核心修改和记录清单见同目录CHANGES.md，具体当前范围见REPORT.md。
+
+
+## 2026-11-08：−1.6 alignment放宽短训完成同源终审
+
+`artifacts/reverse_final_frontier_mc_20261108/actor_short/REPORT.md`为本轮终报。3critic warmup+2actor完整完成（875.23秒），候选SHA b34b3e35ac9a25dcd9a1c0e31629bf80e5e9163d75403e8df427f90befd3c786。运行61项/奖励137项核对通过；只允许6张量变化，16384保护随机输入+48000既有−1.5实录输入逐值保持，fallback未变，80critic optimizer steps，最终MC源6D sum KL=.002667。没有重复采样/拟合或启动下一轮。
+
+同seed、同核心DR、4s入口、每点32回合：−1.6存活29→32，运动门槛29→29，含腿差6°完整通过19→15；−1.65存活25→27，运动19→22，含腿差完整2→1。新增1、丢失6完整回合，丢失均仅腿差6.06–6.17°，无旧存活/俯仰/超调/运动通过回合丢失。−1.6全部无超调、稳态实际后退幅值1.370–1.447m/s；救回env6/8/12俯仰仍3.450/3.814/5.064°，未过3°。−1.65仍5倾倒、另5存活回合pitch未过。
+
+人工已看64回合速度/pitch/腿差六张raw图。共同存活集合的速度P95峰峰值：−1.6 .0906→.0789m/s、−1.65 .2188→.1841m/s；俯仰P95分别1.726→1.517°和4.328→3.677°。新增救回轨迹使“全部存活中的最大值”变大，不能据此误判旧能力退化；也不能只说存活改善而忽略救回轨迹仍明显摆动。现有候选保留为研究资产，promoted=false、不自动重复同配方。本轮终审完成后暂停rmuc唤醒。−1.8命令、actual−1.7制动、全域/动态/多seed/最终DR/部署均未认证。
+
+
+### 2026-11-08 切回高速直行/压弯：复用基线、两个有限方向对照
+用户要求转向其他历史缺口，暂停后退扩域。当前b34b3e在4977条正向实录输入与a601旧源逐值相同，复用60×4源筛查，不重复MC。分诊确认1.7主要少数pitch震荡、1.9有yaw偏差；不少压弯pitch已低于3°但tracking失败。高速1.8/2.0±.8时nestedlegacy在1.5→1.7退出，旧行为vx约.8–.9/yaw近0；只证明覆盖缺口，不认定唯一因果。
+artifacts/forward_recovery_20261108两独立候选：high_leg120 f621ddc53c2522acc37d5f9abbbed33105a21670e0af79e1bd2625eb85b47234仅基础腿动作响应gain1.2、limit.03、速度[1.6,1.7,2,2.1]；turn_legacy b6fbfb490e87f301344b1a6634da85ce4f0500d4e10a99191e9816bf313e0a8c仅嵌套3个forwardturn门控缓冲延续至2.0/2.1，旧≤1.5/直行/后退保持。旧网络参数全部逐值不变，loader恢复通过，12tests通过；首次单测饱和obs8口径修正仅测试mask，另验饱和保留，不放行为gate。
+manager72273，两eval首次PID72316/72317，GPU0最多2路，各900秒；原两片30×4匹配初态/物理/DR，负域不与旧源比较，改用当前b34函数保持。4.89/3/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/B/C、DR.1、core轮串联6–12/腿+2、response0–5/反馈age0–8不改。无PPO/新MC/fit，非技能晋升。结果必须逐回合retention+raw曲线；无益拒绝，不自动长训。完整命令、SHA、边界和改动文件见同目录REPORT/CHANGES/preflight。
+
+
+### 2026-11-08 高速直行短对照已有新增筛查点，压弯查出第二处专家退出
+forward_recovery两case已结束/同源runtime全过。high_leg120在1.7由3→4/4，最差pitch5.91276→1.07686°；1.9由0→4/4，pitch2.422→1.405°、yawMAE.0972→.0683；1.8保持4/4。新5副本，但2.0因腿角差3.13–3.54°丢4副本（存活/速度/yaw/pitch不丢），因此未晋升。已看所有目标raw图，稳态速度周期明显减弱，启动仍有较大pitch瞬态，不能称变速/阶跃验收。所有参数保持、只gainbuffer生效，不叫PPO训练成果。
+turn_legacy六目标24rep存活，速度误差明显下降但yaw仍未过，无新增旧pass丢失。进一步实际路径审计确认turnexpert权重1.6=.84375，1.8=.15625，2.0=0，当前base接回后的yaw接近0。旧注释的历史“base已通过”不是当前延迟下证书；不能仅补physics分支后就盲训yaw。
+接续forward_recovery_followup：high_keep2仅将gain作用域[1.6,1.7,2,2.1]收至[1.6,1.7,1.9,2]，1.7–1.9输出保持已获收益、2.0及以上恢复原b34函数；候选7a5eec39f2016165c72ec81e3fc43fa4337fcf35d603e933b707be088e588f8b。turn_expert在b6源上只新增专家速度门控[2,2.1]，保留≤1.5/直行/后退/大yaw域，候选31fe8e2b373bdebd38f2769bf417901e758e1f6e02de72c0069324349937bcde。14相关测试及实际loader/负域保护通过；无新MC/fit/PPO，物理奖励DR不变。两GPU0短验收各900秒，manager88441，实际PID见各status。前者对原source0，后者对刚完成b6同源source1，禁止拿不同候选跨口径合计为新技能。完整原154历史manifest保持，当前等价源代表清单覆盖其中44，不能说全154已重验。
+
+
+### 2026-11-08 高速直行独立32rep终审：明确减振收益，残余yaw/腿差另修
+forward_recovery_followup high_keep2在原30×4片保持1.7/1.8/1.9各4/4，2.0恢复4/4，新增5无丢；108非目标env对原源、12收益env对gain1.2候选全部70列首1499帧exact。turn_expert延续到2.0后仍yaw不足，无新增通过；停止仅扩gate路线，不合并该分支。稳态轮动作未clip、力矩远小4.89，不能把yaw不足归因电磁限幅。14相关tests通过。
+forward_straight_validation_20261108新seed86801/noise87901，同源candidate7a5eec39f2016165c72ec81e3fc43fa4337fcf35d603e933b707be088e588f8b对b34，1.65/1.7/1.9/2.0各32：完整32/23/21/31→32/30/28/31，总107→121/128；新增15、丢失1（env41 yaw .080916>.08、腿P953.073>3），另env53旧yaw组件丢失但原完整不通过。无旧存活/速度/pitch丢失，全部128存活、速度与pitch过。1.7最差pitch6.812→1.909°、speedp2p .160118→.039061m/s；1.9 pitch2.878→1.798、speedp2p .058045→.030463。2.0全部32×70列×1499帧exact。未把反向75%门槛用于前进，速度仍10%线。
+全部128raw速度图和每命令最差pitch/yaw/leg已看，明显前后周期加减速大幅减少，少量yaw周期仍在。初始pitch瞬态仍大，不认证动态起停/部署。7个剩余失败均yaw/腿差，不再当作pitch震荡反复加罚。promoted=false，候选有益保留，1.7/1.9未完整32通过。只改teacher动作响应参数，无新MC/fit/PPO、不降DR/物理、不滤gx。结果REPORT.md和桌面RMUC训练曲线/forward_straight_validation_20261108。三个本轮批次全部结束，不可重启；后续主线继续修剩余yaw/腿差和压弯路径，历史154清单不删减。
+
+
+### 2026-11-08 20:15 高速压弯实际控制路径审计及有限接回
+用户明确1.6–2.0m/s必须会压弯。复用现有trace逐项重构组合action，重构误差<2e-6。1.5,+1.4的同状态yaw目标反事实轮差响应约.499，其中state_router .205、position_authority .060、physics .239；1.8,+.8的state_router贡献为0。此前旧turnexpert延续无效，不能再以它开启代替真正控制路径。详见artifacts/turn_signal_path_20261108/action_accounting.json；反事实只定位网络路径，不是最优动作标签或闭环因果定论。
+新增默认关闭forward_turn_support，仅扩大现有router学习分支速度支持至[2,2.1]，保持consumer/PD/力矩/物理不变。20相关测试通过。实际checkpoint加载/恢复与16384随机保护/真实实录保护通过；所有旧tensor逐值保持。先冻结对照不PPO，不采新MC；router PPO新增显式保护，未验证训练/consumer gate前不可绕过启动。
+本轮artifacts/turn_router_domain_20261108：source7a5eec39f2016165c72ec81e3fc43fa4337fcf35d603e933b707be088e588f8b；router43669409f63c44f540a361cfcd107aacc54cfad3e0eac0f4de524a2729336a1b；router+legacy08d9ff295071fb77e7dfb7545876c3901a81e93a76117c80dc826d9967fe11d1。后者额外接回3个旧physics correction gates，不叠加失败的turnexpert扩域。Grid1.60至2.00每.05、yaw正负.8共18目标，另1.5正负.8/1.4与1.7/1.9直行6对照，共24×4。新布局需重新配对source，不冒用旧grid基线。manager159239，各900秒、最多2GPU0，不干预其他workspace。完整命令见各command.json；0PPO/0新MC/0criticfit。
+物理4.89peak/3continuous参考/scale5.5，PD60/2、spring4.31、2msphysics/8mspolicy，Dfb/b/C与DR.1保持；evalcore wheel总串联6–12ms、leg+2，response0–5及feedback年龄0–8分别保留。前进10%速度、turnyaw原.05/straight.08、高速直行腿差3°、steadyrawpitch逐rep≤3°，明显反复加减速仍不通过。不能将gate非零/4rep筛查称全域恢复。
+启动前一次counterfactual选样预检失败：混入相反yaw实录导致obs8超clip，后发现源没有1.5±.8精确命令。已改同符号且未触clip的实录，保留同状态反事实定义；发生于CPU准备，0仿真步/0训练，不重启GPU。旧所有训练/MC均未重启。
+
+
+### 2026-11-08 高速压弯路径接回：54个副本新增，无旧通过丢失
+turn_router_domain_20261108三臂96env新同seed筛查全部结束，runtime/初态/材料/质量/延迟采样全配对通过，无重采MC/PPO。原source高压弯18×4=72副本存活但speed/yaw全不通过；单router接回有20副本yaw通过但速度全不达标，且部分正yaw持续周期摆动，拒绝作为主候选。router+3nestedlegacy候选08d9ff295071fb77e7dfb7545876c3901a81e93a76117c80dc826d9967fe11d1得到54/72完整数值通过、新54丢0，存活72/72，pitch72/72。1.6/1.65/1.7/1.75/1.8/1.85各正负.8均4/4；1.9负.8为4/4、正.8为2/4；1.95和2正负仍0，主要速度欠跟踪和yaw略超。24retentionenv全70列首1499帧逐值exact，其中原18pass完整保留；1.5负1.4原0/4、正1.4原3/4及1.9直行原3/4缺口仍在。
+全部两候选正负raw vx/yaw/pitch共12张图人工已看。胜出候选稳态最大speedp2p.032927m/s、pitchp2p.712060°，没有明显持续前后加减速；单router正yaw的持续震荡在组合修复后明显收敛。起步仍有约11–15°pitch峰值、正yaw起步衰减过程，不能说动态起停已过，更不能直接交部署。
+这次闭环证据支持两个控制路径协同缺失：router承载转向，旧physics修正承载速度/稳定性协同，单补一边不够。不是单纯奖励大小、critic或网络容量结论。新checkpoint只新增4个gatebuffer，旧权重逐值保持；物理/consumer限幅/延迟不变。54副本新增是4rep筛查，13完整4/4命令，不冒充全154或32rep验收。下一限定32rep独立seed验证1.6和1.85双向.8边界，固定同一08d9候选不再改参数；保留1.9–2及历史待修清单。
+
+
+### 2026-11-08 用户转为旧点优先，新增压弯32rep验证未启动
+用户问旧点并明确优先修旧点。turn_router_validation_20261108仅已准备，没launcher/没进程，标记deferred，不自动启动。旧154清单重新逐点对账写入artifacts/old_point_repair_20261108/historical_inventory.json：28暂时筛查全过、23已知待修、94未按当前契约覆盖、9reverse保留另行最新证据。这不是统一154验收统计，不把未测当失败也不把旧筛查冒充全域恢复。最新高速直行1.65/1.7/1.9/2独立32rep仍32/30/28/31；存活速度pitch128全过，7副本yaw/腿差缺口。旧中速1.5−1.4仍0/4、+1.4为3/4；低速/待机/其他旧压弯保留待修。
+已启动old_point_repair_20261108/straight_gain130单参数短验：源08d9ff295071fb77e7dfb7545876c3901a81e93a76117c80dc826d9967fe11d1，候选f72afed1f2b3b598f2d41413eecfbe621798d246f39a3f096af038b41167db1d，只forward_base_leg_gain1.2→1.3，center/.03limit/[1.6,1.7,1.9,2]域保持。利用之前1.2有效方向做一次有界跟进，不假设增益单调。12032当前源实录输入与cached7a5逐值相同，直接复用原4×32seed86801基线；16384保护随机、15124域外直行输入、直接wheel输出保持，loader恢复exact。所有turn/reverse/lowstraight/2andabove函数保护；2.0原1腿差失败单列，不能此次声称修完。900秒单GPU0，失败/契约/非有限停，禁止盲扫或长续。无新MC/PPO/criticfit。完整命令和物理DR保持见NEXT.md及candidate_eval/command.json；候选初步不是晋升。
+并行CPU旧点动作会计完成：固定既有实录，关joint_turn_reference对1.5−1.4轮差仅+.000196，1.25−1.4约+.006665，不能把该分支当作旧过转的决定性根因，也不据此全局关闭。小yaw.5±.1实际yaw仅−.013至−.022/+.0017至+.0037，属欠响应；1.0/+1.4实际1.662–1.696为过转，必须分方向/命令处理，不统一加大yaw力度。证据old_turn_accounting.json，0仿真步。
+
+
+### 2026-11-08 21:00 旧高速直行gain1.3终审：有收益但拒绝整域晋升
+straight_gain130已完成，manager205852/eval205855退出、全部runtime及同源初态/延迟读回通过。相对当前gain1.2旧128副本，1.65/1.7/1.9/2分别32/30/28/31→32/31/30/31，总121→124；new41/53/67/83，lost34（1.7yawMAE.085170>.08），无存活/速度/pitch组件丢失。1.7最差speedp2p.039061→.028428、pitch1.908877→1.728992；1.9speedp2p.030463→.029165、pitch1.798055→1.743038。2.0全部32×70列首1499帧exact，原1腿差失败保留未修。全部128raw速度+worstpitch/yaw/leg已看，纵向小波动，但少数yaw周期仍在，不称震荡完全消除；启动pitch大瞬态仍不动态认证。候选f72保持promoted=false，不因净增3掩盖旧pass丢失，不继续扫大gain。
+下一只保留已验证1.9无丢收益：source仍08d9，新增defaultoff forward_base_leg_upper_gain=1.3/domain[1.8,1.9]，基础1.2与全部旧tensor不变，<=1.8原函数，>=1.9等于已验f72函数，外层域到2退出及所有turn/reverse保留。新候选0094222be52dad3e3a6b8a594f37df6da7867103ad2c6021b4a8653c03aa6f50。6016较低域实录对旧源exact、6016上段对f72exact、16384保护随机/15754域外straight/directwheel保持，25tests含loader/endpoints/bounds通过。中间1.8–1.9平滑混合不冒充32rep认证。
+当前straight_scope190仅4×32同seed配对冻结评估900秒/1GPU0，基线仍复用已有7a5等价源，不重MC/fit/PPO。结束除同源new/lost外，必须断言保护96rep全列1499帧exact与1.9的32rep复现f72逐值exact；不匹配先查时序/函数，不盲采样。候选未晋升。物理4.89peak/3contreference/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/b/C、DR.1和corewheel6–12leg+2/response0–5/feedbackage0–8不改，原forwardgate不改。新增高速压弯32rep验证仍deferred；旧中低速压弯待修不遗漏。
+
+
+### 2026-11-08 旧点范围隔离终审：1.9新增2副本、无旧能力丢失
+straight_scope190已结束，manager215601/eval215603均退出，运行契约/初态/质量材料/延迟draw/反馈年龄/峰值全部核验通过。候选0094222be52dad3e3a6b8a594f37df6da7867103ad2c6021b4a8653c03aa6f50相对当前08d9等价7a5源：1.65/1.7/1.9/2m/s各32为32/30/28/31→32/30/30/31，总121→123/128，新env67/83，无旧pass/存活/速度/yaw/pitch组件丢失。1.65/1.7/2的96rep全部70列首1499帧对原源exact；1.9的32rep对已审gain130同样逐值exact，保留收益同时排除1.7新退化。没有新MC/fit/PPO，也不称扩域训练完成。
+人工复核全部128raw速度与worstpitch/yaw/leg，纵向波动小，部分yaw周期仍在，不能称彻底消振。剩余5副本：1.7env41 yaw.080916/腿3.073、env53 yaw.080495；1.9env86 yaw.086179/hip3.492、env88 yaw.082919/腿3.198及hip3.477；2.0env108腿3.146/hip3.010。速度跟踪、存活、steadyrawpitch3°全部128通过。起步约11–15°pitch大瞬态仍未动态认证。
+当前研究接续指针selected_research_candidate.json指向009422；promoted=false，整域/多seed/动态/部署均未认证。25相关tests，新增两buffer与加载支持已记入CHANGES.md。旧中低速压弯/待机清单保持，用户旧点优先；新的高速压弯32rep验证仍未启动。已完成两轮gain有界对照，不继续无依据扫描；下一工作优先剩余yaw与旧中低速turn，不再用更高统一腿gain替代局部根因。按照本条heartbeat本轮结果处理后暂停唤醒，不重启旧进程。
+
+
+### 2026-11-08 继续旧点修复：复用已学局部方向，停止统一gain猜测
+旧批次全部结束后从009422研究教师继续。高速剩余失败复算6–12s yaw分量：env41/53/86/88频谱主峰约2.003Hz，ACrms约.084/.089/.103/.082rad/s；不是仅平均偏航，统一常量偏置不会覆盖周期问题。没有把该局部线性诊断称动力学根因已全部找到。
+另对旧vx.5/yaw+.3采用已有有效学习方向：当前joint_turn_source_network逐tensor等于turn_source_isolation_20261106/turn/final_checkpoint.pt(6e3c...)的17更新结果，之前yaw误差.205→.164未过线；已有frozenanchor可复用。新有限两组仅将已学参数差放大到factor2/4，不改command或全域yaw力度。保持现有局部vx[.4,.45,.55,.6]/signedyaw[.15,.2,.4,.45]，域外输出exact、allstraight/reverse/high保护。目标实录最大action变化.017051/.043457，仍原神经残差budget内。候选0ab28c03d526920c6dfbeb351bb240cbd9f401678f4854a8f780a00d45fdf0f1和0c6dffb7f007f7a2d6cd274ee39fe4de2e4bb102fbfd5a896b614c9f4a4cf86c。放大旧更新不等于实际行为必然改善，必须闭环判。
+artifacts/old_turn_direction_20261108每组900秒、最多2GPU0，完整命令和源SHA009422等见NEXT/preflight/command。复用a601/source/evaluation0的30x4布局保持DR与初态，但比较计数仅0<=vx<=1.5，已实际输入证明与当前源一致；原布局更高速行不能拿旧a601结果冒充当前新增。所有物理/DR/延迟不变，0新MC/0fit/0PPO，不用候选继承critic推进优化。结束review应核保护低域轨迹exact、旧pass/存活/pitch保留和目标raw图；失败/无收益不扩大factor盲扫。已有154清单、旧待机低速/中速负转缺口保留；新高速压弯32rep仍deferred。
+
+
+### 2026-11-08 旧低速压弯已学方向复用终审：yaw获益，但速度权衡明确
+old_turn_direction两组已完成/实际PID退出，runtime全部通过，两个all4raw波形图人工已看。vx.5yaw+.3源实际yaw约.112–.155、speed.488–.501；factor2yaw.159–.192、speed.465–.479，仍0/4完整；factor4yaw.243–.268、speed.443–.460，yaw3/4通过、full0→2/4（env68/70），但env69/71失去原速度组件通过。96其他低域rep全70列首1499帧exact，无旧fullpass/存活/pitch丢失。两组steady速度小波动，无明显持续加减速，pitch均远低3。targetturn腿位置不以直行并腿阈值审，未偷换摆角口径。
+方向有效并不意味着可以整体放大：factor4同时改腿与轮common输出，伴随前进欠速，停止继续加倍和PPO。下一有据消融old_turn_difference只保留factor4相对当前source009422的wheel-difference变化，原腿动作与wheelcommon在同一输入保持，现有update_scope与residualbudget不变。用冻结anchor保存factor1并对两轮可行范围交集限幅，默认关闭，新loader显式flag及anchor双校验。28相关tests通过，旧checkpoint默认行为保持；不是新外置yawcontroller，也不改变command/obs25D/PD/限流/DR。作用是否改善闭环需单900秒评估证明，不把输出投影当行为通过。
+原factor2/4候选均promotedfalse，009422仍研究主源；123/128旧straight五失败、旧中低速其他turn/待机仍保留清单，新的高压弯32rep仍deferred。0新MC/fit/PPO，候选继承critic不允许未经校准更新actor。
+
+
+### 2026-11-08 旧低速轮差分有限验证已启动
+source=0094222be52dad3e3a6b8a594f37df6da7867103ad2c6021b4a8653c03aa6f50；candidate=70935a19cbaca0ed161586e9c2515b386d1b0e341ab955d49e8c41f2aad5a7bf。原factor4已有yaw收益但丢速度2rep，新候选仅投影该已学输出差的wheel-difference，actual376targetobs四腿逐值不变、wheelcommon最大差4.47e-8、maxactiondelta.037470；10904域外实录/16358随机/16384straight输入exact，loader恢复exact。28tests通过。单GPU0/900s/同cached30x4，比较仅0<=vx<=1.5，96保护低域rep须闭环exact；新candidate不当新MC或critic回报。物理/延迟/奖励不改，0MC/fit/PPO；run_case.py wheel_diff独占，PID见launcher。后续review.py与raw图决定是否保留，不自动扩大投影或超倍率。
+
+
+### 2026-11-08 旧低速轮差分消融终审：速度恢复但yaw不足，候选拒绝
+old_turn_difference wheel_diff已完成，manager286974/eval286976均退出，runtime/初态/材料/延迟/反馈契约全过。候选70935a只保留factor4已学更新的轮差分，四腿动作逐值保持、同轮common最大差4.47e-8。目标vx.5 yaw+.3四副本速度MAE.0360/.0497/.0380/.0467全部过，yawMAE.0654/.0893/.0740/.0986全部不达.05；实际稳态yaw约.200–.237，完整通过0/4。相对factor4的2/4完整收益消失，但speed欠速问题缓解。96其他旧低域rep全70列首1499帧逐值exact，new/lost均0，pitch约.23–.40°。四张raw source/candidate图已看。
+执行审计：target376状态、projectionclip0、wheel差分更新绝对最大.3317（不超现有输出交集）、raw轮action最大.2303、请求轮矩最大.887Nm、反馈应用矩最大.881Nm，远低4.89峰值；因此不是轮力矩饱和。投影无法闭环恢复目标yaw，说明原factor4的腿/common轮协同对转向状态有作用，不能按同一观测做通道正交分离。候选promoted=false；不继续扫投影factor，不自动PPO/MC/critic。
+
+
+### 2026-11-08 用户恢复：最后一次旧低速分量对照，保腿/差分、恢复轮common
+完整factor4已验证yaw收益但欠速，wheel-only消融恢复speed却yaw不足。当前仅做剩下一个有判别力对照：保留factor4腿分量和wheel-difference，恢复source009422的commonwheel，同已有compactscope。不能预断common是欠速唯一根因；若没有同时跟踪收益，即结束这个分量路线，不继续排列扫描。候选e856fa825bb18ca0ef8a02c17e555091fb6730c0a7bcc1cc81d2c754af627210。
+新的defaultoffleg_differenceanchor/flag，和wheel-only模式互斥，限幅是双轮残差范围交集、不增budget。新单测发现初稿把完整raw差分又叠加anchor旧差分，已在CPU修为更新差分；0仿真步、0训练，旧模式不受影响。30tests通过（新模式安装恒等、保存恢复、边界/饱和、腿/common保持、互斥、缺metadata拒绝）。实际376targetobs腿和轮差与factor4一致，common相对009422最大差4.47e-8，maxactiondelta.03747；10904域外实录/16358随机/16384straight输入exact，实际loader恢复exact。
+artifacts/old_turn_leg_difference_20261108/leg_diff单GPU0/900s冻结评估，沿用samecached30x4seed7891/noise27021，只统计0<=vx<=1.5，96保护lowrep全列首1499帧须exact；更高旧a601轨迹不冒充当前新增/丢失。0新MC/fit/PPO，候选继承critic不准用于训练。物理4.89peak/3contref/scale5.5 PD60/2 spring4.31 2/8ms Dfb/b/C DR.1 corewheel6–12leg+2,response0–5/feedbackage0–8不变。运行/冻结/非有限/预算失败保留证据停止；review.py配对和raw图决定，不自动晋升。旧straight123/128与旧中低速待修清单保持，高压弯32rep仍deferred。
+
+
+### 2026-11-08 最后一处分量对照完成：保腿/差分改善两项，剩两处压线未过
+old_turn_leg_difference e856已完成，manager329081/eval329083退出、runtime全通过、原4targetraw图人工已看，96保护旧低域rep全列1499帧exact。相对factor4，4rep速度MAE.043107/.060918/.044929/.053812降至.036575/.054182/.040077/.048661；yawMAE.033626/.048688/.036941/.054033降至.031075/.045592/.032055/.050351。完整仍2/4，env69speed比.05超.004182，env71yaw比.05超.000351，门槛未放宽。存活/pitch4/4，无明显持续纵向周期加减速。对最初009422源新2full/no oldfull丢，但env69旧speed组件丢失，尚不晋升。
+分量对照到此结束，不再排列组合。这次恢复共同轮分量给出4rep同方向速度响应且yaw也改善，可用已有成对数据估一次很小的commonhead偏置步：下一old_turn_common_refine保腿和轮差，按最弱实测secant估补足速度边缘并留.005m/s余量，action均值步上限.005，超限则CPU拒绝，单次闭环验而非滚动扫参。仍无新MC/PPO/fit，候选继承critic不拿来优化actor。
+
+
+### 2026-11-08 配对数据定向的小轮common修正，未重复分量扫描
+legdiff的四rep实测恢复common使speed和yawMAE都改善，进一步复算同状态输出发现方向为common减小.00293–.00338、尾段speed反而提高.00485–.00674；先前正方向假设在CPU预检被拒绝，未进仿真。用四rep同符号最弱secant−1.52294(m/s)/action估补足env69速度边缘，目标在原10%门内留.002m/s；最初拟留.005会超过预设action上限，因此此次明示采用.002，正式gate不变。不是把闭环斜率当固有物理常数，也不把四个调参rep当独立验收。
+old_turn_common_refine单candidate仅既有joint_turn_source_leg_difference_anchor.4.bias的wheel2/5均−.0457489logit，实录meancommonaction−.00406202/max.00410555，腿sameinputexact、wheeldiffmaxdelta2.98e-8；16352域外随机/16384straight与009422原源exact，loaderexact。sourcee856fa825bb18ca0ef8a02c17e555091fb6730c0a7bcc1cc81d2c754af627210、candidate8b64d8bceac05e6b4b03507d01bf6b318303e28c52df36551393acc0df68fca4，原009422主源未改。完整实测斜率和幅度写preflight.json。
+单GPU0/900s同30x4core冻结验证，baseline复用刚完成e856，0MC/PPO/fit，不换reward/观测/command/PD/执行器/DR。96保护低域闭环逐值保持为必查，目标原已过full不得丢。正式10%speed/.05yaw/3degrawpitch不放宽。若无收益或退化结束这条局部调整，不继续逐步bias扫描；若4/4且无旧丢再独立32rep确认，不能直接说恢复技能。物理4.89peak/3contref/scale5.5、PD60/2、spring4.31、2/8ms、Dfb/b/C、DR.1corewheel6–12leg+2/response0–5/feedbackage0–8不变。
+
+
+### 2026-11-08 旧vx.5/yaw+.3首次严格4/4，冻结候选进入独立验证
+old_turn_common_refine8b64在原4个调参副本全部通过速度/yaw/存活/pitch：speedMAE.028686/.046224/.033102/.041405，yawMAE.028765/.041715/.025235/.046642；steadyrawpitchmax.293619°，speedp2pmax.015075m/s，无明显持续加减速。对e856新69/71两full、无旧full或组件丢；对原009422总新4full，旧96低域rep全70列1499帧exact。原始all4图人工已看。不把这一结果称技能稳定恢复，4样本参与了选参，需独立确认。
+冻结同一8b64不再调参，启动old_turn_validation_20261108：原009422源对8b64，grid[.45,+.3]/[.5,+.3]/[.55,+.3]/[.5,0]各32，seed86804/noise87904；目标为旧.5,+.3，邻域诊断泛化，straight保留。新seed/布局必须配对source两臂，不冒用旧4rep。每臂900s、最多2本workspaceGPU0，runtime/初态/firstdelay对齐；候选不新训练，无MC/criticfit/PPO，物理/DR/门槛不变。完整SHA源0094222be52dad3e3a6b8a594f37df6da7867103ad2c6021b4a8653c03aa6f50、候选8b64d8bceac05e6b4b03507d01bf6b318303e28c52df36551393acc0df68fca4。
+独立结果须目标、邻域、保留分开报，straight32rep全列1499帧exact；不净增掩盖损失，所有raw速度/yaw/pitch首回合图须审，不过滤失败。4rep或独立32rep都非full154/dynamic/deploy。旧高速123/128五失败及旧中速压弯/待机清单保留，新高速压弯32rep仍deferred，未偷换当前旧点优先任务。
+
+
+### 2026-11-08 独立32副本终审：旧低速转弯31/32，保留收益但不晋升
+独立seed86804/noise87904、每命令32副本：009422源→8b64候选，.45/+ .3为0→0，.5/+.3为0→31，.55/+.3为0→28，.5/0为32→32。128全存活，straight32rep全70列首1499帧exact。总副本32→91，新增59、旧完整pass丢0；速度组件丢env56/73/87/88/90共5，不能用净增隐藏。目标env56速度MAE .0549057983>.05；目标最差yawMAE .0499949045刚在门内。12张全副本raw vx/yaw/pitch已审，三个turn组最大steady速度p2p .021136m/s、rawpitchp2p .553756°，未见明显持续纵向加减速；起步瞬态仍在，不作动态通过。
+本批runtime/初态/材料/质量/firstdelay配对全过、checkpointSHA核对一致、所有PID退出。0新MC/PPO/fit，physics/DR/门槛不变。promoted=false，009422研究主源不替换，8b64保留为研究资产；停止继续bias/factor/分量扫描，本轮唤醒结束。详见artifacts/old_turn_validation_20261108/REPORT.md及final_report.json，桌面原始图目录同名。旧高速直行123/128五失败、中速压弯/待机低速清单不删，高速压弯32rep仍deferred；不能称full154/多seed/dynamic/deploy恢复。
+教训：同一观测上的轮common/差分正交不代表闭环响应独立，腿姿态改变会改变后续观测与轮输出。四样本4/4在独立32样本仍出现速度损失，应先保留未通过标记与原策略。该仿真局部结果不能证明真机顿挫全部解决，也不能把稳定欠速误判成震荡；此处主要剩跟踪偏差。
+
+
+### 2026-11-08 历史掌握分母纠正，新增高速压弯独立计数
+154是恢复清单而非历史已掌握点；逐一核对原evaluation.json，134有教师passed，20只有要求/retention且无历史通过证据。134中111满足历史至少4回合/全存活/速度与yaw严格复算，23为旧宽门槛或小样本。当前可确认完整记录19/134、含近线26/134；新增高速压弯18点中13完整、1近线，合计32/152、含近线40/152。若只用111严格历史子集，旧17/111、含近线23/111，加新高转30/129、含近线37/129。95旧点未当前契约复验，不等于95点全不会；混合4/32回合不是统一全域认证。
+此次复用低速后退实录按授权腿差6重算，-.3/-.35/-.4/-.6各4/4；每命令752条输入当前009422对原56c35输出exact，只是抽样函数保留核对，不是新仿真。历史近线7：-.25直退、.5/+.3研究候选、1.5/±1.2中的负向、1.5/+1.4、1.7/1.9/2直行；新高转近线1.9/+.8。正式gate不变。完整定义/来源/排除项在artifacts/skill_mastery_accounting_20261108/REPORT.md、accounting.json和build.py。不将新高速点充当恢复旧点，不将未晋升8b64写成当前主源；154任务需求不删。没有训练/仿真/新MC/权重改变。
+
+
+### 2026-11-08 撤回152恢复率分母：单一旧基线70已过点
+用户纠正成立。134/111是跨checkpoint历史通过并集，不是单个旧策略已掌握集合；19/26仅近期部分记录的覆盖计数，不能代表当前全能力。撤回19/134、26/134及32/152、40/152作为恢复率，也撤回对应111分母的全域表述。原账本加invalid标记、build入口拒绝再生成该误导比例，保留证据不擦除。
+已从negative_turn_precision_20261103/train/candidate_grid0..4的原evaluation/strict_screen逐回合核实：旧正式研究基线SHA4e5587e36c6e8cbbf488917151329340c22da37bb7b3ebd59366dac61856f23b在154被测命令中70点各4/4通过。该70不是新增3°pitch/动态认证，但证实“当时已掌握几十点”，不能改口说仅26。恢复这版旧基线分母固定70；新增高速压弯18无重合，若合并任务分母88。当前70完整清单在最新配置下的通过总数尚未核齐，明确null，不把未验或局部不覆盖当丢失。新增高转13/18、含近线14/18保持独立记录。artifacts/skill_mastery_accounting_20261108/CORRECTION.md、single_baseline_correction.json、baseline70_grid.json为接续依据。未改权重/训练/物理/DR/gate，无新GPU任务。
+
+
+### 2026-11-08 固定旧65点真实补验完成：64通过，1近线
+旧基线4e5587的70点去5后退，新增高速压弯不纳入；分母固定65。冻结当前009422复用15点已有同契约记录，额外11280实录输入输出exact；两批25×4补齐缺50点，无新训练。50点全部4/4通过，最终直行26/26、原压弯38/39，总64/65=98.46%，含近线65/65。唯一近线1.5/−1.2为3/4，worstyaw .0529486>.05。照字面旧straightyaw .05则63/65，额外.275直行yaw.062999；当前.08是已有批准门槛，不隐瞒差别。
+原始50点×4首回合五页全审，最大新speedp2p.0477369、rawpitchp2p.981326度。存在小周期纹波，例如.275直行，不称零振荡；未见此前demo般大幅持续加减速。旧65原轨迹复算pitch3也全过，不能拿新门槛解释先前少报。首次postprocess仅预定noise seed差异校验错误，归档并离线修，不重仿；两批runtime/实际delay/物理均通过，PID均退出。historical inventory已补齐65点最新证据，防下次又漏50。见artifacts/baseline65_current_coverage_20261108/REPORT.md和final_report.json，图在桌面同名目录。
+用户询问新蒸馏：可冻结教师进入准备，但本结果不覆盖待机保持、动态起停/换向/联合变vx-yaw、困难延迟尾部和部署。−1.5反向需3s入口契约，后退与高压弯按各自报告，不把本65的98.46%外推。学生25D/6D、H723/CubeAI、约3万参数、4.89peak和scale5.5保持；当前未开学生训练或发布新ONNX，需教师动态资格及学生/跨仿真复核。
+
+## 2026-11-09 第三版小MLP蒸馏接续
+
+冻结教师0094222be52dad3e3a6b8a594f37df6da7867103ad2c6021b4a8653c03aa6f50；25–160–152–6 ReLU，29550参数。峰值4.89、scale5.5、PD60/2、spring4.31、2/8ms、DR.1及核心联合延迟保持。桌面最终仅policy.onnx，未通过候选不交付。
+
+初轮6000监督更新虽然留出MSE7.12e-5，闭环丢47/96存活，已停止其余候选验收。DAgger1加入真实学生偏离状态和新教师core/zero轨迹，40000更新115秒；同源闭环存活丢失降至10/96，但仍丢26个教师工程通过副本，尚不合格。不以MSE替代能力保留。将复用本轮轨迹进行第二次DAgger；无重复教师训练、MC或critic拟合。
+
+教师24命令×4同源测试：核心74/96数值门槛、96存活；队列+反馈年龄清零78/96；再清零响应τ79/96；两零延迟档均无核心已通过副本丢失。最大稳态rawpitch峰峰值2.085/1.037/1.053度，最大后退超速.02004/0/0m/s。初态与物理随机化配对已核验。这仅是定速筛查，不能代替学生zero-delay、动态及sim2sim。教师动态检查继续顺序运行。
+
+详见artifacts/mlp_v3_distill_20261109；teacher_checks_status.json和student_dagger1_checks_status.json为当前状态，勿重复启动。
+
+## 2026-11-09 第三版DAgger2与动态边界
+
+DAgger2 SHA4452c5139f4cec5c7c9b127fdd8e3c97814e09dbd645048a25990215890cb18e，24命令×4核心延迟96/96存活，教师74个通过副本保留70（丢2m/s三个腿差副本、1.25/-1.4一个yaw/pitch副本）；student总71，新增不抵消丢点。zero队列档：与teacher零档比较仅1旧pass丢，zero-response3旧pass丢，均无存活丢失。正式数字见student_dagger2_checks_static_review.json。
+
+动态必须单列：smooth核心和zero教师/学生各16/16存活。连续step0/.5/0/1/0/1.5/0中教师两档均0/16完成；学生两档16/16完成，但最后急停反向峰值.47–.60m/s、停后暂态pitch仍大，不称急停合格。用户所问后退定速无超调，与急停反向冲量不是同一验收。
+
+发现动作拟合MSE小仍可有反馈局部斜率错误；新增16万train/4万wholeenv holdout局部小扰动对，重力范数保留、yaw目标随gyro扰动保持、无gx滤波。仅蒸馏loss追加局部动作差分匹配，不改25D/29550参数、物理、teacher或gate。DAgger3 SHA f794dc10a433e94b8e4f6728944bca199cb05052d995fde878d5629bb5672983，40000更新147秒；gx响应误差从.725→.044（2m直行）、1.091→.028（1.25/-1.4），history误差也下降；只是离线信号，不等于行为通过。现core复验和额外15旧点/4×32教师基线在跑，勿重复启动。
+
+MuJoCo两者6名义zero-delay轨迹均12s存活，但教师转弯yaw也超绝对门槛；全部仅诊断，不称sim2sim完成。教师导出atanh按0.5log((1+x)/(1-x))标准等价展开，100输入ORT误差2.38e-7，生产复杂teacher导出保护未改。当前所有ONNX为repo诊断文件，桌面未交付。
+
+## 2026-11-09 第三版局部响应蒸馏复核
+
+DAgger3 f794dc10：core96/96存活、teacher74保留73、student76，丢1.7m/s env28 yawMAE.08478>.08；rawpitch最大1.694°、reverse超速.01830。zero队列与zero响应两档各96/96存活、student80/96，两档均无同档teacher旧pass丢；pitch1.297/1.099°，reverse超速0。只代表此24×4，未称全域/部署通过。
+
+独立旧25点第一组已完成100/100存活、97数值通过：只.275m/s三个副本丢速度/yaw/角差组件。旧点第二组/15补集/critical32及student3动态继续，真实PID见stage launcher/status。已复用completed core/zero/allzero/old0学生轨迹准备dataset_dagger4，暂无新训练，等全部缺口收齐再决定。不能丢掉低速来换高速。
+
+局部小扰动对发现25/200000对yaw_error原始clip附近不能完全保持重建命令，max差.05393rad/s；teacher标签仍为实际输入重新推理，已保存invariant_audit与声明，未来generator恢复这25类对原gyro-z/yawerror，当前训练产物不偷偷改标签。gravity范数差<=2.38e-7，vx目标完全不变。
+
+## 2026-11-09 DAgger3旧域及独立32补验
+
+65旧非后退/非新高速压弯命令的本轮配对均已完（每命令4rep）：学生63完整，教师63完整，全部260学生存活。相同数量不可叫全保留：学生失去.275，新增1.0/-0.8；同源保留62/63。来源不同于前一轮64/65记录，不能混seed统计。
+
+独立四命令×32：.275教师30学生27；2.0教师29学生25；1.25/-1.4双方32；-1.5教师31学生32。全部128学生存活，无后退新超调；7旧pass副本损失、1新增。关键局限低/高速直行未达保留。
+
+DAgger4 CPU修复293e809d662b3265bb39883978a4ad1b7963c2720c93af3fde2b0ef4c264fd5a已完成12000更新145.6秒；训练数据版本是dagger4_dataset_snapshot，后续新critical32/old15追加不属于该次训练。manager684181已等待D3extra结束后接棒old0评估，directionguard要求减少失败且不丢之前过的副本，否则停止其余D4extra。不能把当前最新datasetmanifest冒充该checkpoint已训练。
+
+D3 core/zero smooth均16/16存活；zero smooth停后reverse最大.001314、pitchp2p.396°；直接step两档仍验。D4MuJoCo6个名义全部存活；后退新增小周期波动，pitch1.103°，须随实际raw图评判，不谎称完全无振荡。未桌面发布。
+
+## 2026-11-09 有界修复拒绝和下一步
+
+DAgger4 old0同100副本仍97/100，新增丢env10（.325直行），低速只修回env1，无净收益；自动guard已reject，old1/old15/critical32未运行，不能再用其有限收益作交付依据。候选SHA293e809d保留研究证据。
+
+DAgger5回到更好D3(f794dc10)源，复用完整7source数据（含D3critical32/old15的新状态），30%batch定向采样vx.25–.3或>=1.6且yaw≈0，10%旧repair，60%全域；localpair一半同focus，权重/架构不变。GPU最多600秒40000步LR5e-5，训练结束queue_dagger5.py自动旧old0同源验方向，不增pass或丢已过就停。source SHA及完整argv见launcher.dagger5_training。mainD3zero_steps仍运行，最多2自身GPU。没有新teacher训练/物理修改/门槛放宽。
+
+D3核心直接阶跃起停也未完成（与teacher相同），不能把定速无超调当急停过。该任务边界问题已向用户异步询问，独立蒸馏保留工作继续。
+
+DAgger5 completed33250steps180.5svalidationearlystop, SHA7cc41efffa28f374f843e816143fdc18f929318e6c50c14630f000d447f84bf1; ONNX4dc2372a diagnosticparity2.53e-6. extra manager689230/eval689250 old0inprogress;queue_dagger5_main manager690559waits old0positiveAND D3mainterminal beforelaunchD5main7checks, max2GPU. Ifold0rejectstopsD5extra/main. MuJoCoD5CPU6done. Donotrestartjobs.
+
+## 2026-11-09 定向蒸馏D5获得实际收益
+
+D5 SHA7cc41efffa28f374f843e816143fdc18f929318e6c50c14630f000d447f84bf1在old0同100rep由D3的97→99，无原pass丢失/无倾倒；.275剩env0仅yawMAE.089781>.08，speedMAE.01163、angles1.389/1.474、pitch.918°都过。方向guardpassed但不是完整交付。D5extra manager689230进入old1PID691526；D5main manager691527/corePID691548在跑（queue确认D3main已全结束才启），最多2自己GPU。
+
+D3main全部结束：smoothcore/zero都16/16；stepcore0/16、zero1/16完成，teacher对应0/16和0/16；不能以相对teacher不劣宣称急停合格。D3不再续训或重复验收。
+
+D5fullold65completed63/65; onlysame.275pointlostvsnewpairedteacher63/65, 1.0yaw-.8gained. maincore96alive74pass(teacher74 butoneoldlostenv29 yaw.0806568>.08 andonegain); zeroqueue96alive79pass,no teacher passloss. D5allzero/critical32running.
+Addedfinaldomain checks:cachedsame009422highstraight4x32, andhighturn18target+6retentionx4fromrouter_legacy08d9. Verified current009422 vsold08d9 allsamplednonzeroyawinputs outputexact, proofhigh_turn_teacher_cache_parity.json, straightrowsinthatcacheexcluded. prepare_final_domains.py finished; manager698385waitsD5extra terminalthen2newcases serial, notthirdGPU. SHAteacher/learner/commandsallbound. No newteacher sampling.
+
+## 2026-11-09 完整高速域、压线统计与漏项补查
+
+D5highstraight32：teacher123/128，student113/128，13旧strict副本loss/3gain，无存活/速度/rawpitch丢。loss仅yaw.0802–.0834或1.9hip3.02–3.224。按用户此前允许yaw和高速腿差压线放宽，另存engineering_near_review_policy：直行yaw≤.10、高速直行腿P95≤3.3，仅其他原门槛全过才近线认可；原strict结果全部不改，rawpitch3/reverseoverspeed.05/forwardtracking10%/reverse75%/turnyaw.05不动。D5highstraight严格113+近线13=126，matchedteacher近线126，无accepted旧点丢。critical32严格123+近线3=126，teacheraccepted124，无accepted丢。该政策不包含直接急停失败。
+
+D5新高速压弯18点4rep：1.6..1.9每.05双±.8全部4/4，原source1.9+.8只有2/4；1.95负2/4正1/4；2负0/4正2/4。另1.5+1.4retention3→4。非零yaw全部旧pass65保留且new8，teacher65→student73/88。最大rawpitch<.85°，speedp2p<.037m/s。4rep不称32rep。
+
+补漏：训练数据几乎没有vx0非零yaw，仅一行观测clip污染样本，不可说已保留自旋技能。已准备spin8commands0×±.3/1/3/6 each4rep，对冻结teacher与student5，source/student顺序，manager704753等当前randommanager703697结束后接slot；没有新增teacher训练。随机16中间命令×4source/student顺序在跑，此随机抽样4highyaw恰均负，明确不能声称随机双向覆盖；固定高压弯已涵盖双向。
+
+未发布desktop网络；当前仍需动态/随机/自旋覆盖，不能用局部数值过线冒充整体验收。
+
+## 2026-11-09 第三版补漏结论与教师专项修复
+
+已完成D5全部既定仿真，旧队列均终止。随机16点×4同源teacher/student都是52/64，全64存活，无旧pass丢失。原地自旋vx0、yaw±.3/1/3/6：teacher32存活但0全过，多数误变平移；student16存活、0全过，不能把teacher本就不会的自旋当成蒸馏已保留。训练资产几乎无自旋，旧spin审计也早有缺口；此次同时漏验teacher能力及学生覆盖，应在训练前建立技能覆盖表。
+
+D5平滑vx+yaw core/zero各16存活；直接阶跃起停两者均0/16完成，teacher同样0/16，不能用“与教师相近”替代绝对安全/行为门槛。待机加入world轨迹漂移后core/zero/allzero均0/4严格通过；仅速度检查会误判。已更新PROGRESS与release_blockers，不发布desktop网络。
+
+用户授权修教师自旋，并将目标降低为适度转速，区分原地转和边转边走。启动唯一有限研究probe artifacts/idle_spin_stop_repair_20261109：source009422、candidatef57d855b；只零vx非零yaw局部分支，复用完整balance actor的yaw-neutral投影，手工有界差动seed初始化。不是PPO学会、不是固件补偿、不可直接部署/自动作正确示范。CPU验证8245域外输入exact/16384待机exact/restore exact；新14命令×4source/candidate匹配seed，各900秒最多2GPU，完整LAUNCH/command和runtime留证。原地±.3/±.5为目标、±1只探查；.2/.5±.3为平移转向保留/缺口诊断，idle/highstraight/highturn另列。物理/奖励/25D6D不改，critic不用于该冻结probe。完成后看原始速度/yaw/pitch和world漂移，失败不扫描参数或长训。
+
+## 2026-11-09 自旋最低档与待机/动态收尾范围
+
+用户明确自旋不追高转速，可先保最低档或存活与抑振；区分原地转与边转边走，修动态变速/待机后结束，不再扩域。原teacher009422新14x4布局中±.5原地各0/4存活。研究seedf57d使全部24个spin副本存活但yaw欠速并出现7–8Hz波动；未通过，不用于蒸馏。域外32个副本首回合1499帧70列exact；重置后的第1500行不应混进首回合保留判断。
+
+followupd71a用实录拟合前馈、反馈.20降.05，并局部加入vx0–.5移动转向：24spin均存活，±.5平均yaw约.47–.50，但yawMAE仍.077–.177且yawp2p.30–.59，前后漂移仍存在；移动4点各4存活但仍跟踪缺口，严格0通过，不能只看平均yaw贴近。原始图已审，局部gain下降没有消除7–8Hz，不能再归为单纯轮差反馈增益。腿action差p2p约.9–1.6、实际legdiff1.7–3°与yaw/pitch主频一致；只是耦合线索，尚非根因实锤。
+
+当前唯一新局部probe4f60e0b0：零/近零vx命令下4腿每8ms最多变.03 rawaction，用已有last_action，轮输出逐值保持。无额外输入/状态，无PD/阻尼/延迟改动；不是已学会策略。spin_leg_slew56env/900s与stop_leg_slew16env/1200s并行，PID见leg_slew_launcher与各status，禁止重复。完整物理与命令见LAUNCH_LEG_SLEW。若无益不扫slew值。
+
+复用scripts/rmuc_world_model/competition_stop.py原用户授权门槛：速度带.05、保持.3秒，低速arrival1.5秒/较高2秒，反弹<=.15、连续reverse>.05最多.5秒，tailMAE.03、leg2°/yaw.05。不将core静态数值通过当动态过，也不以zero静态通过证明急停没过补偿。新review_stop按world pre/post时间对齐，truecommand验意图，actor观测命令迟到单列，避免旧脚本将8ms错位判成命令错误。待机仍保留速度.01和10秒漂移.05m。
+
+
+Legslew4f60两评估结束，不晋升：原地yaw仍明显波动，部分pitch3.21/3.46°超线；待机numeric1→3/4，但一例worlddrift.09m未过；.5stop实用门槛4→7/16、1stop仍0/16、20s全程0/16。不能把小段收益冒称动态修复。
+新证据leg_yaw_mode_audit：spin及idle原始yaw与active/hip差动速度corr约.99，同7–8Hz；相关性不证明单向根因，轮差也相关。下一唯一有限42e3候选只投影零vx腿差为0，保active共同目标/hip共同高度及所有wheel输出，不带前版slew，保持moving输出；CPU8192域外exact。新run_leg_modes当前PID见launcher，两个冻结probe各900/1200s，不进行PPO/MC/自动蒸馏。用户最新最低spin可先保存活抑振，不再追高转速。
+
+
+Leg_modes42e3已全部结束：固定腿差清零强烈减小yaw/pitch周期（原地spin的pitch多数.1–.45°），但引入.06–.10m/s前漂，严格待机0/4，直接1m/sstop更坏（反弹最差3.64m/s含失稳），拒绝晋升。共同与差动分离提供因果方向，但静态腿差承担工作点作用，不能简单清零；不是网络单帧上限证明。
+当前run_final_probe同时进行两独立限定任务：spin_lowpass c19fcdb1只对低测量速度(.15全开/.3退出)、零vxcmd的腿差动用lastaction alpha.05，保DC/共同/轮输出；与d71a同14x4比较。stop_ramp原009422不改，只停车阶段.752秒线性减速，原起步不改，16rep×20s；不冒充直接step成功，若接受必须部署同command接口。CPU13804域外exact、轮逐值exact；原物理/DR/延迟/奖励不改。900/1200秒预算，launcher/PID为准，旧所有任务不重启。
+
+
+Lowpass c19fc冻结probe完成：24spin全部存活；正向+.3/+.5各4/4数值screen通过，rawpitch分别.055–.094/.070–.092°，yawp2p.032–.054/.033–.079；raw图已看明显周期消失。+.3一个10秒worlddrift.05258m略超.05，故screen4/4不是完整原地漂移通过；+.5四worlddrift.002–.029均过。负向-.3仍有3Hz小幅vx周期（~.03m/s峰峰，pitch.91–1.69°），不能称全部双向消振。待机pitch.07–.094°/yawp2p.006–.009，但vx+.0094–.0156、10秒drift.092–.157m，严格待机仍未过。域外32rep首回合全列exact。
+.752sstop_ramp完成：全20s存活5/16；1m/sstop16存活但反弹最差.387>授权.15、arrival约2.27–2.40>2，1.5stop11倾倒，不能交付。小.5stop仍4/16，失败含待机yaw/tail。原始directstep仍0/16full，源不改。
+当前仅两任务run_idle_staged.py：idle_bias d86626bd在c19fc上零command/lowstate额外wheelcommon+.004（.022Nm/轮），只单次历史signeddirection探针，是否转移未知，CPU16220域外exact/legexact/wheeldiff近浮点exact；stop_staged原009422用已成功smoothsequence减速形状：> .5按1m/s²，.5到0按.5m/s²。起步不变，不把延长command等同放宽arrival原gate。各900/1200秒最多2GPU，所有旧任务结束不重启。若有益再独立32/zero复核，不以4rep晋升。
+
+
+Idle_bias d866与stagedstop全部完成：常量wheelcommon+.004无益，idlemean+.0097–.0159、drift.094–.161，拒绝继续bias扫描；其余52rep首回合exact。分段stop有真实产出：完整20s从0/16变16/16，.5/1/1.5停车最差反弹分别.0823/.0793/.0966m/s，都<原实用.15；但完整实用gate仅4/16、2/16、0/16，尾部yaw/leg/速度与1.5arrival2.18–3.15秒仍未过2秒。不能宣称动态已修完，不是直接阶跃通过。
+当前唯一run_idle_gain.py：8ce134cb仅零vx/yaw且实测速度<.2的策略内部速度误差feature gain3，沿完整原网络轮腿协调输出，外部25D观测/估速/命令不改；零速度误差输出exact，16220域外randomexact。这是单次有界增益probe，非已训练/部署能力。idle_gain14x4静态与stop_integrated16rep20s分段接口并行，各900/1200s；sourcec19用于idle，stop_staged009422用于动态对比，原物理/DR/联合延迟不改，旧所有任务禁重启。完成后review_spin.py --idle-gain、review_stop.py --case stop_integrated及raw图。
+
+## 2026-11-09 用户放宽并要求收尾交付
+
+最终交付桌面 `/home/kellen/桌面/RMUC_MLP_第三版_20261109/policy.onnx`，目录只有该网络。选择完成主体评估的D5学生SHA7cc41eff、ONNXSHA4dc2372a；25–160–152–6ReLU、29550params、float32[1,25]输入observation/[1,6]输出action，仅Gemm/Relu，normalizerfolded。本次重新ONNXchecker和ORTgolden100，maxerror2.5332e-6，拷贝SHA逐值确认。4.89peak、rawtorquescale5.5契约不变；不是把动作系数改4.89。
+
+用户明确放宽并要求结束后，停止本轮最后run_idle_dc manager831904及两个eval831908/831909，逐PID/cmdline/独立PG核对，只干预本批，部分rollout不冒充完成。没有新的教师修复合入D5：新的低档spin/legdiff/DC等都是教师研究wrapper，未完成转蒸馏。本交付不等于全验收通过：D5自旋16/32存活、直接stepcore/zero各0/16完成、严格待机漂移未过；静态zeroqueue和zeroresponse各96存活且保留对应zero源pass，不能推出动态也已过补偿检查。CubeAI/真机未验证。上述限制已向用户说明。
+
+已完成的研究收益保留：c19正低spin抑振；原009422分段停车16/16存活反弹<.10，完整gate仍未过。高gain3待机4/4数值/漂移通过但2Hz摆动、动态退化，拒绝晋升。当前无需继续重复研究，自动接续关闭。FINAL_DELIVERY.json为正式交付记录，旧严格报告不改写。
+
+## 2026-11-09 第三版交付后的部署兼容性复核
+
+只读核对桌面2，不修改或烧录。其CubeAI生成报告仍标v8/20614params，必须用已交付V3D5/29550params重新生成完整network代码、weights及activation定义；25D/6D接口不变、normalizer已fold，不得额外做mean/std归一化。RL8ms、24点腿scale（误差<1e-7）、wheelrawscale5.5、16384限流≈4.8939Nm及RL Dfb/Cff/eps与当前契约一致，不因换网络重复补偿或改成4.89actionscale。
+
+仍需命令管理：本地V_CMD_MAX_ACCEL100近似阶跃，遥控vx±2.2/yaw±8没有覆盖对应已验能力边界；负速3s入口是验收环境接口不在ONNX里。D5急停和spin缺口不能靠换网保证修好；后续teacher分段停车/局部分支未蒸馏给D5，不得声称直接移入固件即已认证。弹簧宏RL_SPRING_DIFFERENCE_ENABLED本地默认0，与用户实际上车开关需区分，应保留实车验证有效配置，不擅自开关。当前RLShadowTask直接remotevx，位置PID函数没有接入该路径。新CubeAI延迟与golden对齐需实测，硬件状态未知。完整只读证据DEPLOYMENT_COMPATIBILITY_REVIEW.json。
+
+
+## 2026-11-09 第三版实机现象复核：分开视频与 Ozone，纠正接口遗漏
+
+用户明确后续 Ozone 与本次三段 demo 不同时，不能对拍、合并因果时间线，视频开关也不能套给 CSV。视频独立编号 V3-DEMO-01/02/03，当前位于桌面 mujoco，SHA/时长见 artifacts/v3_real_demo_review_20261109/video_manifest.json 与 EVIDENCE_SEPARATION.json。用户报告轮阻尼/库仑及弹簧补偿开、里程计应该关、遥控限速观测未改。可见车身腿架往复及转向伴随平移；无同步指令，不给视频定量速度/频率或认定某拍根因。
+
+确认遗漏：仿真 position_authority 在指定约0.8–1.7m/s大转弯域允许 active槽0/3超过±1，桌面2的 RLShadowConvertOutput 与 previous_action 仍统一±1。复用D5已保存368首回合副本，183有目标差，最大2.425073°；actual C消费已编译核对示例。不是368独立能力点，不是实机闭环复现；低速直行不在扩展域，不能用这一个差异解释所有顿挫。此前仅核scale/力矩/PD后称链路对齐不充分，DEPLOYMENT_COMPATIBILITY_REVIEW.json已追加纠正。
+
+actual C合成时序另证实：snapshot age12→13ms可退出RL并清空history，新数据后blend1全量重入。尚无本次实录证明发生，不能称已找到根因或据此放宽保护。后续CSV独立检验模式/序号、同拍ONNX重放、动作消费和真实最终执行；不要将100Hz上一行等同125Hz上一推理，也不要把补偿前调试电流当最终发送。
+
+本次未改固件/网络、未续训；D5不包含后续教师自旋/停车修复，静态delay=0通过不是动态全过。详细结论及证据限制见上述目录 README.md。
+
+
+## 2026-11-09 三份独立 Ozone：全RL、LQR控轮、LQR控腿
+
+来源下载目录 Ozone_DataSampling_261109.csv、261109lqrwheel.csv、261109lqrleg.csv；与此前demo不同步，各CSV也不共用时间轴。用户确认均第三版、阻尼/库仑与弹簧补偿开、里程计关、无扶车架空。完整来源SHA与报告在 artifacts/ozone_20261109_analysis/。
+
+最强证据：fullRL48.115–49.185s，vx/yaw命令都为0，108行ONNX均匹配；估速−.3184到+.2448m/s，rawpitch−3.0501到+1.4373°，峰峰4.4874°，yaw rate峰峰.8064rad/s，短窗约5.56Hz持续往复。18.335–22.545s的422行也全部重放但仅vx零、yaw在变，不能写成待机。三份全体有效行重放分别4866/5153、4112/4322、2909/3104；其余未通过不抹去。部分行policywheel不等于5.5clip(raw)，缺publish序号不能当同拍，更不能称执行数组撕裂。
+
+LQR控轮/RL控腿29.34–45.45s仍明显摆动，排除“只有RL轮输出导致所有症状”的充分解释，但混合控制未必兼容。LQR控腿/RL控轮只有20.406–20.836s轮history非零，随后剧烈失稳，不能拿后段平静作稳定成功。其四腿history始终0，另一混合实验仍有未执行RL轮history，需审混合接口语义，不能当严格单变量对照。fullRL长段history没有反复整段归零，12ms退出重入并未被本记录证实；缺mode与序号不完全排除短暂退出。
+
+按实际训练det−1坐标，dg=+omega×g；运动窗口gx/gyro相关约.967–.987，不能误用右手负号翻gyro。主动腿扩展限幅在三份全部记录均0触发，故此前确认的接口gap不能解释这批低速震荡。固定19维输入、只递推history的8个状态均收敛，不证明物理闭环稳定，但未复现history自己持续振荡。
+
+现有PD60/2+弹簧差额力矩律与四腿反馈相关约.97–.984；8–14ms最佳对齐和.86–.91仿射比例只是含采样/反馈年龄的重建诊断，不能直接当通信延迟或真实力矩标定。接管最初计算目标距实际角约7.1–7.25°，不是已记录发送目标阶跃；随后反馈10–16Nm含既有弹簧差额。优先查策略腿目标/实际执行/闭链/轮腿反馈耦合，不继续只调轮阻尼DR或滤gx，不宣称单一根因已实锤。缺实际发送目标/力矩和最终轮电流，下一步补关键执行证据即可。原CSV、网络、固件未改，未续训。
+
+
+## 2026-11-09 接管分段纠正与速度定义再次核对
+
+用户强调先LQR约10s再RL。已核RL_CONTROL_LQR_WAIT_MS10000，计时从连续normal LQR开始，不是CSV0；shadow任务等待期仍推理。之前全体有效行异常数含接管前后，不能全算RL执行故障。依据history/反馈的近似接管区间：full17.674961–50.845038、lqrwheel29.343866–45.453948、lqrleg20.406450–20.836433。ONNX不匹配前/内/后分别99/188/0、114/96/0、36/5/154；缺mode不能称精确切换时间。48.115–49.185双零命令振荡在接管后且108行全重放，结论不变。
+
+重放只证policy(obs)数值，不证真实状态、消费、物理或策略闭环正确。速度尚未物理等价：训练root_lin_vel_w在当前IsaacLab是root刚体COM速度，水平heading投影；固件R_w轮速+腿w proxy在WorldXSpeedKF之前给RL，LQR的s_dot才经KF。proxy没有完整轮端到root COM运动学转换，不能因为式子自洽/传统能站就认证RL速度正确。IMU按det−1坐标运动学一致，不认证外部零位/滤波相位，不能翻gyro或滤gx定因。
+
+已复用D5保存的同post-step物理qdot与root速度离线核验，未重仿：0.5m/s起步前2s最坏副本proxy与真值差core.3860m/s，全零延迟/响应检查.2414；稳态6–12s最坏P99约.01325/.01019。瞬态定义/滚动gap即使无延迟也存在，不等于真实误差实测，亦未证明其单独致振。来源SHA/逐副本见saved_sim_speed_proxy.json，plot排除reset连接。
+
+具体模式—观测—raw动作—消费目标—hostPD+spring—最终CAN—反馈—物理响应排查表、现成字段和冻结RAM采样方案见 artifacts/ozone_20261109_analysis/FOLLOWUP_TIMING_SPEED_AND_CHAIN.md。DM收发同用TorMX40的自洽不等于实际Nm标定；wheel请求与最终CAN打包也需分开。仅新增分析及记录，未改固件/网络/训练。
+
+
+## 2026-11-09 速度源闭环配对：公式差异足以破坏稳定性
+
+用户授权先做速度源配对。artifacts/speed_source_pair_20261109全部4组有限评估完成，非训练。冻结D5学生7cc41eff/ONNX4dc2372a，4.89peak/5.5scale、PD60/2、spring4.31、2/8ms、DR.1与core联合延迟/轮反馈年龄补偿不变。只obs6在原delay/noise前由root COM heading真值换成桌面2轮腿proxy。当前物理dq含固件leg .022死区，不复制异步CAN/滤波，不模拟10秒LQR接管。reward/done/gate仍用root真值。
+
+初态、质量/材料、噪声seed、首次delay、其余runtime、第一步70列全部exact；64副本第一次输入差异均在8ms且仅槽6。实际legalgorithm.c的getPhi/spd原文host编译2000点，与闭链简式w最大差3.27e-6rad/s；8tests过，默认root原输出/RNG不变。原文件/模型未改。
+
+首回合12秒存活：待机、.3、.5直行分别root16/16→proxy0/16；起停0→.3→0→.5→0也是16/16→0/16。proxy静态在1.704–4.952s全失稳，起停3.016–4.656s全失稳，只1/16完成第一次.3阶段、无副本到.5。不能用reset后恢复冒充首回合，也不对未走到的阶段报完整急停评估。root静态pitch均<=3，但待机最坏MAE.04155，仍有漂移；root起停虽全存活，动态瞬态/yaw仍不全过。
+
+全部64对raw图已看，桌面RMUC训练曲线/speed_source_pair_20261109；proxy出现放大往复后前后失稳，与实机持续5–6Hz有别，不能说精确复现所有顿挫。结论限于本仿真：速度源差异单独足以致失稳，须优先修速度定义/物理估计，再评剩余执行与策略gap，不继续只加delayDR。没有自动续训或改固件。README与final_report详细记录，当前本轮进程均结束。
+
+
+## 2026-11-09 修正RL速度定义并接入桌面2（用户授权“你修一下吧”）
+
+已完成 artifacts/speed_estimator_fix_20261109，全部有限评估结束，无新训练。sensor-only运动学：闭链轮心Jacobian、下连杆D→C轮定子转速、机体gyro运输项、标称root参考点和水平heading投影；保留当前det−1坐标/零位/轮符号。仅RL速度源变，LQR旧proxy+KF保持；PD60/2、补偿、16384/4.89、5.5scale、网络25D/6D及history不变。参考点(.0055423,-.0052237,.1277691)m是训练asset rootCOM相对hip中点，不是已辨识实车COM；无滑移/接地假设，异步CAN和轮反馈年龄仍需实机核查。
+
+同D5及同源初态/材料质量/seed/首次delay/首步70列exact：新估速static48/48、startstop16/16首12s存活，root也是64/64，旧proxy这64副本全失败。静态0/.3/.5最差steadyrawpitchp2p1.535/.966/.460°，speedp2p.0482/.0325/.0123m/s。补充-.4、.5±.3yaw、1±.8yaw、1.5直行各8：root48/48与fixed48/48，无存活丢失，所有steadyrawpitch<=3。共112新估速首回合副本，非112技能点，不是严格全gate通过；D5小yaw欠响应、待机漂移及小周期、起停瞬态两臂都还有。全部112raw曲线已查看，桌面RMUC训练曲线/speed_estimator_fix_20261109。未把Ozone与不同步demo混合，未模拟10sLQR精确接管。
+
+固件实际改：新增application/chassis/rl_heading_velocity.h，chassis.c接入；rl_shadow.h/.c末尾追加新旧/左右估速诊断；rl_observation.c clip前拒NaN/Inf，防fminf/fmaxf吞NaN。新增test_rl_heading_velocity.c，扩展test_rl_observation.c。6组host C测试全部过；C/Torch10000输入max1.4305e-6m/s；Python11测试过；原Makefile includes/defines下三个C翻译单元host syntax过（原PI重定义warning），无arm-none-eabi-gcc未ARM链接未烧录。新增header-only，不改工程source清单；需完整重编译及新ELF调试符号，保留实际V3D5权重和已验证实车补偿开关。
+
+精确修改/旧文件备份/SHA/patch在本artifact，桌面2/FIXES_20261109_RL_SPEED.md提供接口和Ozone字段说明。只修已证实仿真充分致失稳的速度定义差，不宣称实机单一根因或所有振荡已治愈；下一证据应来自相同固件新旧估速同拍，而不是继续盲加DR/惩罚。

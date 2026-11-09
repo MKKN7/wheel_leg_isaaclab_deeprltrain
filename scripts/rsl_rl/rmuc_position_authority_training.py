@@ -109,10 +109,26 @@ def prepare_authority_optimizer(runner, state, learning_rate=1e-4, critic_rate=1
         modules = [head]
     actor.requires_grad_(False)
     for module in modules: module.requires_grad_(True)
+    oracle_full_actor = os.environ.get('RMUC_ORACLE_FULL_ACTOR') == '1'
+    if oracle_full_actor:
+        if not physics_only or os.environ.get('RMUC_STARTUP_ANCHOR') or os.environ.get('RMUC_PHYSICS_RETENTION') == '1':
+            raise ValueError('Full actor diagnostic requires isolated physics workflow without legacy anchors')
+        actor.requires_grad_(True)
+        actor.distribution.requires_grad_(False)
+        modules = [actor]
+        protected_file = os.environ.get('RMUC_COORDINATION_PROTECTED_KEYS')
+        if protected_file:
+            protected = json.loads(Path(protected_file).read_text())['keys']
+            parameters = dict(actor.named_parameters())
+            if not protected or len(protected) != len(set(protected)) or any(k not in parameters for k in protected):
+                raise ValueError('Explicit unique protected parameter keys required')
+            for key in protected:
+                parameters[key].requires_grad_(False)
     runner.alg.optimizer=torch.optim.Adam([
         {'params':[p for module in modules for p in module.parameters()],'lr':learning_rate,
          'rmuc_local_indices':indices, 'rmuc_physics_modules':physics_modules,
          'rmuc_router_speed_direction':router_speed_direction,
+         'rmuc_oracle_full_actor':oracle_full_actor,
          'rmuc_group':'router_speed_extension' if router_speed_direction else ('physics_adaptation' if physics_only else ('local_authority' if local_only else 'position_authority'))},
         {'params':list(runner.alg.critic.parameters()),'lr':critic_rate,'rmuc_group':'critic'}])
 
@@ -127,7 +143,8 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
     if os.environ.get('RMUC_STARTUP_ANCHOR'):
         if not physics_training:raise ValueError('Startup anchor requires physical actor training')
         from rmuc_startup_anchor import StartupAnchor
-        startup_anchor=StartupAnchor(actor,runner.alg.optimizer,os.environ['RMUC_STARTUP_ANCHOR'])
+        startup_anchor=StartupAnchor(actor,runner.alg.optimizer,os.environ['RMUC_STARTUP_ANCHOR'],
+                                    limit=float(os.environ.get('RMUC_STARTUP_ANCHOR_LIMIT','.01')))
     pending={'observation':None}
     def capture(module,inputs):
         if torch.is_grad_enabled():pending['observation']=inputs[0].detach()
@@ -159,6 +176,15 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
     runner.alg.optimizer.register_step_pre_hook(before_step)
     runner.alg.optimizer.register_step_post_hook(after_step)
     original=runner.alg.update
+    value_delay_labels=[]
+    value_audit_enabled=os.environ.get('RMUC_VALUE_DELAY_AUDIT')=='1'
+    if value_audit_enabled:
+        value_env=runner.env.unwrapped
+        value_original_act=runner.alg.act
+        def record_value_delay(observations):
+            value_delay_labels.append(value_env._joint_delay_dr.action.steps.detach().clone())
+            return value_original_act(observations)
+        runner.alg.act=record_value_delay
     path=Path(runner.logger.log_dir)/'position_authority_training.jsonl'
     from rmuc_training_contract import RolloutCoverage
     coverage = (RolloutCoverage(required_commands, path.with_name('command_coverage.json'), grace_updates=coverage_grace_updates)
@@ -168,6 +194,18 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
     if capture_update<1:
         raise ValueError('RMUC_CAPTURE_PPO_ROLLOUT_UPDATE must be >= 1')
     capture_labels=[]
+    balanced_commands=[]
+    balance_enabled=os.environ.get('RMUC_COMMAND_BALANCE')=='1'
+    if balance_enabled:
+        if (getattr(runner.alg,'normalize_advantage_per_mini_batch',False)
+                or os.environ.get('RMUC_CAPTURE_PPO_ROLLOUT_ONLY')=='1'):
+            raise ValueError('Command balancing requires global advantages and active optimization')
+        balance_environment=runner.env.unwrapped
+        balance_original_act=runner.alg.act
+        def record_balance_commands(observations):
+            balanced_commands.append(balance_environment._current_command().detach().clone())
+            return balance_original_act(observations)
+        runner.alg.act=record_balance_commands
     capture_enabled=os.environ.get('RMUC_CAPTURE_PPO_ROLLOUT')=='1'
     tail_start=int(os.environ.get('RMUC_TRAINING_TAIL_START_UPDATE','0'))
     if tail_start < 0:
@@ -195,6 +233,10 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
         original_act=runner.alg.act
         previous_command=None
         command_age=None
+        mixed_counts=None
+        if getattr(environment,'_alternate_sequence_table',None) is not None:
+            mixed_counts=torch.zeros((2,len(environment._training_sequence_table)),device=environment.device,dtype=torch.long)
+
         def labelled_act(observations):
             nonlocal previous_command,command_age
             if count<capture_update:
@@ -207,6 +249,17 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
                     same=(command-previous_command).abs().amax(-1)<1e-3
                     command_age=torch.where(same&(episode_age>0),command_age+1,
                                             torch.zeros_like(command_age))
+                if mixed_counts is not None:
+                    actual=environment._current_command()
+                    parity=torch.arange(len(episode_age),device=episode_age.device)%2
+                    for family,table in enumerate([environment._training_sequence_table,environment._alternate_sequence_table]):
+                        tab=torch.as_tensor(table,device=episode_age.device,dtype=actual.dtype)
+                        phase=(torch.searchsorted(tab[:,0].contiguous(),episode_age.to(tab.dtype).contiguous(),right=True)-1).clamp(0,len(table)-1)
+                        mask=environment._continuous_command_mask&(parity==family)
+                        if mask.any():
+                            if not torch.allclose(actual[mask][:,[0,2]],tab[phase[mask]][:,1:3],atol=1e-5,rtol=0):
+                                raise RuntimeError('Mixed timing delivered command differs from assigned sequence')
+                            mixed_counts[family].add_(torch.bincount(phase[mask],minlength=len(table)))
                 previous_command=command.detach().clone()
                 if count+1==capture_update:
                     schedule=getattr(environment, '_random_speed_sequence', None)
@@ -220,6 +273,15 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
         runner.alg.act=labelled_act
     def update(*args,**kwargs):
         nonlocal count
+        value_report=None
+        if value_audit_enabled:
+            from rmuc_privileged_critic import value_diagnostics
+            storage=runner.alg.storage
+            value_report=value_diagnostics(storage.values,storage.returns,storage.advantages,torch.stack(value_delay_labels),
+                observations=storage.observations['policy'], targets=getattr(runner.env.unwrapped.cfg,'command_active_targets',()))
+            value_delay_labels.clear()
+            with path.with_name('critic_delay_audit.jsonl').open('a') as audit_file:
+                audit_file.write(json.dumps(dict(iteration=start+count,**value_report))+'\n')
         if tail_frames:
             import numpy as np
             trace=path.parent/f'training_tail_trace_{start+count}.npz'
@@ -231,6 +293,11 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
                          'q0','q1','q2','q3','q4','q5'],
                 scope='Actual stochastic training rollout, pre-action state; no deterministic acceptance implied')
             tail_frames.clear()
+        if capture_enabled and mixed_counts is not None:
+            mixed_report={'samples_by_family_phase':mixed_counts.tolist(),'command_parity_verified':True,
+                          'all_phases_observed':bool((mixed_counts>0).all()),'updates':count+1,
+                          'scope':'Actual dynamic cohort commands, both timing schedules; not behavior acceptance'}
+            (path.parent/'mixed_sequence_coverage.json').write_text(json.dumps(mixed_report,indent=2))
         if coverage is not None:
             coverage.observe(runner.alg.storage.observations['policy'])
         # Capture before PPO clears/overwrites the rollout buffer.
@@ -249,6 +316,10 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
             assert torch.equal(labelled_obs,storage.observations['policy'].detach().cpu()),'Rollout labels are misaligned'
             torch.save({
                 'observations':storage.observations['policy'].detach().cpu(),
+                'critic_observations':storage.observations.get('critic',storage.observations['policy']).detach().cpu().clone(),
+                'critic_state_dict':{k:v.detach().cpu().clone() for k,v in runner.alg.critic.state_dict().items()},
+                'bootstrap_policy_observation':environment._position_authority_observation.detach().cpu().clone(),
+                'final_action_delay_steps':environment._joint_delay_dr.action.steps.detach().cpu().clone() if environment._joint_delay_dr is not None else None,
                 'actions':storage.actions.detach().cpu(),
                 'advantages':storage.advantages.detach().cpu(),
                 'critic_values':storage.values.detach().cpu(),
@@ -281,7 +352,34 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
             runner.alg.storage.clear()
             result={}
         else:
+            balance_report=None
+            if balance_enabled:
+                from rmuc_command_balance import balance_advantages
+                labels=torch.stack(balanced_commands)
+                weighted,balance_report=balance_advantages(runner.alg.storage.advantages,labels)
+                # RSL-RL can allocate rollout storage under inference_mode.
+                with torch.inference_mode():
+                    runner.alg.storage.advantages.copy_(weighted)
+                balanced_commands.clear()
             if startup_anchor is not None:startup_anchor.begin()
+            if os.environ.get('RMUC_TARGET_POLICY_GRADIENT') == '1':
+                if getattr(runner.alg, 'normalize_advantage_per_mini_batch', False):
+                    raise ValueError('Target gradient mask requires no minibatch advantage recentering')
+                from rmuc_target_policy_gradient import mask_target_advantages
+                storage = runner.alg.storage
+                with torch.no_grad():
+                    targets=getattr(runner.env.unwrapped.cfg, 'command_active_targets', ())
+                    if targets:
+                        from rmuc_target_policy_gradient import target_gate_from_commands
+                        tolerance=1e-5 if getattr(runner.env.unwrapped.cfg,'command_reverse_entry_ramp_s',0)>0 else 1e-3
+                        target_gate=target_gate_from_commands(storage.observations['policy'], targets,tolerance=tolerance)
+                    else:
+                        target_gate = actor.rmuc_physics_adaptation.high_straight_gate(storage.observations['policy'])
+                    masked, target_report = mask_target_advantages(storage.advantages, target_gate)
+                    if targets:target_report['command_tolerance']=tolerance
+                with torch.inference_mode():storage.advantages.copy_(masked)
+                with path.with_name('target_policy_gradient.jsonl').open('a') as stream:
+                    stream.write(json.dumps(dict(iteration=start+count, **target_report))+'\n')
             result=original(*args,**kwargs)
             startup_anchor_result=startup_anchor.finish() if startup_anchor is not None else None
         retention_result=retention.finish() if retention is not None else None
@@ -318,6 +416,8 @@ def configure_authority_audit(runner, required_commands=None, coverage_grace_upd
                     record['post_authority_residual_abs_max']=post.abs().amax(0).tolist()
         if startup_anchor is not None and not capture_only:
             record['startup_anchor']=startup_anchor_result
+        if balance_enabled and not capture_only:
+            record['command_balance']=balance_report
         runtime_env = getattr(runner, 'env', None)
         wheel_timing=getattr(getattr(runtime_env, 'unwrapped', runtime_env),'_real2sim_wheel',None)
         if wheel_timing is not None and 0 < wheel_timing.transport_probability < 1:

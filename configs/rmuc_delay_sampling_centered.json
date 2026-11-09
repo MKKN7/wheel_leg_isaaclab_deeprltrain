@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "purpose": "Training-only centered action-delay curriculum; engineering choice, not a measured channel histogram",
+  "physics_dt_s": 0.002,
+  "training_overrides": {
+    "joint_delay_dr_wheel_range_s": [0.004, 0.008],
+    "joint_delay_dr_leg_range_s": [0.004, 0.008],
+    "joint_delay_dr_observation_range_s": [0.0, 0.008],
+    "joint_delay_dr_action_range_s": [0.0, 0.008],
+    "joint_delay_action_sampling_weights": [1, 2, 4, 2, 1]
+  },
+  "action_delay_ms": [0, 2, 4, 6, 8],
+  "action_probabilities": [0.1, 0.2, 0.4, 0.2, 0.1],
+  "unchanged_channels": "Wheel, leg and observation keep uniform reset sampling. Response tau and wheel-feedback age unchanged.",
+  "evaluation": {
+    "action_sampling_weights": [],
+    "distribution": "Uniform original ranges",
+    "required_tail_slices_ms": [6, 8],
+    "tail_checks": ["survival", "periodic oscillation", "speed and yaw tracking", "old skill retention"]
+  }
+}

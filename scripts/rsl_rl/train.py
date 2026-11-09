@@ -397,6 +397,9 @@ parser.add_argument(
         "Applied after every policy update so high-speed common-mode exploration cannot collapse."
     ),
 )
+parser.add_argument('--bounded_wheel_std', type=float, nargs=2, default=None,
+                    help='Opt-in authority experiment: train wheel std inside these bounds; leg std stays fixed.')
+parser.add_argument('--bounded_wheel_std_lr', type=float, default=1e-4)
 parser.add_argument(
     "--allow_fresh_critic_highspeed",
     action="store_true",
@@ -2705,6 +2708,8 @@ def _attach_checkpoint_metadata(env_cfg, agent_cfg, checkpoint_path: str | None)
         "action_std_override": args_cli.action_std_override,
         "stop_wheel_exploration_std": args_cli.stop_wheel_exploration_std,
         "min_wheel_action_std": args_cli.min_wheel_action_std,
+        "bounded_wheel_std": args_cli.bounded_wheel_std,
+        "bounded_wheel_std_lr": args_cli.bounded_wheel_std_lr,
         "start_command_at_target": bool(args_cli.start_command_at_target),
         "stop_at_command_level": args_cli.stop_at_command_level,
         "teacher_speed_checkpoint": args_cli.teacher_speed_checkpoint,
@@ -3280,14 +3285,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # create isaac environment
     if args_cli.local_authority_train_indices is not None and not args_cli.train_local_authority:
         raise ValueError('local_authority_train_indices requires train_local_authority')
-    if args_cli.physics_train_modules is not None and (not args_cli.train_physics_adaptation or not args_cli.reset_optimizer):
-        raise ValueError('Explicit physics selection requires train_physics_adaptation and reset_optimizer')
+    verified_physics_optimizer_resume = False
+    if args_cli.physics_train_modules is not None:
+        if not args_cli.train_physics_adaptation:
+            raise ValueError('Explicit physics selection requires train_physics_adaptation')
+        if not args_cli.reset_optimizer:
+            from rmuc_optimizer_resume import validate_optimizer_resume
+            validate_optimizer_resume(args_cli.checkpoint, args_cli.physics_train_modules,
+                                      os.environ.get('RMUC_VERIFIED_OPTIMIZER_RESUME'))
+            verified_physics_optimizer_resume = True
     if args_cli.train_physics_adaptation and (not args_cli.train_position_authority or args_cli.train_local_authority):
         raise ValueError('Physics adaptation requires position authority and excludes local expert training')
     if args_cli.train_local_authority and not args_cli.train_position_authority:
         raise ValueError('train_local_authority requires train_position_authority consumer and isolation path')
     if args_cli.train_position_authority:
-        if args_cli.isolated_state_router or not args_cli.checkpoint or not args_cli.resume_training or not args_cli.freeze_action_std:
+        if args_cli.bounded_wheel_std is not None:
+            if (args_cli.freeze_action_std or args_cli.freeze_leg_action_std
+                    or args_cli.min_wheel_action_std is not None or not args_cli.reset_optimizer
+                    or args_cli.wheel_noise_hold_steps != 1 or args_cli.stop_wheel_exploration_std is not None):
+                raise ValueError('Bounded std requires fresh optimizer and exclusive Gaussian exploration configuration')
+        if args_cli.isolated_state_router or not args_cli.checkpoint or not args_cli.resume_training or not (args_cli.freeze_action_std or args_cli.bounded_wheel_std is not None):
             raise ValueError('Authority training needs explicit checkpoint/resume/frozen std and no router optimizer')
         if env_cfg.policy_outer_feedback_enabled:
             raise ValueError('Authority training requires E2E without outer feedback')
@@ -3298,7 +3315,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         authority_source_state = torch.load(args_cli.checkpoint, map_location='cpu', weights_only=False)['actor_state_dict']
         isolated_physics_selection = (args_cli.train_physics_adaptation
                                       and bool(args_cli.physics_train_modules)
-                                      and args_cli.reset_optimizer)
+                                      and (args_cli.reset_optimizer or verified_physics_optimizer_resume))
         isolated_local_selection = (args_cli.train_local_authority
                                     and bool(args_cli.local_authority_train_indices)
                                     and args_cli.reset_optimizer)
@@ -3323,7 +3340,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_cfg.sim.physics.enable_external_forces_every_iteration = True
     required_commands = None
     if args_cli.require_command_coverage:
-        if not args_cli.train_position_authority or args_cli.critic_warmup_iterations < 3:
+        if not args_cli.train_position_authority or (args_cli.critic_warmup_iterations < 3 and not verified_physics_optimizer_resume):
             raise ValueError('Coverage guard requires authority training and at least3 critic warmup updates')
         from rmuc_training_contract import required_training_commands
         required_commands = required_training_commands(env_cfg)
@@ -3332,7 +3349,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             getattr(env_cfg, 'command_training_sequence', ()),
             float(env_cfg.sim.dt) * int(env_cfg.decimation), int(agent_cfg.num_steps_per_env),
             already_sampled_commands=stratified_static_commands(env_cfg))
-        if args_cli.critic_warmup_iterations < coverage_grace_updates:
+        if args_cli.critic_warmup_iterations < coverage_grace_updates and not verified_physics_optimizer_resume:
             raise ValueError(f'Command sequence coverage needs at least {coverage_grace_updates} critic warmup updates before actor training')
         print(f'[RMUC_REQUIRED_COMMANDS] {required_commands}', flush=True)
     if args_cli.train_position_authority:
@@ -3350,17 +3367,27 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         action_mapping_contract = validate_checkpoint_leg_scale_contract(gate_payload, env_cfg)
         print(f'[RMUC_ACTION_MAPPING_CONTRACT] {action_mapping_contract}', flush=True)
         gate_level = env_cfg.command_start_level
-        target_gate = validate_trainable_target_gate(
-            gate_payload['actor_state_dict'],
-            env_cfg.command_stage_linear_x_mps[gate_level],
-            env_cfg.command_stage_yaw_rate_rad_s[gate_level],
-            physics_only=args_cli.train_physics_adaptation,
-            local_indices=args_cli.local_authority_train_indices,
-            physics_modules=args_cli.physics_train_modules,
-            router_speed_direction=args_cli.router_speed_direction)
+        def check_active_target(vx, yaw):
+            return validate_trainable_target_gate(
+                gate_payload['actor_state_dict'], vx, yaw,
+                physics_only=args_cli.train_physics_adaptation,
+                local_indices=args_cli.local_authority_train_indices,
+                physics_modules=args_cli.physics_train_modules,
+                router_speed_direction=args_cli.router_speed_direction)
+        active_targets = getattr(env_cfg, 'command_active_targets', ())
+        if active_targets:
+            # The nominal curriculum level also controls the rehearsal pool.
+            # It need not be trainable when only explicit repair targets update
+            # the actor; validate every actual target instead of a placeholder.
+            target_gate = [check_active_target(float(vx), float(yaw)) for vx, yaw in active_targets]
+        else:
+            target_gate = check_active_target(
+                env_cfg.command_stage_linear_x_mps[gate_level],
+                env_cfg.command_stage_yaw_rate_rad_s[gate_level])
         from rmuc_training_contract import validate_trainable_sequence_gates
         sequence_gates = validate_trainable_sequence_gates(
             gate_payload['actor_state_dict'], getattr(env_cfg, 'command_training_sequence', ()),
+            target_only_commands=(active_targets if active_targets and os.environ.get('RMUC_TARGET_POLICY_GRADIENT')=='1' else None),
             physics_only=args_cli.train_physics_adaptation,
             local_indices=args_cli.local_authority_train_indices,
             physics_modules=args_cli.physics_train_modules,
@@ -3407,7 +3434,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create runner from rsl-rl
     runner_cfg = _prepare_stock_rsl_cfg(agent_cfg) if runner_class is OnPolicyRunner else agent_cfg.to_dict()
+    if getattr(env_cfg, 'training_privileged_critic_enabled', False):
+        runner_cfg['obs_groups'] = {'actor': ['policy'], 'critic': ['critic']}
     runner = runner_class(env, runner_cfg, log_dir=log_dir, device=agent_cfg.device)
+    if os.environ.get('RMUC_VALUE_DELAY_AUDIT') == '1':
+        import json as _critic_json
+        os.makedirs(log_dir, exist_ok=True)
+        with open(os.path.join(log_dir, 'critic_context_contract.json'), 'w') as context_file:
+            _critic_json.dump({'privileged': bool(getattr(env_cfg, 'training_privileged_critic_enabled', False)),
+                              'actor_dim': runner.alg.get_policy().obs_dim,
+                              'critic_dim': runner.alg.critic.obs_dim,
+                              'context_version': getattr(env_cfg, 'training_privileged_critic_context', 'queues_v1'),
+                              'obs_groups': runner_cfg['obs_groups'],
+                              'scope': 'Training-only critic; deployment actor remains25D'}, context_file, indent=2)
     _enable_terminal_iteration_progress(runner, args_cli.stop_at_command_level)
     adapter_hidden_dim = (
         checkpoint_turn_adapter_hidden_dim(args_cli.checkpoint)
@@ -3614,6 +3653,22 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # load the checkpoint
     if args_cli.checkpoint is not None:
         resume_path = os.path.abspath(args_cli.checkpoint)
+        if args_cli.resume_training:
+            command_value_resume = torch.load(resume_path, map_location='cpu', weights_only=False)
+            from rmuc_command_value_training import validate_command_value_resume
+            value_manifest_path=os.environ.get('RMUC_COMMAND_VALUE_TRAINING')
+            value_manifest=json.loads(Path(value_manifest_path).read_text()) if value_manifest_path else None
+            validate_command_value_resume(command_value_resume,value_manifest)
+            del command_value_resume
+        if getattr(env_cfg, 'training_privileged_critic_enabled', False):
+            if not (args_cli.resume_training and args_cli.reset_optimizer):
+                raise ValueError('Privileged critic diagnostic requires resume with fresh optimizer')
+            from rmuc_privileged_critic import prepare_critic_state
+            payload = torch.load(resume_path, map_location='cpu', weights_only=False)
+            payload['critic_state_dict'] = prepare_critic_state(
+                payload, runner.alg.critic.obs_dim, env_cfg.training_privileged_critic_context)
+            resume_path = os.path.join(log_dir, 'privileged_critic_initialization.pt')
+            torch.save(payload, resume_path)
         print(f"[INFO]: Loading model checkpoint from: {resume_path}")
         if args_cli.resume_training:
             # True continuation: restore optimizer/iteration and continue from the next iteration index.
@@ -3712,6 +3767,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         min_wheel_std=args_cli.min_wheel_action_std,
         command_level=getattr(env_cfg, "command_start_level", None),
     )
+    if args_cli.bounded_wheel_std is not None:
+        if not args_cli.train_position_authority:
+            raise ValueError('Bounded wheel exploration is an explicit authority experiment')
+        from rmuc_bounded_exploration import configure_bounded_wheel_exploration
+        configure_bounded_wheel_exploration(runner, args_cli.bounded_wheel_std, args_cli.bounded_wheel_std_lr)
     if (
         args_cli.teacher_speed_checkpoint
         or args_cli.teacher_turn_checkpoint
@@ -3785,6 +3845,45 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         from rmuc_residual_safety import configure_residual_safety
         configure_residual_safety(runner, args_cli.residual_anchor_l2, args_cli.residual_anchor_checkpoint)
     _enable_actor_update_diagnostics(runner)
+    if os.environ.get('RMUC_DELAY_RETENTION_REFERENCE'):
+        explicit_physics_selection = (args_cli.train_physics_adaptation
+                                      and bool(args_cli.physics_train_modules))
+        if (not explicit_physics_selection and os.environ.get('RMUC_ORACLE_FULL_ACTOR') != '1') or not (args_cli.freeze_action_std or args_cli.bounded_wheel_std is not None):
+            raise ValueError('Delay retention requires explicit physics selection or full-actor diagnostic, and bounded/frozen std')
+        from rmuc_delay_retention import configure_delay_retention
+        configure_delay_retention(runner, env, os.environ['RMUC_DELAY_RETENTION_REFERENCE'],
+                                  float(os.environ.get('RMUC_DELAY_RETENTION_BETA', '1')),
+                                  execution_aware=os.environ.get('RMUC_RETENTION_EXECUTION_AWARE')=='1',
+                                  target_all_delays=os.environ.get('RMUC_RETENTION_TARGET_ALL_DELAYS')=='1')
+    if os.environ.get('RMUC_CONSUMER_BOUNDARY_WEIGHT'):
+        from rmuc_consumer_boundary import configure_consumer_boundary
+        configure_consumer_boundary(runner, env, float(os.environ['RMUC_CONSUMER_BOUNDARY_WEIGHT']))
+    if os.environ.get('RMUC_CRITIC_COMMAND_BALANCE') == '1':
+        from rmuc_critic_command_balance import configure_critic_command_balance
+        configure_critic_command_balance(runner, env, fraction=.5, maximum=3.)
+    if os.environ.get('RMUC_CRITIC_FROZEN_UPDATES'):
+        from rmuc_critic_freeze import configure_critic_freeze
+        configure_critic_freeze(runner, int(os.environ['RMUC_CRITIC_FROZEN_UPDATES']))
+    if os.environ.get('RMUC_COMMAND_VALUE_TRAINING'):
+        if getattr(env.unwrapped.cfg, 'command_reverse_entry_ramp_s', 0.) > 0:
+            from rmuc_short_behavior_stage import configure_short_behavior_stage
+            configure_short_behavior_stage(
+                runner, args_cli.checkpoint, agent_cfg.max_iterations,
+                args_cli.critic_warmup_iterations,
+                os.environ.get('RMUC_PAIRED_STAGE_REVIEW'),
+            )
+        if os.environ.get('RMUC_CRITIC_FROZEN_UPDATES') or os.environ.get('RMUC_CRITIC_COMMAND_BALANCE'):
+            raise ValueError('Isolated command critic cannot mix with critic freeze/balance hooks')
+        from rmuc_command_value_training import configure_command_value_training
+        command_critic_actor_targets = None
+        if agent_cfg.max_iterations > args_cli.critic_warmup_iterations:
+            if os.environ.get('RMUC_TARGET_POLICY_GRADIENT') != '1':
+                raise ValueError('Command critic actor updates require explicit target-only PPO gradients')
+            command_critic_actor_targets = env.unwrapped.cfg.command_active_targets
+        configure_command_value_training(
+            runner, os.environ['RMUC_COMMAND_VALUE_TRAINING'],
+            actor_targets=command_critic_actor_targets,
+        )
     if args_cli.highspeed_regression_guard:
         if getattr(env_cfg, "command_start_level", 0) < getattr(
             env_cfg, "command_high_speed_gate_start_level", 9
@@ -3833,6 +3932,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     )
     # Stock RSL-RL reads observations immediately and does not reset here.
     # Ensure custom closed-loop root/link poses are applied before rollout.
+    if os.environ.get('RMUC_PAIRED_TRAINING_SEED'):
+        paired_reset_seed = int(os.environ['RMUC_PAIRED_TRAINING_SEED'])
+        torch.manual_seed(paired_reset_seed)
+        torch.cuda.manual_seed_all(paired_reset_seed)
     env.reset()
     unwrapped_env = getattr(env, "unwrapped", env)
     if args_cli.train_position_authority and getattr(unwrapped_env, '_separated_wheel_passive', False):
@@ -3867,7 +3970,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 group=g.get('rmuc_group', 'unnamed'),
                 learning_rate=float(g['lr']),
                 parameter_count=sum(v.numel() for v in g['params']),
-                physics_modules=g.get('rmuc_physics_modules'))
+                physics_modules=g.get('rmuc_physics_modules'),
+                rmuc_oracle_full_actor=g.get('rmuc_oracle_full_actor', False))
                 for g in runner.alg.optimizer.param_groups],
             scope='Post-reset actual actuator tensors and sampled wheel parameters; not behavior certification')
         if getattr(u, '_arena_ground_randomizer', None) is not None:
@@ -3878,6 +3982,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         # Keep pure waiting, sampled data age and actuator response distinct.
         # This post-reset snapshot does not certify measured end-to-end latency.
         readback['policy_sampling_std'] = [float(v) for name, parameter in runner.alg.get_policy().distribution.named_parameters() if name in {'std_param', 'log_std_param'} for v in (torch.exp(parameter) if name == 'log_std_param' else parameter).detach().cpu().flatten()]
+        if hasattr(runner, '_rmuc_bounded_exploration'):
+            readback['bounded_exploration'] = runner._rmuc_bounded_exploration.readback()
         if hasattr(runner, '_rmuc_stop_exploration'):
             readback['stop_exploration'] = runner._rmuc_stop_exploration.readback()
         readback['leg_transport'] = u._leg_transport.readback()
@@ -3897,6 +4003,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             motor_response_time_constants_s={name: response.time_constant.detach().cpu().tolist()
                 for name, response in u._motor_responses.items()},
             wheel_feedback_age=(u._wheel_feedback_age.readback() if getattr(u,'_wheel_feedback_age',None) is not None else None),
+            alternate_training_sequence=dict(primary=u._training_sequence_table,alternate=getattr(u,'_alternate_sequence_table',None),assignment='even-primary_odd-alternate',dynamic_env_ids=u._continuous_command_mask.nonzero().flatten().tolist()),
             joint_delay_dr=(u._joint_delay_dr.readback() if getattr(u,'_joint_delay_dr',None) is not None else None),
             motor_response_scope='First-order time constant, not pure command latency',
             wheel_transport=(u._real2sim_wheel.readback() if u._real2sim_wheel is not None else None),
@@ -3915,6 +4022,13 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         # RSL-RL randomizes their ages inside learn(); the first completion is
         # therefore only a partial episode and must not enter the survival gate.
         unwrapped_env.ignore_current_episodes_for_survival_gate()
+    if os.environ.get('RMUC_PAIRED_TRAINING_SEED'):
+        paired_seed = int(os.environ['RMUC_PAIRED_TRAINING_SEED'])
+        torch.manual_seed(paired_seed)
+        torch.cuda.manual_seed_all(paired_seed)
+    if os.environ.get('RMUC_REWARD_CREDIT_AUDIT')=='1':
+        from rmuc_reward_credit import configure_reward_credit_audit
+        configure_reward_credit_audit(runner, env)
     try:
         runner.learn(
             num_learning_iterations=agent_cfg.max_iterations,

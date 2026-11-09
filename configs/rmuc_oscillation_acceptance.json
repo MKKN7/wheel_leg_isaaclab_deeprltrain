@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "confirmed_date": "2026-11-06",
+  "user_requirement": "稳态俯仰峰峰值 max−min ≤3°；逐回合检查，不允许用均值或P95替代峰值",
+  "signal": "pitch_deg",
+  "fixed_command_12s_window_s": [6, 12],
+  "maximum_peak_to_peak_deg": 3.0,
+  "inclusive_limit": true,
+  "detrend": false,
+  "filter": false,
+  "all_replicas_must_pass": true,
+  "missing_or_fallen_window_passes": false,
+  "fault_relative_half_rule": "not_adopted",
+  "other_requirements": "Existing survival, tracking, yaw and authorized angle gates remain. Reverse transient overshoot and dynamic response require separate acceptance. This component does not certify deployment."
+}

@@ -49,3 +49,13 @@ def test_alignment_rate_spares_synchronous_motion_and_turns():
  assert cost[0]==0 and 0<cost[1]<1 and cost[2]==0
  cost.sum().backward();assert dq.grad[1,0]>0 and dq.grad[1,3]<0 and dq.grad[:,[2,5]].abs().sum()==0
  with pytest.raises(ValueError):rate(dq,torch.zeros(3),0.)
+
+def test_full_yaw_floor_has_no_drift_escape_and_turns_remain_exempt():
+ q=torch.zeros(7,6);q[:,0]=math.radians(5);q[:,1]=math.radians(3)
+ actual=torch.tensor([0.,.05,.1,.15,.2,.4,-.4],requires_grad=True)
+ cost,_,gate=f(q,torch.zeros(7),actual,.5,3.,yaw_gate_floor=1.)
+ torch.testing.assert_close(gate,torch.ones(7),atol=0,rtol=0)
+ torch.testing.assert_close(cost,cost[0].expand_as(cost),atol=0,rtol=0)
+ assert torch.equal(torch.autograd.grad(cost.sum(),actual)[0],torch.zeros(7))
+ turn,_,_=f(q,torch.full((7,),.001),actual,.5,3.,yaw_gate_floor=1.)
+ assert not turn.any()

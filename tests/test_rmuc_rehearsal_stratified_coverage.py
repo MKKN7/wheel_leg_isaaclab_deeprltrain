@@ -26,6 +26,8 @@ def environment(enabled):
         command_rehearsal_anchor_stage_ids=list(range(20)),
         command_rehearsal_priority_stage_ids=list(range(20)),
         command_rehearsal_priority_stage_weights=[.01]*15+[10.]*5,
+        command_stage_linear_x_mps=list(range(21)),
+        command_stage_yaw_rate_rad_s=[1.]*21,
         command_rehearsal_priority_fraction=1., command_rehearsal_stratified_coverage=enabled)
     return SimpleNamespace(cfg=cfg, num_envs=256, device='cpu', _command_level=20,
         _rehearsal_mask=torch.zeros(256, dtype=torch.bool),
@@ -71,3 +73,35 @@ def test_partial_reset_preserves_nonreset_episodes_and_global_quota():
     assert torch.equal(env._rehearsal_stage[retained], old_stage[retained])
     assert torch.equal(env._rehearsal_mask[retained], old_mask[retained])
     assert env._rehearsal_mask.sum() == 128
+
+
+def test_mixed_commands_cover_176_with_179_slots_without_duplicating_straights():
+    speeds = list(range(116))
+    yaws = [0.] * 56 + [1.] * 60
+    stages = torch.full((179,), 115, dtype=torch.long)
+    signs = torch.arange(179) < 84
+    before = torch.get_rng_state().clone()
+    result = sampling.ensure_priority_sign_coverage(stages, signs, torch.arange(116),
+        stage_speeds=speeds, stage_yaws=yaws, require_complete=True)
+    actual = {(speeds[s], yaws[s] * (1 if sign else -1))
+              for s, sign in zip(result.tolist(), signs.tolist())}
+    expected = {(s, y) for s in range(116) for y in ([0.] if s < 56 else [-1., 1.])}
+    assert actual == expected and len(actual) == 176
+    assert torch.equal(torch.get_rng_state(), before)
+    assert torch.equal(stages, torch.full_like(stages, 115))
+
+
+def test_full_reset_capacity_error_is_explicit_but_partial_reset_keeps_samples():
+    import pytest
+    args = (torch.tensor([0, 1]), torch.tensor([True, False]), torch.tensor([0, 1]))
+    kwargs = dict(stage_speeds=[0., 1.], stage_yaws=[0., 1.])
+    assert torch.equal(sampling.ensure_priority_sign_coverage(*args, **kwargs), args[0])
+    with pytest.raises(ValueError, match='needs 3 slots'):
+        sampling.ensure_priority_sign_coverage(*args, **kwargs, require_complete=True)
+
+
+def test_duplicate_commands_share_one_slot_but_signed_turns_remain_distinct():
+    out = sampling.ensure_priority_sign_coverage(torch.zeros(3, dtype=torch.long),
+        torch.tensor([True, False, True]), torch.arange(4),
+        stage_speeds=[0., 0., 1., 1.], stage_yaws=[0., 0., 1., 1.], require_complete=True)
+    assert out.tolist() == [2, 2, 0]
